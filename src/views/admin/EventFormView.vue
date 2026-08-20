@@ -7,9 +7,10 @@
 
     <form @submit.prevent="handleSubmit" class="card">
       <div class="grid grid-cols-2 gap-4">
+        <!-- 基本資訊 -->
         <div class="form-group" style="grid-column: span 2;">
           <label class="form-label required">活動標題</label>
-          <input v-model="form.title" type="text" class="form-input" required />
+          <input v-model="form.title" type="text" class="form-input" placeholder="例如：2026年社區志工培訓精進日" required />
         </div>
 
         <div class="form-group">
@@ -33,6 +34,7 @@
           </select>
         </div>
 
+        <!-- 日期與時間 -->
         <div class="form-group">
           <label class="form-label required">活動日期</label>
           <input v-model="form.eventDate" type="date" class="form-input" required />
@@ -40,32 +42,63 @@
 
         <div class="form-group">
           <label class="form-label required">舉辦地點</label>
-          <input v-model="form.location" type="text" class="form-input" required />
+          <input v-model="form.location" type="text" class="form-input" placeholder="例如：花蓮靜思堂 / 宜蘭園區" required />
         </div>
 
         <div class="form-group">
-          <label class="form-label required">開始時間</label>
+          <label class="form-label required">活動開始時間</label>
           <input v-model="form.eventStartTime" type="time" class="form-input" required />
         </div>
 
         <div class="form-group">
-          <label class="form-label required">結束時間</label>
+          <label class="form-label required">活動結束時間</label>
           <input v-model="form.eventEndTime" type="time" class="form-input" required />
         </div>
 
+        <!-- 報名期限設定 (新增) -->
         <div class="form-group">
-          <label class="form-label">人數上限 (留空為不限)</label>
-          <input v-model.number="form.maxParticipants" type="number" class="form-input" min="1" />
+          <label class="form-label required">報名開始時間</label>
+          <input v-model="form.registrationStart" type="datetime-local" class="form-input" required />
         </div>
 
         <div class="form-group">
-          <label class="form-label">聯絡人姓名與電話</label>
+          <label class="form-label required">報名截止時間</label>
+          <input v-model="form.registrationEnd" type="datetime-local" class="form-input" required />
+        </div>
+
+        <!-- 名額與膳食設定 -->
+        <div class="form-group">
+          <label class="form-label">人數上限 (留空為不限)</label>
+          <input v-model.number="form.maxParticipants" type="number" class="form-input" min="1" placeholder="留空或輸入人數" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">膳食提供選項</label>
+          <select v-model="form.mealOption" class="form-select">
+            <option value="提供午齋">提供午齋</option>
+            <option value="提供早午齋">提供早午齋</option>
+            <option value="提供便當">提供便當</option>
+            <option value="不提供膳食">不提供膳食</option>
+          </select>
+        </div>
+
+        <!-- 限制與聯絡人 -->
+        <div class="form-group">
+          <label class="form-label">報名資格限制</label>
+          <select v-model="form.requireVolunteerCode" class="form-select">
+            <option :value="false">不限 (開放一般民眾與會眾報名)</option>
+            <option :value="true">限慈濟志工 (需核對委員/慈誠編號)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">聯絡人與電話</label>
           <input v-model="form.contactName" type="text" class="form-input" placeholder="例如：林師兄 0912-345678" />
         </div>
 
         <div class="form-group" style="grid-column: span 2;">
           <label class="form-label">詳細說明 (支援 Markdown)</label>
-          <textarea v-model="form.description" class="form-textarea" style="min-height: 180px;"></textarea>
+          <textarea v-model="form.description" class="form-textarea" placeholder="請填寫活動介紹、注意事項、交通指引等..." style="min-height: 180px;"></textarea>
         </div>
       </div>
 
@@ -93,15 +126,22 @@ const toast = useToast();
 const isEdit = ref(false);
 const saving = ref(false);
 
+const todayStr = new Date().toISOString().substring(0, 10);
+const nowDateTimeStr = new Date().toISOString().substring(0, 16);
+
 const form = ref({
   title: '',
   category: '共修精進',
   status: '已發佈',
-  eventDate: '',
+  eventDate: todayStr,
   location: '花蓮靜思堂',
   eventStartTime: '09:00',
   eventEndTime: '12:00',
+  registrationStart: nowDateTimeStr,
+  registrationEnd: `${todayStr}T23:59`,
   maxParticipants: 100,
+  mealOption: '提供午齋',
+  requireVolunteerCode: false,
   contactName: '',
   description: ''
 });
@@ -112,7 +152,12 @@ onMounted(async () => {
     isEdit.value = true;
     const evt = await eventsStore.fetchEventById(eventId);
     if (evt) {
-      form.value = { ...evt };
+      form.value = { 
+        ...form.value,
+        ...evt,
+        registrationStart: evt.registrationStart || nowDateTimeStr,
+        registrationEnd: evt.registrationEnd || `${evt.eventDate || todayStr}T23:59`
+      };
     }
   }
 });

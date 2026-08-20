@@ -10,29 +10,39 @@
       </button>
     </div>
 
-    <!-- 統計卡片 -->
-    <div class="grid grid-cols-4 gap-4 mb-8">
-      <div class="card">
+    <!-- 5 大核心統計指標卡片 -->
+    <div class="grid grid-cols-5 gap-4 mb-8">
+      <router-link to="/admin/events" class="card card-hover">
         <div class="text-muted text-sm font-semibold">進行中活動</div>
         <div class="text-2xl font-bold text-primary mt-2">{{ stats.eventsCount }}</div>
-      </div>
-      <div class="card">
+      </router-link>
+
+      <router-link to="/admin/registrations" class="card card-hover">
         <div class="text-muted text-sm font-semibold">總報名人次</div>
         <div class="text-2xl font-bold text-secondary mt-2">{{ stats.registrationsCount }}</div>
-      </div>
-      <div class="card">
+      </router-link>
+
+      <router-link to="/admin/members" class="card card-hover">
         <div class="text-muted text-sm font-semibold">建檔志工總數</div>
         <div class="text-2xl font-bold text-gray-800 mt-2">{{ stats.membersCount }}</div>
-      </div>
-      <div class="card">
+      </router-link>
+
+      <router-link to="/admin/duty-schedule" class="card card-hover">
         <div class="text-muted text-sm font-semibold">已排班次數</div>
         <div class="text-2xl font-bold text-gold-600 mt-2">{{ stats.dutiesCount }}</div>
-      </div>
+      </router-link>
+
+      <router-link to="/admin/line-bindings" class="card card-hover highlight-line-card">
+        <div class="text-muted text-sm font-semibold flex items-center gap-1">
+          <span>💬</span> LINE 綁定人數
+        </div>
+        <div class="text-2xl font-bold text-green-600 mt-2">{{ stats.lineBindingsCount }}</div>
+      </router-link>
     </div>
 
     <!-- 快捷入口卡片 -->
     <h3 class="text-lg font-bold mb-4">常用管理功能</h3>
-    <div class="grid grid-cols-3 gap-4">
+    <div class="grid grid-cols-4 gap-4">
       <router-link to="/admin/checkin" class="card card-hover flex items-center gap-4">
         <span class="text-2xl">✅</span>
         <div>
@@ -45,7 +55,7 @@
         <span class="text-2xl">➕</span>
         <div>
           <h4 class="font-bold">建立新活動</h4>
-          <p class="text-sm text-muted">發佈活動並自訂場次名額</p>
+          <p class="text-sm text-muted">自訂報名期限與名額</p>
         </div>
       </router-link>
 
@@ -53,7 +63,15 @@
         <span class="text-2xl">🗓️</span>
         <div>
           <h4 class="font-bold">月度排班維護</h4>
-          <p class="text-sm text-muted">宜蘭園區與東港聯絡處排班</p>
+          <p class="text-sm text-muted">宜蘭與東港排班矩陣</p>
+        </div>
+      </router-link>
+
+      <router-link to="/admin/line-bindings" class="card card-hover flex items-center gap-4">
+        <span class="text-2xl">🔔</span>
+        <div>
+          <h4 class="font-bold">LINE 綁定與測試</h4>
+          <p class="text-sm text-muted">發送推播測試訊息</p>
         </div>
       </router-link>
     </div>
@@ -68,7 +86,8 @@ const stats = ref({
   eventsCount: 0,
   registrationsCount: 0,
   membersCount: 0,
-  dutiesCount: 0
+  dutiesCount: 0,
+  lineBindingsCount: 0
 });
 
 async function loadStats() {
@@ -76,6 +95,7 @@ async function loadStats() {
   stats.value.registrationsCount = await getCollectionCount('registrations');
   stats.value.membersCount = await getCollectionCount('members');
   stats.value.dutiesCount = await getCollectionCount('dutyShifts');
+  stats.value.lineBindingsCount = await getCollectionCount('lineBindings');
 }
 
 onMounted(() => {
@@ -86,4 +106,14 @@ onMounted(() => {
 <style scoped>
 .text-secondary { color: var(--secondary-500); }
 .text-gold-600 { color: var(--gold-600); }
+.text-green-600 { color: #16a34a; }
+.highlight-line-card {
+  border-left: 4px solid #16a34a;
+}
+@media (max-width: 1200px) {
+  .grid-cols-5 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 768px) {
+  .grid-cols-5 { grid-template-columns: repeat(1, 1fr); }
+}
 </style>

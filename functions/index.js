@@ -9,7 +9,9 @@ admin.initializeApp();
 const { lineWebhook } = require('./lineWebhook');
 const { sendDutyRemindersScheduled } = require('./scheduledTasks');
 const { syncBackupToSheets } = require('./googleSheetsBackup');
+const { sendTestLineMessage } = require('./testLine');
 
 exports.lineWebhook = lineWebhook;
 exports.sendDutyRemindersScheduled = sendDutyRemindersScheduled;
 exports.syncBackupToSheets = syncBackupToSheets;
+exports.sendTestLineMessage = sendTestLineMessage;
