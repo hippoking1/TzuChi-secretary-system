@@ -5,6 +5,7 @@
  * 2. 執行 node importFromSheets.js <SPREADSHEET_ID>
  */
 
+const fs = require('fs');
 const admin = require('firebase-admin');
 const { google } = require('googleapis');
 const path = require('path');
