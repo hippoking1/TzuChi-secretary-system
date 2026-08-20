@@ -1,13 +1,16 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const line = require('@line/bot-sdk');
 
+const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const db = admin.firestore();
 
 // 每日早上 08:00 (台北時區) 自動推播隔日值班提醒 (改用 Multicast 提升效能)
 exports.sendDutyRemindersScheduled = onSchedule({
   schedule: 'every day 08:00',
-  timeZone: 'Asia/Taipei'
+  timeZone: 'Asia/Taipei',
+  secrets: [LINE_CHANNEL_ACCESS_TOKEN]
 }, async () => {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -17,7 +20,7 @@ exports.sendDutyRemindersScheduled = onSchedule({
   if (dutiesSnap.empty) return;
 
   const client = new line.messagingApi.MessagingApiClient({
-    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
+    channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value() || ''
   });
 
   for (const doc of dutiesSnap.docs) {

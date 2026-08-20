@@ -1,17 +1,24 @@
-const functions = require('firebase-functions/v2/https');
+const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const line = require('@line/bot-sdk');
 
+const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
+const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
+
 const db = admin.firestore();
 
 // LINE Webhook 端點 (含 HMAC-SHA256 簽名驗證)
-exports.lineWebhook = functions.onRequest({ cors: true }, async (req, res) => {
+exports.lineWebhook = onRequest({
+  cors: true,
+  secrets: [LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN]
+}, async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
 
-  const channelSecret = process.env.LINE_CHANNEL_SECRET || functions.params.defineSecret('LINE_CHANNEL_SECRET').value();
+  const channelSecret = LINE_CHANNEL_SECRET.value();
   const signature = req.headers['x-line-signature'];
 
   // 1. 驗證 LINE 簽名 (徹底修復資安弱點)
@@ -26,7 +33,7 @@ exports.lineWebhook = functions.onRequest({ cors: true }, async (req, res) => {
 
   const events = req.body.events || [];
   const client = new line.messagingApi.MessagingApiClient({
-    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || ''
+    channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value() || ''
   });
 
   for (const event of events) {
