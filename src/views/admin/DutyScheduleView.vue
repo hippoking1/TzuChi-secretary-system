@@ -1,7 +1,10 @@
 <template>
   <div class="admin-duty-schedule">
     <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
-      <h1 class="text-2xl font-bold">道場值班月曆</h1>
+      <div>
+        <h1 class="text-2xl font-bold">道場值班月曆</h1>
+        <p class="text-sm text-muted">檢視宜蘭園區與東港聯絡處全月排班與各班次時段</p>
+      </div>
       <div class="flex gap-4">
         <select v-model="selectedLocation" class="form-select" @change="loadSchedule">
           <option value="宜蘭園區">宜蘭園區</option>
@@ -35,8 +38,9 @@
                 :key="shift.id" 
                 class="shift-tag"
                 :class="shift.genderType === '男' ? 'tag-male' : 'tag-female'"
+                :title="shift.shiftLabel + ' (' + (shift.timeRange || '') + '): ' + (shift.memberName || '未指派')"
               >
-                {{ shift.shiftLabel }}: {{ shift.memberName || '未指派' }}
+                {{ shift.shiftLabel }}<span v-if="shift.timeRange" class="time-sub">({{ shift.timeRange }})</span>: {{ shift.memberName || '未指派' }}
               </div>
             </div>
           </div>
@@ -92,13 +96,14 @@ onMounted(() => {
 .calendar-grid-body {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--gray-200);
 }
-.cal-cell { background: #ffffff; min-height: 110px; padding: 0.4rem; }
+.cal-cell { background: #ffffff; min-height: 120px; padding: 0.4rem; }
 .empty-cell { background: var(--gray-50); }
 .cell-day-num { font-weight: 700; font-size: 0.85rem; color: var(--gray-600); margin-bottom: 0.25rem; }
 .shift-tag {
-  font-size: 0.72rem; padding: 0.15rem 0.35rem; border-radius: var(--radius-sm);
-  margin-bottom: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.72rem; padding: 0.2rem 0.35rem; border-radius: var(--radius-sm);
+  margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.time-sub { font-size: 0.65rem; opacity: 0.85; margin: 0 2px; }
 .tag-female { background: var(--accent-50); color: var(--accent-600); }
 .tag-male { background: var(--primary-50); color: var(--primary-600); }
 </style>

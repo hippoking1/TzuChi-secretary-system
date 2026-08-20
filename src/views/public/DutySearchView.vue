@@ -41,8 +41,13 @@
             <span class="badge badge-info">{{ d.location }}</span>
             <span class="font-bold text-sm">{{ d.dutyDate }}</span>
           </div>
-          <p class="font-semibold text-primary">{{ d.shiftLabel }} ({{ d.genderType }}眾)</p>
-          <p class="text-sm text-muted mt-1">志工：{{ d.memberName }}</p>
+          <p class="font-semibold text-primary">
+            {{ d.shiftLabel }} ({{ d.genderType }}眾)
+          </p>
+          <p class="text-sm font-bold text-gray-700 mt-1">
+            🕒 值班時間：{{ d.timeRange || dutiesStore.getShiftTimeRange(d.location, d.shiftId, d.shiftLabel) || '詳洽幹事' }}
+          </p>
+          <p class="text-xs text-muted mt-1">志工：{{ d.memberName }}</p>
         </div>
       </div>
     </div>
@@ -81,7 +86,7 @@ async function handleSearch() {
   const donggangDuties = await dutiesStore.fetchDutySchedule('東港聯絡處', parseInt(year), parseInt(month));
   
   const combined = [...yilanDuties, ...donggangDuties];
-  results.value = combined.filter(d => d.memberId === selectedMemberId.value);
+  results.value = combined.filter(d => d.memberId === selectedMemberId.value || d.memberName === memberList.value.find(x => x.id === selectedMemberId.value)?.name);
   hasSearched.value = true;
   loading.value = false;
 }

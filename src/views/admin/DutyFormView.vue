@@ -1,199 +1,150 @@
 <template>
   <div class="admin-duty-form">
-    <!-- 頂部標題與主控制列 -->
+    <!-- 頂部導航與標題 -->
     <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
       <div>
-        <h1 class="text-2xl font-bold">月度排班維護矩陣</h1>
+        <h1 class="text-2xl font-bold">📝 編輯月度值班表</h1>
         <p class="text-sm text-muted">
-          已排班總數：<strong class="text-primary">{{ assignedTotalCount }} / {{ matrixList.length }} 席</strong>
-          （載入資料庫現有排班，支援組織組別篩選與即時搜尋）
+          已排班進度：<strong class="text-primary">{{ assignedTotalCount }} / {{ matrixList.length }} 席</strong>
+          （包含完整值班時段、各班次配額人數與所屬組織路徑）
         </p>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
-        <select v-model="selectedLocation" class="form-select" style="min-width: 140px;" @change="initMatrix">
-          <option value="東港聯絡處">東港聯絡處</option>
-          <option value="宜蘭園區">宜蘭園區</option>
-        </select>
-        <input v-model="selectedMonth" type="month" class="form-input" style="min-width: 150px;" @change="initMatrix" />
+        <router-link to="/admin/duty-schedule" class="btn btn-outline">
+          ← 返回值班月曆
+        </router-link>
         <button class="btn btn-primary" :disabled="saving" @click="handleSave">
-          {{ saving ? '儲存中...' : '💾 儲存本月排班' }}
+          {{ saving ? '儲存中...' : '💾 儲存本月排班表' }}
         </button>
       </div>
     </div>
 
-    <!-- 智慧輔助工具列卡片 -->
+    <!-- 1. 場地與月份選擇控制卡片 -->
     <div class="card mb-6 p-4">
-      <div class="flex items-center justify-between flex-wrap gap-4">
-        <div class="flex items-center gap-3 flex-wrap">
-          <span class="text-sm font-bold text-gray-700">🔍 志工篩選：</span>
-          <!-- 協力組織過濾 -->
+      <div class="grid grid-cols-3 gap-4 items-end">
+        <div class="form-group mb-0">
+          <label class="form-label font-bold">1. 選擇場地：</label>
+          <select v-model="selectedLocation" class="form-select" @change="initMatrix">
+            <option value="宜蘭園區">宜蘭園區 (女眾08:00~16:00, 男眾一班16:00~18:30, 男眾二班18:30~20:30)</option>
+            <option value="東港聯絡處">東港聯絡處 (女眾08:00~13:00, 男眾13:00~17:00)</option>
+          </select>
+        </div>
+
+        <div class="form-group mb-0">
+          <label class="form-label font-bold">2. 選擇月份：</label>
+          <input v-model="selectedMonth" type="month" class="form-input" @change="initMatrix" />
+        </div>
+
+        <div>
+          <button class="btn btn-secondary btn-block" :disabled="loading" @click="initMatrix">
+            {{ loading ? '載入中...' : '🔄 重新整理 / 載入排班表' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 快速過濾列 -->
+      <div class="flex items-center justify-between border-t mt-4 pt-3 flex-wrap gap-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs font-bold text-gray-600">快速過濾志工：</span>
           <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 220px;">
             <option value="">-- 全部組織組別 --</option>
             <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">
               {{ orgsStore.getOrgPath(org.id) || org.name }}
             </option>
           </select>
-          <!-- 姓名搜尋 -->
           <input 
             v-model="searchKeyword" 
             type="text" 
             class="form-input form-input-sm" 
-            placeholder="搜尋志工姓名/電話..." 
-            style="max-width: 180px;"
+            placeholder="搜尋姓名或電話..." 
+            style="max-width: 160px;"
           />
-        </div>
-
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs text-muted">檢視模式：</span>
-          <button 
-            class="btn btn-sm" 
-            :class="viewMode === 'daily' ? 'btn-primary' : 'btn-outline'"
-            @click="viewMode = 'daily'"
-          >
-            📅 按日分組卡片
-          </button>
-          <button 
-            class="btn btn-sm" 
-            :class="viewMode === 'table' ? 'btn-primary' : 'btn-outline'"
-            @click="viewMode = 'table'"
-          >
-            📋 全月資料表
-          </button>
         </div>
       </div>
     </div>
 
     <div v-if="loading" class="card text-center p-8">
-      <p class="text-muted">載入排班資料中...</p>
+      <p class="text-muted text-lg">載入排班表與志工資料中...</p>
     </div>
 
-    <!-- 模式 A：按日分組卡片檢視 (推薦) -->
-    <div v-else-if="viewMode === 'daily'" class="grid grid-cols-2 gap-4">
+    <!-- 每日值班名單填寫 (經典版面結構) -->
+    <div v-else class="days-container flex flex-col gap-6">
       <div 
-        v-for="group in groupedDays" 
-        :key="group.dateStr" 
-        class="card day-card"
-        :class="{ 'weekend-card': group.isWeekend }"
+        v-for="day in groupedDays" 
+        :key="day.dateStr" 
+        class="card day-block-card"
+        :class="{ 'weekend-highlight': day.isWeekend }"
       >
-        <div class="day-card-header flex items-center justify-between border-b pb-2 mb-3">
+        <!-- 日期標題欄 -->
+        <div class="day-block-header flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="font-bold text-lg">{{ group.dateStr }}</span>
-            <span class="badge" :class="group.isWeekend ? 'badge-warning' : 'badge-gray'">
-              {{ group.dayOfWeek }}
+            <span class="text-primary font-bold text-lg">🗓️ {{ day.dateStr }}</span>
+            <span class="badge" :class="day.isWeekend ? 'badge-warning' : 'badge-gray'">
+              {{ day.dayOfWeek }}
             </span>
           </div>
-          <span class="text-xs" :class="group.slots.every(s => !!s.memberName) ? 'text-green-600 font-bold' : 'text-muted'">
-            已排 {{ group.slots.filter(s => !!s.memberName).length }} / {{ group.slots.length }} 席
+          <span class="text-xs text-muted">
+            已排定 {{ day.slots.filter(s => !!s.memberName).length }} / {{ day.slots.length }} 席
           </span>
         </div>
 
-        <!-- 各班次時段槽位 -->
-        <div class="day-slots-list flex flex-col gap-3">
+        <!-- 班次分區網格 (女眾班、男眾一班、男眾二班) -->
+        <div class="grid grid-cols-2 gap-4 mt-4">
           <div 
-            v-for="slot in group.slots" 
-            :key="slot.id" 
-            class="slot-item flex items-center justify-between gap-2 p-2 rounded"
-            :class="slot.genderType === '男' ? 'slot-male' : 'slot-female'"
+            v-for="shiftGroup in day.shiftGroups" 
+            :key="shiftGroup.shiftId" 
+            class="shift-group-box"
+            :class="shiftGroup.genderType === '男' ? 'box-male' : 'box-female'"
           >
-            <div class="slot-info">
-              <span class="slot-badge badge" :class="slot.genderType === '男' ? 'badge-info' : 'badge-danger'">
-                {{ slot.genderType }}眾
+            <!-- 班次標題 (包含完整時間與人數配額) -->
+            <div class="shift-group-title flex items-center justify-between mb-3">
+              <span class="font-bold text-sm text-gray-800">
+                {{ shiftGroup.shiftLabel }} ({{ shiftGroup.timeRange }}) - {{ shiftGroup.genderType }}眾 ({{ shiftGroup.quota }}位)
               </span>
-              <span class="font-bold text-sm ml-1">{{ slot.shiftLabel }}</span>
-              <span class="text-xs text-muted ml-1">(第 {{ slot.slotIndex }} 席)</span>
             </div>
 
-            <div class="slot-picker flex items-center gap-2 flex-1 justify-end" style="max-width: 320px;">
-              <select 
-                v-model="slot.memberId" 
-                class="form-select form-select-sm"
-                @change="onSlotMemberChange(slot)"
+            <!-- 各個席位下拉選單 (支援 姓名 + 和氣/互愛/協力 完整路徑) -->
+            <div class="slots-list flex flex-col gap-2">
+              <div 
+                v-for="slot in shiftGroup.slots" 
+                :key="slot.id" 
+                class="slot-row flex items-center gap-2"
               >
-                <option value="">-- 未指派 --</option>
-                <!-- 若目前已指派者不在過濾名單內，強制顯示在首位 -->
-                <option 
-                  v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
-                  :value="slot.memberId"
+                <select 
+                  v-model="slot.memberId" 
+                  class="form-select form-select-sm flex-1"
+                  @change="onSlotMemberChange(slot)"
                 >
-                  ★ {{ slot.memberName }} [已排定]
-                </option>
-                <option 
-                  v-for="m in getFilteredVolunteers(slot.genderType)" 
-                  :key="m.id" 
-                  :value="m.id"
+                  <option value="">-- 未指派 --</option>
+                  <!-- 若已排定但不在目前過濾範圍內，顯示於首位 -->
+                  <option 
+                    v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
+                    :value="slot.memberId"
+                  >
+                    ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
+                  </option>
+                  <option 
+                    v-for="m in getFilteredVolunteers(slot.genderType)" 
+                    :key="m.id" 
+                    :value="m.id"
+                  >
+                    {{ m.name }} {{ getMemberOrgPathText(m.id) }} [本月: {{ getMemberShiftCount(m.name) }}班]
+                  </option>
+                </select>
+
+                <button 
+                  v-if="slot.memberId || slot.memberName" 
+                  class="btn btn-sm btn-outline btn-clear" 
+                  @click="clearSlot(slot)" 
+                  title="清空此席位"
                 >
-                  {{ m.name }} {{ m.volunteerCode ? '(' + m.volunteerCode + ')' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
-                </option>
-              </select>
-              <button 
-                v-if="slot.memberId || slot.memberName" 
-                class="btn btn-sm btn-outline btn-clear" 
-                @click="clearSlot(slot)" 
-                title="清空此席位"
-              >
-                ✕
-              </button>
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- 模式 B：全月清單表格檢視 -->
-    <div v-else class="card table-responsive">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>星期</th>
-            <th>班次</th>
-            <th>眾別</th>
-            <th style="min-width: 300px;">指派志工 (顯示本月累計值班數)</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="slot in matrixList" :key="slot.id">
-            <td class="font-bold">{{ slot.dutyDate }}</td>
-            <td>
-              <span class="badge" :class="slot.isWeekend ? 'badge-warning' : 'badge-gray'">
-                {{ getDayOfWeek(slot.dutyDate) }}
-              </span>
-            </td>
-            <td>{{ slot.shiftLabel }} (第 {{ slot.slotIndex }} 席)</td>
-            <td>
-              <span class="badge" :class="slot.genderType === '男' ? 'badge-info' : 'badge-danger'">
-                {{ slot.genderType }}眾
-              </span>
-            </td>
-            <td>
-              <select 
-                v-model="slot.memberId" 
-                class="form-select form-select-sm"
-                @change="onSlotMemberChange(slot)"
-              >
-                <option value="">-- 未指派 --</option>
-                <option 
-                  v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
-                  :value="slot.memberId"
-                >
-                  ★ {{ slot.memberName }} [已排定]
-                </option>
-                <option 
-                  v-for="m in getFilteredVolunteers(slot.genderType)" 
-                  :key="m.id" 
-                  :value="m.id"
-                >
-                  {{ m.name }} {{ m.volunteerCode ? '(' + m.volunteerCode + ')' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
-                </option>
-              </select>
-            </td>
-            <td>
-              <button v-if="slot.memberId || slot.memberName" class="btn btn-sm btn-outline" @click="clearSlot(slot)">清空</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   </div>
 </template>
@@ -210,9 +161,8 @@ const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();
 
-const selectedLocation = ref('東港聯絡處');
+const selectedLocation = ref('宜蘭園區');
 const selectedMonth = ref(new Date().toISOString().substring(0, 7));
-const viewMode = ref('daily');
 const filterOrgId = ref('');
 const searchKeyword = ref('');
 const loading = ref(false);
@@ -232,6 +182,14 @@ const assignedTotalCount = computed(() => {
   return matrixList.value.filter(s => !!s.memberName).length;
 });
 
+function getMemberOrgPathText(memberId) {
+  if (!memberId) return '';
+  const m = allMembers.value.find(x => x.id === memberId);
+  if (!m || !m.orgId) return '';
+  const path = orgsStore.getOrgPath(m.orgId);
+  return path ? `(${path})` : '';
+}
+
 // 過濾志工清單（支援組織、搜尋關鍵字）
 function getFilteredVolunteers(gender) {
   const baseList = gender === '男' ? maleMembers.value : femaleMembers.value;
@@ -248,41 +206,58 @@ function getFilteredVolunteers(gender) {
   });
 }
 
-// 計算志工本月已排班次數
 function getMemberShiftCount(memberName) {
   if (!memberName) return 0;
   return matrixList.value.filter(s => s.memberName === memberName).length;
 }
 
-// 變更志工指派
 function onSlotMemberChange(slot) {
   const found = allMembers.value.find(m => m.id === slot.memberId);
   slot.memberName = found ? found.name : '';
+  slot.orgPath = found ? orgsStore.getOrgPath(found.orgId) : '';
 }
 
 function clearSlot(slot) {
   slot.memberId = '';
   slot.memberName = '';
+  slot.orgPath = '';
 }
 
-// 按日分組
+// 按日分組與班次分組（重構為舊版清楚排版）
 const groupedDays = computed(() => {
-  const map = {};
+  const daysMap = {};
   matrixList.value.forEach(slot => {
-    if (!map[slot.dutyDate]) {
-      map[slot.dutyDate] = {
+    if (!daysMap[slot.dutyDate]) {
+      daysMap[slot.dutyDate] = {
         dateStr: slot.dutyDate,
         dayOfWeek: getDayOfWeek(slot.dutyDate),
         isWeekend: slot.isWeekend,
+        slots: [],
+        shiftGroupsMap: {}
+      };
+    }
+    daysMap[slot.dutyDate].slots.push(slot);
+
+    // 依班次 shiftId 分組
+    if (!daysMap[slot.dutyDate].shiftGroupsMap[slot.shiftId]) {
+      daysMap[slot.dutyDate].shiftGroupsMap[slot.shiftId] = {
+        shiftId: slot.shiftId,
+        shiftLabel: slot.shiftLabel,
+        timeRange: slot.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, slot.shiftId, slot.shiftLabel),
+        genderType: slot.genderType,
+        quota: slot.quota || (slot.genderType === '男' ? (selectedLocation.value === '東港聯絡處' ? 1 : 2) : (selectedLocation.value === '東港聯絡處' ? 2 : 4)),
         slots: []
       };
     }
-    map[slot.dutyDate].slots.push(slot);
+    daysMap[slot.dutyDate].shiftGroupsMap[slot.shiftId].slots.push(slot);
   });
-  return Object.values(map);
+
+  return Object.values(daysMap).map(d => ({
+    ...d,
+    shiftGroups: Object.values(d.shiftGroupsMap)
+  }));
 });
 
-// 標準化班次鍵值輔助函式
 function getShiftNormalizedKey(shiftId, label, gender) {
   if (shiftId === 'DG_F' || shiftId === 'donggang_female' || (label && label.includes('女') && gender === '女')) return 'female_1';
   if (shiftId === 'DG_M' || shiftId === 'donggang_male' || (label && label.includes('男') && gender === '男')) return 'male_1';
@@ -300,7 +275,6 @@ async function initMatrix() {
     const template = dutiesStore.generateMonthlyTemplate(selectedLocation.value, year, month);
     const existing = await dutiesStore.fetchDutySchedule(selectedLocation.value, year, month);
 
-    // 依「日期 + 標準化班次」進行分組
     const existingGrouped = {};
     existing.forEach(item => {
       const normKey = getShiftNormalizedKey(item.shiftId, item.shiftLabel, item.genderType);
@@ -309,7 +283,6 @@ async function initMatrix() {
       existingGrouped[key].push(item);
     });
 
-    // 建立所有志工名稱對應 Map (名稱 -> ID)
     const nameToMemberMap = {};
     allMembers.value.forEach(m => {
       if (m.name) nameToMemberMap[m.name] = m;
@@ -325,18 +298,18 @@ async function initMatrix() {
         let memberId = existingItem.memberId || '';
         const memberName = existingItem.memberName || '';
         
-        // 若只有 memberName，自動由名冊反查填補 ID
         if (memberName && nameToMemberMap[memberName]) {
           memberId = nameToMemberMap[memberName].id;
         } else if (!memberId && memberName) {
-          memberId = memberName; // fallback
+          memberId = memberName;
         }
 
         return {
           ...t,
           docId: existingItem.id,
           memberId,
-          memberName
+          memberName,
+          timeRange: t.timeRange || existingItem.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, t.shiftId, t.shiftLabel)
         };
       }
 
@@ -352,7 +325,7 @@ async function handleSave() {
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     await dutiesStore.saveMonthlyDuties(selectedLocation.value, year, month, matrixList.value);
-    toast.success('全月排班已成功儲存至 Firestore！');
+    toast.success('全月排班表儲存成功！');
   } catch (err) {
     toast.error('儲存失敗：' + err.message);
   } finally {
@@ -375,31 +348,38 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.btn-block { width: 100%; }
 .form-select-sm, .form-input-sm {
-  min-height: 36px;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.85rem;
+  min-height: 38px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.88rem;
 }
-.day-card {
+.day-block-card {
   border: 1px solid var(--gray-200);
-  transition: all 0.2s ease;
+  background: #ffffff;
 }
-.weekend-card {
-  border-left: 4px solid var(--warning);
+.weekend-highlight {
+  border-left: 5px solid var(--warning);
 }
-.slot-item {
+.day-block-header {
+  border-bottom: 1px solid var(--gray-200);
+  padding-bottom: 0.75rem;
+}
+.shift-group-box {
   background: var(--gray-50);
   border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 1rem;
 }
-.slot-male { border-left: 3px solid var(--primary-500); }
-.slot-female { border-left: 3px solid var(--accent-500); }
+.box-female { border-top: 3px solid var(--accent-500); }
+.box-male { border-top: 3px solid var(--primary-500); }
 .btn-clear {
-  padding: 0.2rem 0.5rem;
-  min-height: 32px;
-  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  min-height: 36px;
+  font-size: 0.85rem;
 }
-.text-green-600 { color: #16a34a; }
-@media (max-width: 900px) {
+@media (max-width: 992px) {
+  .grid-cols-3 { grid-template-columns: 1fr; }
   .grid-cols-2 { grid-template-columns: 1fr; }
 }
 </style>
