@@ -26,7 +26,7 @@
       </div>
     </div>
 
-    <!-- 衝突警告 Banner (若有跨場地重複排班) -->
+    <!-- 衝突警告 Banner -->
     <div v-if="conflictList.length > 0" class="card conflict-banner mb-6 p-4">
       <div class="flex items-start gap-3">
         <span class="text-2xl">⚠️</span>
@@ -41,7 +41,7 @@
       </div>
     </div>
 
-    <!-- 1. 場地與月份選擇控制卡片 (選項文字簡化) -->
+    <!-- 1. 場地與月份選擇控制卡片 -->
     <div class="card mb-6 p-4">
       <div class="grid grid-cols-3 gap-4 items-end">
         <div class="form-group mb-0">
@@ -64,23 +64,29 @@
         </div>
       </div>
 
-      <!-- 快速過濾列 -->
+      <!-- 快速過濾列 (支援自由選擇任何層級之組織架構) -->
       <div class="flex items-center justify-between border-t mt-4 pt-3 flex-wrap gap-3">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs font-bold text-gray-600">快速過濾志工：</span>
-          <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 220px;">
-            <option value="">-- 全部組織組別 --</option>
-            <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">
-              {{ orgsStore.getOrgPath(org.id) || org.name }}
+        <div class="flex items-center gap-2 flex-wrap flex-1">
+          <span class="text-xs font-bold text-gray-700 whitespace-nowrap">🔍 快速過濾志工：</span>
+          <!-- 組織階層自由選擇下拉 -->
+          <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 280px;">
+            <option value="">-- 全部組織架構 (不限) --</option>
+            <option v-for="opt in formattedOrgOptions" :key="opt.id" :value="opt.id">
+              {{ opt.label }}
             </option>
           </select>
+
+          <!-- 姓名搜尋 -->
           <input 
             v-model="searchKeyword" 
             type="text" 
             class="form-input form-input-sm" 
-            placeholder="搜尋姓名或電話..." 
-            style="max-width: 160px;"
+            placeholder="搜尋姓名/電話/法號..." 
+            style="max-width: 180px;"
           />
+          <button v-if="filterOrgId || searchKeyword" class="btn btn-xs btn-outline" @click="clearFilters">
+            重設篩選
+          </button>
         </div>
       </div>
     </div>
@@ -144,6 +150,7 @@
                     @change="onSlotMemberChange(slot)"
                   >
                     <option value="">-- 未指派 --</option>
+                    <!-- 若已排定但不在目前過濾範圍內，顯示於首位 -->
                     <option 
                       v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
                       :value="slot.memberId"
@@ -200,7 +207,7 @@ const loading = ref(false);
 const saving = ref(false);
 
 const matrixList = ref([]);
-const otherLocationDuties = ref([]); // 另一個場地的排班資料，用於跨場地衝突檢測
+const otherLocationDuties = ref([]);
 const allMembers = ref([]);
 const maleMembers = ref([]);
 const femaleMembers = ref([]);
@@ -214,12 +221,31 @@ const assignedTotalCount = computed(() => {
   return matrixList.value.filter(s => !!s.memberName).length;
 });
 
-// 跨場地與同日排班衝突檢測演算法
+// 格式化組織選單選項 (樹狀層級清楚顯示)
+const formattedOrgOptions = computed(() => {
+  const options = [];
+  orgsStore.orgTree.forEach(heqi => {
+    options.push({ id: heqi.id, label: `🌸 ${heqi.name} (全體)` });
+    (heqi.children || []).forEach(huai => {
+      options.push({ id: huai.id, label: `　├ ${huai.name} (全體)` });
+      (huai.children || []).forEach(xieli => {
+        options.push({ id: xieli.id, label: `　│　└ ${xieli.name}` });
+      });
+    });
+  });
+  return options;
+});
+
+function clearFilters() {
+  filterOrgId.value = '';
+  searchKeyword.value = '';
+}
+
+// 跨場地與同日排班衝突檢測
 const conflictList = computed(() => {
   const conflicts = [];
   const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
 
-  // 1. 建立另一場地的日期志工對照表 (日期 -> 志工名稱 -> 排班資料)
   const otherMap = {};
   otherLocationDuties.value.forEach(d => {
     if (d.memberName && d.dutyDate) {
@@ -228,7 +254,6 @@ const conflictList = computed(() => {
     }
   });
 
-  // 2. 檢查當前編輯矩陣中是否有同日重複排入另一場地
   matrixList.value.forEach(slot => {
     if (slot.memberName && slot.dutyDate) {
       if (otherMap[slot.dutyDate] && otherMap[slot.dutyDate][slot.memberName]) {
@@ -266,17 +291,19 @@ function getMemberOrgPathText(memberId) {
   return path ? `(${path})` : '';
 }
 
-// 過濾志工清單
+// 過濾志工清單（支援任一組織層級遞迴匹配與關鍵字搜尋）
 function getFilteredVolunteers(gender) {
   const baseList = gender === '男' ? maleMembers.value : femaleMembers.value;
+  const allowedOrgIds = filterOrgId.value ? orgsStore.getDescendantOrgIds(filterOrgId.value) : null;
   return baseList.filter(m => {
-    if (filterOrgId.value && m.orgId !== filterOrgId.value) return false;
+    if (allowedOrgIds && !allowedOrgIds.includes(m.orgId)) return false;
     if (searchKeyword.value) {
       const kw = searchKeyword.value.toLowerCase();
       const matchName = (m.name || '').toLowerCase().includes(kw);
       const matchPhone = (m.phone || '').includes(kw);
       const matchCode = (m.volunteerCode || '').includes(kw);
-      if (!matchName && !matchPhone && !matchCode) return false;
+      const matchDharma = (m.dharmaName || '').toLowerCase().includes(kw);
+      if (!matchName && !matchPhone && !matchCode && !matchDharma) return false;
     }
     return true;
   });
@@ -342,7 +369,7 @@ function getShiftNormalizedKey(shiftId, label, gender) {
   return shiftId || label || gender;
 }
 
-// 初始化排班矩陣並同時載入另一個場地的資料進行衝突防呆
+// 初始化排班矩陣
 async function initMatrix() {
   loading.value = true;
   try {
@@ -478,7 +505,9 @@ onMounted(async () => {
   min-height: 36px;
   font-size: 0.85rem;
 }
+.btn-xs { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
 .ml-2 { margin-left: 0.5rem; }
+.whitespace-nowrap { white-space: nowrap; }
 @media (max-width: 992px) {
   .grid-cols-3 { grid-template-columns: 1fr; }
   .grid-cols-2 { grid-template-columns: 1fr; }
