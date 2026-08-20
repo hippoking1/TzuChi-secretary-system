@@ -15,25 +15,38 @@
       </div>
 
       <form @submit.prevent="handleSubmit">
-        <!-- 志工核身模式 -->
+        <!-- 慈濟志工核身模式 (改依組織架構與姓名核對) -->
         <div v-if="mode === 'volunteer'">
           <div class="form-group">
-            <label class="form-label required">志工姓名</label>
-            <input v-model="form.name" type="text" class="form-input" placeholder="請輸入姓名" required />
+            <label class="form-label required">1. 選擇所屬組織 (和氣 / 互愛 / 協力)</label>
+            <OrgCascader v-model="selectedOrgId" @change="onOrgChange" />
           </div>
 
           <div class="form-group">
-            <label class="form-label required">手機末四碼 (用於核對名冊)</label>
-            <input v-model="form.phoneLast4" type="text" maxlength="4" class="form-input" placeholder="例如：5678" required />
+            <label class="form-label required">2. 選擇志工姓名</label>
+            <select v-model="selectedMemberId" class="form-select" :disabled="!selectedOrgId" required @change="onMemberChange">
+              <option value="">-- 請選擇您的姓名 --</option>
+              <option v-for="m in volunteerOptions" :key="m.id" :value="m.id">
+                {{ m.name }} {{ m.dharmaName ? '(法號: ' + m.dharmaName + ')' : '' }} {{ m.volunteerCode ? '[' + m.volunteerCode + ']' : '' }}
+              </option>
+            </select>
+            <p v-if="selectedOrgId && volunteerOptions.length === 0" class="text-xs text-muted mt-1">
+              此組織目前無建檔志工，若找不到姓名可手動輸入下方或切換一般民眾報名。
+            </p>
+          </div>
+
+          <div v-if="selectedMember" class="card bg-blue-50 p-3 mb-4 border border-blue-200">
+            <div class="text-xs text-primary font-bold">✓ 志工身份確認：</div>
+            <div class="text-sm text-gray-800 mt-1">
+              <strong>{{ selectedMember.name }}</strong>
+              <span v-if="selectedMember.dharmaName" class="ml-1">（法號：{{ selectedMember.dharmaName }}）</span>
+              <span class="text-muted ml-2">所屬：{{ selectedMemberOrgPath }}</span>
+            </div>
           </div>
 
           <div class="form-group">
-            <button type="button" class="btn btn-sm btn-outline-primary" @click="checkVolunteer">
-              🔍 快速核對志工身份
-            </button>
-            <span v-if="matchedMember" class="badge badge-success ml-2 mt-2">
-              ✓ 已核對：{{ matchedMember.name }} ({{ matchedMemberOrgPath || '慈濟志工' }})
-            </span>
+            <label class="form-label">聯絡電話 (選填)</label>
+            <input v-model="form.phone" type="tel" class="form-input" placeholder="可填寫手機號碼以便接收重要異動通知" />
           </div>
         </div>
 
@@ -76,7 +89,7 @@
           <textarea v-model="form.note" class="form-textarea" placeholder="若有交通、無障礙或任何需要協助之處請填寫"></textarea>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="submitting">
+        <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="submitting || (mode === 'volunteer' && !selectedMemberId)">
           {{ submitting ? '提交報名中...' : '確認送出報名' }}
         </button>
       </form>
@@ -85,12 +98,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useEventsStore } from '@/stores/events';
 import { useRegistrationsStore } from '@/stores/registrations';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
+import OrgCascader from '@/components/ui/OrgCascader.vue';
 import { useToast } from '@/composables/useToast';
 
 const route = useRoute();
@@ -104,12 +118,22 @@ const toast = useToast();
 const event = ref(null);
 const mode = ref('volunteer');
 const submitting = ref(false);
-const matchedMember = ref(null);
-const matchedMemberOrgPath = ref('');
+
+const selectedOrgId = ref('');
+const selectedMemberId = ref('');
+const volunteerOptions = ref([]);
+
+const selectedMember = computed(() => {
+  return volunteerOptions.value.find(m => m.id === selectedMemberId.value) || null;
+});
+
+const selectedMemberOrgPath = computed(() => {
+  if (!selectedMember.value || !selectedMember.value.orgId) return '';
+  return orgsStore.getOrgPath(selectedMember.value.orgId);
+});
 
 const form = ref({
-  name: '',
-  phoneLast4: '',
+  phone: '',
   guestName: '',
   guestPhone: '',
   sessionId: '',
@@ -117,34 +141,37 @@ const form = ref({
   note: ''
 });
 
-async function checkVolunteer() {
-  if (!form.value.name || !form.value.phoneLast4) {
-    toast.warning('請輸入姓名與手機末四碼');
+async function onOrgChange(orgId) {
+  selectedMemberId.value = '';
+  if (!orgId) {
+    volunteerOptions.value = [];
     return;
   }
-  const members = await membersStore.fetchMembers({ search: form.value.name });
-  const found = members.find(m => (m.phone || '').endsWith(form.value.phoneLast4));
-  if (found) {
-    matchedMember.value = found;
-    matchedMemberOrgPath.value = orgsStore.getOrgPath(found.orgId);
-    toast.success('志工身份核對成功！');
-  } else {
-    toast.error('未在名冊中找到相符志工，您仍可以一般民眾身份報名。');
+  const orgIds = orgsStore.getDescendantOrgIds(orgId);
+  volunteerOptions.value = await membersStore.fetchMembers({ orgIds });
+}
+
+function onMemberChange() {
+  if (selectedMember.value && selectedMember.value.phone) {
+    form.value.phone = selectedMember.value.phone;
   }
 }
 
 async function handleSubmit() {
   submitting.value = true;
   try {
+    const isVol = mode.value === 'volunteer';
     const payload = {
       eventId: event.value.id,
       eventTitle: event.value.title,
       mode: mode.value,
-      memberId: matchedMember.value?.id || null,
-      name: mode.value === 'volunteer' ? form.value.name : form.value.guestName,
-      phone: mode.value === 'volunteer' ? (matchedMember.value?.phone || form.value.phoneLast4) : form.value.guestPhone,
+      memberId: isVol ? selectedMember.value?.id : null,
+      name: isVol ? selectedMember.value?.name : form.value.guestName,
+      phone: isVol ? (form.value.phone || selectedMember.value?.phone || '') : form.value.guestPhone,
       guestName: form.value.guestName,
       guestPhone: form.value.guestPhone,
+      orgId: isVol ? selectedMember.value?.orgId : '',
+      orgPath: isVol ? selectedMemberOrgPath.value : '',
       sessionId: form.value.sessionId,
       mealType: form.value.mealType,
       note: form.value.note
@@ -162,6 +189,7 @@ async function handleSubmit() {
 
 onMounted(async () => {
   const eventId = route.params.id;
+  await orgsStore.fetchOrgs();
   event.value = await eventsStore.fetchEventById(eventId);
 });
 </script>
@@ -170,5 +198,8 @@ onMounted(async () => {
 .max-w-xl { max-width: 600px; }
 .mx-auto { margin-left: auto; margin-right: auto; }
 .btn-block { width: 100%; }
+.bg-blue-50 { background-color: #eff6ff; }
+.border-blue-200 { border-color: #bfdbfe; }
+.ml-1 { margin-left: 0.25rem; }
 .ml-2 { margin-left: 0.5rem; }
 </style>

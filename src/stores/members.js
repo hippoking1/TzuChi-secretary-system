@@ -14,10 +14,14 @@ export const useMembersStore = defineStore('members', () => {
       if (filters.gender) {
         constraints.push(where('gender', '==', filters.gender));
       }
-      if (filters.orgId) {
-        constraints.push(where('orgId', '==', filters.orgId));
-      }
       let list = await getCollectionDocs('members', constraints);
+
+      if (filters.orgIds && Array.isArray(filters.orgIds) && filters.orgIds.length > 0) {
+        list = list.filter(m => filters.orgIds.includes(m.orgId));
+      } else if (filters.orgId) {
+        list = list.filter(m => m.orgId === filters.orgId);
+      }
+
       if (filters.search) {
         const keyword = filters.search.toLowerCase();
         list = list.filter(m => 

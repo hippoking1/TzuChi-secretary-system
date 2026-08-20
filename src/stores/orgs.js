@@ -36,6 +36,21 @@ export const useOrgsStore = defineStore('orgs', () => {
     }
   }
 
+  function getDescendantOrgIds(orgId) {
+    if (!orgId) return [];
+    const result = [orgId];
+    const queue = [orgId];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const children = orgs.value.filter(o => o.parentId === current);
+      children.forEach(c => {
+        result.push(c.id);
+        queue.push(c.id);
+      });
+    }
+    return result;
+  }
+
   function getOrgPath(orgId) {
     if (!orgId) return '';
     const map = {};
@@ -72,6 +87,7 @@ export const useOrgsStore = defineStore('orgs', () => {
     loading,
     fetchOrgs,
     getOrgPath,
+    getDescendantOrgIds,
     saveOrg,
     deleteOrg
   };

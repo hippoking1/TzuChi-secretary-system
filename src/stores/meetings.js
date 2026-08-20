@@ -42,11 +42,16 @@ export const useMeetingsStore = defineStore('meetings', () => {
     }
   }
 
+  async function deleteMeeting(id) {
+    await deleteDocById('meetings', id);
+    meetings.value = meetings.value.filter(m => m.id !== id);
+  }
+
   async function addParticipants(meetingId, memberList) {
     const formatted = memberList.map(m => ({
       memberId: m.id,
       memberName: m.name,
-      memberPhone: m.phone,
+      memberPhone: m.phone || '',
       attendance: '未回覆',
       note: ''
     }));
@@ -72,6 +77,7 @@ export const useMeetingsStore = defineStore('meetings', () => {
     fetchMeetings,
     fetchMeetingById,
     saveMeeting,
+    deleteMeeting,
     addParticipants,
     removeParticipant,
     updateAttendance
