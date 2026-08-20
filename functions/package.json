@@ -9,7 +9,7 @@
     "googleapis": "^140.0.1"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "private": true
 }
