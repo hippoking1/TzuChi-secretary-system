@@ -7,16 +7,16 @@ export const useDutiesStore = defineStore('duties', () => {
   const duties = ref([]);
   const loading = ref(false);
 
-  // 道場班次時段常數定義
+  // 道場班次時段常數定義 (相容歷史 Sheets ID 與標準標籤)
   const DUTY_SHIFTS_CONFIG = {
     '東港聯絡處': [
-      { shiftId: 'donggang_female', label: '女眾班', startTime: '08:00', endTime: '12:00', gender: '女', quota: 2 },
-      { shiftId: 'donggang_male', label: '男眾班', startTime: '08:00', endTime: '12:00', gender: '男', quota: 1 }
+      { shiftId: 'DG_F', label: '女眾班', startTime: '08:00', endTime: '13:00', gender: '女', quota: 2 },
+      { shiftId: 'DG_M', label: '男眾班', startTime: '13:00', endTime: '17:00', gender: '男', quota: 1 }
     ],
     '宜蘭園區': [
-      { shiftId: 'yilan_female', label: '女眾班', startTime: '08:30', endTime: '16:30', gender: '女', quota: 4 },
-      { shiftId: 'yilan_male_1', label: '男眾一班', startTime: '08:30', endTime: '16:30', gender: '男', quota: 2 },
-      { shiftId: 'yilan_male_2', label: '男眾二班', startTime: '08:30', endTime: '16:30', gender: '男', quota: 2 }
+      { shiftId: 'YL_F', label: '女眾班', startTime: '08:00', endTime: '16:00', gender: '女', quota: 4 },
+      { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', gender: '男', quota: 2 },
+      { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', gender: '男', quota: 2 }
     ]
   };
 
@@ -63,6 +63,8 @@ export const useDutiesStore = defineStore('duties', () => {
             dutyDate: dateStr,
             shiftId: conf.shiftId,
             shiftLabel: conf.label,
+            shiftStart: conf.startTime,
+            shiftEnd: conf.endTime,
             slotIndex: slot,
             genderType: conf.gender,
             isWeekend,

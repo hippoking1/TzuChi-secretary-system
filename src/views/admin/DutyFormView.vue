@@ -4,12 +4,15 @@
     <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
       <div>
         <h1 class="text-2xl font-bold">月度排班維護矩陣</h1>
-        <p class="text-sm text-muted">智慧排班：自動載入現有班表、組織分組篩選、負擔次數統計與一鍵快速指派</p>
+        <p class="text-sm text-muted">
+          已排班總數：<strong class="text-primary">{{ assignedTotalCount }} / {{ matrixList.length }} 席</strong>
+          （載入資料庫現有排班，支援組織組別篩選與即時搜尋）
+        </p>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
         <select v-model="selectedLocation" class="form-select" style="min-width: 140px;" @change="initMatrix">
-          <option value="宜蘭園區">宜蘭園區</option>
           <option value="東港聯絡處">東港聯絡處</option>
+          <option value="宜蘭園區">宜蘭園區</option>
         </select>
         <input v-model="selectedMonth" type="month" class="form-input" style="min-width: 150px;" @change="initMatrix" />
         <button class="btn btn-primary" :disabled="saving" @click="handleSave">
@@ -22,9 +25,9 @@
     <div class="card mb-6 p-4">
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div class="flex items-center gap-3 flex-wrap">
-          <span class="text-sm font-bold text-gray-700">🔍 快速過濾志工：</span>
+          <span class="text-sm font-bold text-gray-700">🔍 志工篩選：</span>
           <!-- 協力組織過濾 -->
-          <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 200px;">
+          <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 220px;">
             <option value="">-- 全部組織組別 --</option>
             <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">
               {{ orgsStore.getOrgPath(org.id) || org.name }}
@@ -35,7 +38,7 @@
             v-model="searchKeyword" 
             type="text" 
             class="form-input form-input-sm" 
-            placeholder="搜尋志工姓名或電話..." 
+            placeholder="搜尋志工姓名/電話..." 
             style="max-width: 180px;"
           />
         </div>
@@ -64,7 +67,7 @@
       <p class="text-muted">載入排班資料中...</p>
     </div>
 
-    <!-- 模式 A：按日分組卡片檢視 (推薦，操作最流暢直覺) -->
+    <!-- 模式 A：按日分組卡片檢視 (推薦) -->
     <div v-else-if="viewMode === 'daily'" class="grid grid-cols-2 gap-4">
       <div 
         v-for="group in groupedDays" 
@@ -79,8 +82,8 @@
               {{ group.dayOfWeek }}
             </span>
           </div>
-          <span class="text-xs text-muted">
-            已指派 {{ group.slots.filter(s => !!s.memberName).length }} / {{ group.slots.length }} 席
+          <span class="text-xs" :class="group.slots.every(s => !!s.memberName) ? 'text-green-600 font-bold' : 'text-muted'">
+            已排 {{ group.slots.filter(s => !!s.memberName).length }} / {{ group.slots.length }} 席
           </span>
         </div>
 
@@ -97,16 +100,23 @@
                 {{ slot.genderType }}眾
               </span>
               <span class="font-bold text-sm ml-1">{{ slot.shiftLabel }}</span>
-              <span class="text-xs text-muted ml-1">(席 {{ slot.slotIndex }})</span>
+              <span class="text-xs text-muted ml-1">(第 {{ slot.slotIndex }} 席)</span>
             </div>
 
-            <div class="slot-picker flex items-center gap-2 flex-1 justify-end" style="max-width: 280px;">
+            <div class="slot-picker flex items-center gap-2 flex-1 justify-end" style="max-width: 320px;">
               <select 
                 v-model="slot.memberId" 
                 class="form-select form-select-sm"
                 @change="onSlotMemberChange(slot)"
               >
                 <option value="">-- 未指派 --</option>
+                <!-- 若目前已指派者不在過濾名單內，強制顯示在首位 -->
+                <option 
+                  v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
+                  :value="slot.memberId"
+                >
+                  ★ {{ slot.memberName }} [已排定]
+                </option>
                 <option 
                   v-for="m in getFilteredVolunteers(slot.genderType)" 
                   :key="m.id" 
@@ -116,7 +126,7 @@
                 </option>
               </select>
               <button 
-                v-if="slot.memberId" 
+                v-if="slot.memberId || slot.memberName" 
                 class="btn btn-sm btn-outline btn-clear" 
                 @click="clearSlot(slot)" 
                 title="清空此席位"
@@ -138,7 +148,7 @@
             <th>星期</th>
             <th>班次</th>
             <th>眾別</th>
-            <th style="min-width: 260px;">指派志工 (顯示本月累計值班數)</th>
+            <th style="min-width: 300px;">指派志工 (顯示本月累計值班數)</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -164,6 +174,12 @@
               >
                 <option value="">-- 未指派 --</option>
                 <option 
+                  v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
+                  :value="slot.memberId"
+                >
+                  ★ {{ slot.memberName }} [已排定]
+                </option>
+                <option 
                   v-for="m in getFilteredVolunteers(slot.genderType)" 
                   :key="m.id" 
                   :value="m.id"
@@ -173,7 +189,7 @@
               </select>
             </td>
             <td>
-              <button v-if="slot.memberId" class="btn btn-sm btn-outline" @click="clearSlot(slot)">清空</button>
+              <button v-if="slot.memberId || slot.memberName" class="btn btn-sm btn-outline" @click="clearSlot(slot)">清空</button>
             </td>
           </tr>
         </tbody>
@@ -194,15 +210,16 @@ const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();
 
-const selectedLocation = ref('宜蘭園區');
+const selectedLocation = ref('東港聯絡處');
 const selectedMonth = ref(new Date().toISOString().substring(0, 7));
-const viewMode = ref('daily'); // 'daily' or 'table'
+const viewMode = ref('daily');
 const filterOrgId = ref('');
 const searchKeyword = ref('');
 const loading = ref(false);
 const saving = ref(false);
 
 const matrixList = ref([]);
+const allMembers = ref([]);
 const maleMembers = ref([]);
 const femaleMembers = ref([]);
 
@@ -210,6 +227,10 @@ function getDayOfWeek(dateStr) {
   const days = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
   return days[new Date(dateStr).getDay()];
 }
+
+const assignedTotalCount = computed(() => {
+  return matrixList.value.filter(s => !!s.memberName).length;
+});
 
 // 過濾志工清單（支援組織、搜尋關鍵字）
 function getFilteredVolunteers(gender) {
@@ -227,7 +248,7 @@ function getFilteredVolunteers(gender) {
   });
 }
 
-// 計算志工本月已排班次數，輔助管理者公平分配
+// 計算志工本月已排班次數
 function getMemberShiftCount(memberName) {
   if (!memberName) return 0;
   return matrixList.value.filter(s => s.memberName === memberName).length;
@@ -235,8 +256,7 @@ function getMemberShiftCount(memberName) {
 
 // 變更志工指派
 function onSlotMemberChange(slot) {
-  const allList = slot.genderType === '男' ? maleMembers.value : femaleMembers.value;
-  const found = allList.find(m => m.id === slot.memberId);
+  const found = allMembers.value.find(m => m.id === slot.memberId);
   slot.memberName = found ? found.name : '';
 }
 
@@ -262,6 +282,16 @@ const groupedDays = computed(() => {
   return Object.values(map);
 });
 
+// 標準化班次鍵值輔助函式
+function getShiftNormalizedKey(shiftId, label, gender) {
+  if (shiftId === 'DG_F' || shiftId === 'donggang_female' || (label && label.includes('女') && gender === '女')) return 'female_1';
+  if (shiftId === 'DG_M' || shiftId === 'donggang_male' || (label && label.includes('男') && gender === '男')) return 'male_1';
+  if (shiftId === 'YL_F' || shiftId === 'yilan_female') return 'female_1';
+  if (shiftId === 'YL_M1' || shiftId === 'yilan_male_1' || label === '男眾一班' || label === '男眾班(一)') return 'male_1';
+  if (shiftId === 'YL_M2' || shiftId === 'yilan_male_2' || label === '男眾二班' || label === '男眾班(二)') return 'male_2';
+  return shiftId || label || gender;
+}
+
 // 初始化排班矩陣並精準綁定現有資料庫資料
 async function initMatrix() {
   loading.value = true;
@@ -270,22 +300,24 @@ async function initMatrix() {
     const template = dutiesStore.generateMonthlyTemplate(selectedLocation.value, year, month);
     const existing = await dutiesStore.fetchDutySchedule(selectedLocation.value, year, month);
 
-    // 依「日期 + 班次 ID」進行分組匹配
+    // 依「日期 + 標準化班次」進行分組
     const existingGrouped = {};
     existing.forEach(item => {
-      const key = `${item.dutyDate}_${item.shiftId}`;
+      const normKey = getShiftNormalizedKey(item.shiftId, item.shiftLabel, item.genderType);
+      const key = `${item.dutyDate}_${normKey}`;
       if (!existingGrouped[key]) existingGrouped[key] = [];
       existingGrouped[key].push(item);
     });
 
     // 建立所有志工名稱對應 Map (名稱 -> ID)
     const nameToMemberMap = {};
-    [...maleMembers.value, ...femaleMembers.value].forEach(m => {
-      nameToMemberMap[m.name] = m;
+    allMembers.value.forEach(m => {
+      if (m.name) nameToMemberMap[m.name] = m;
     });
 
     matrixList.value = template.map(t => {
-      const key = `${t.dutyDate}_${t.shiftId}`;
+      const normKey = getShiftNormalizedKey(t.shiftId, t.shiftLabel, t.genderType);
+      const key = `${t.dutyDate}_${normKey}`;
       const matchedItems = existingGrouped[key] || [];
       const existingItem = matchedItems[t.slotIndex - 1];
 
@@ -293,9 +325,11 @@ async function initMatrix() {
         let memberId = existingItem.memberId || '';
         const memberName = existingItem.memberName || '';
         
-        // 若只有 memberName 而 memberId 為空，自動由名冊反查填補 ID
-        if (!memberId && memberName && nameToMemberMap[memberName]) {
+        // 若只有 memberName，自動由名冊反查填補 ID
+        if (memberName && nameToMemberMap[memberName]) {
           memberId = nameToMemberMap[memberName].id;
+        } else if (!memberId && memberName) {
+          memberId = memberName; // fallback
         }
 
         return {
@@ -328,11 +362,14 @@ async function handleSave() {
 
 onMounted(async () => {
   loading.value = true;
-  await Promise.all([
-    membersStore.fetchMembers({ gender: '男' }).then(res => { maleMembers.value = res; }),
-    membersStore.fetchMembers({ gender: '女' }).then(res => { femaleMembers.value = res; }),
+  const [males, females] = await Promise.all([
+    membersStore.fetchMembers({ gender: '男' }),
+    membersStore.fetchMembers({ gender: '女' }),
     orgsStore.fetchOrgs()
   ]);
+  maleMembers.value = males;
+  femaleMembers.value = females;
+  allMembers.value = [...males, ...females];
   await initMatrix();
 });
 </script>
@@ -361,6 +398,7 @@ onMounted(async () => {
   min-height: 32px;
   font-size: 0.8rem;
 }
+.text-green-600 { color: #16a34a; }
 @media (max-width: 900px) {
   .grid-cols-2 { grid-template-columns: 1fr; }
 }
