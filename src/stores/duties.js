@@ -38,7 +38,8 @@ export const useDutiesStore = defineStore('duties', () => {
         .map(d => ({
           ...d,
           timeRange: d.timeRange || getShiftTimeRange(location, d.shiftId, d.shiftLabel)
-        }));
+        }))
+        .sort((a, b) => (a.dutyDate + a.id).localeCompare(b.dutyDate + b.id));
       return duties.value;
     } finally {
       loading.value = false;
@@ -48,7 +49,24 @@ export const useDutiesStore = defineStore('duties', () => {
   async function saveMonthlyDuties(location, year, month, dutyList) {
     loading.value = true;
     try {
-      await batchWriteItems('dutyShifts', dutyList);
+      const cleanedItems = dutyList.map(item => ({
+        id: item.id || `${location}_${item.dutyDate}_${item.shiftId}_${item.slotIndex}`,
+        location: location,
+        dutyDate: item.dutyDate,
+        shiftId: item.shiftId,
+        shiftLabel: item.shiftLabel,
+        shiftStart: item.shiftStart || '',
+        shiftEnd: item.shiftEnd || '',
+        timeRange: item.timeRange || getShiftTimeRange(location, item.shiftId, item.shiftLabel),
+        slotIndex: item.slotIndex,
+        genderType: item.genderType,
+        isWeekend: item.isWeekend || false,
+        memberId: item.memberId || '',
+        memberName: item.memberName || '',
+        status: item.memberName ? '已排班' : '未指派'
+      }));
+
+      await batchWriteItems('dutyShifts', cleanedItems, 'set');
       await fetchDutySchedule(location, year, month);
     } finally {
       loading.value = false;
@@ -81,8 +99,7 @@ export const useDutiesStore = defineStore('duties', () => {
             genderType: conf.gender,
             isWeekend,
             memberId: '',
-            memberName: '',
-            orgPath: ''
+            memberName: ''
           });
         }
       });

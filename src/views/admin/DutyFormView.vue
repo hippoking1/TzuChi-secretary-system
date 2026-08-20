@@ -64,11 +64,10 @@
         </div>
       </div>
 
-      <!-- 快速過濾列 (支援自由選擇任何層級之組織架構) -->
+      <!-- 快速過濾列 -->
       <div class="flex items-center justify-between border-t mt-4 pt-3 flex-wrap gap-3">
         <div class="flex items-center gap-2 flex-wrap flex-1">
           <span class="text-xs font-bold text-gray-700 whitespace-nowrap">🔍 快速過濾志工：</span>
-          <!-- 組織階層自由選擇下拉 -->
           <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 280px;">
             <option value="">-- 全部組織架構 (不限) --</option>
             <option v-for="opt in formattedOrgOptions" :key="opt.id" :value="opt.id">
@@ -76,7 +75,6 @@
             </option>
           </select>
 
-          <!-- 姓名搜尋 -->
           <input 
             v-model="searchKeyword" 
             type="text" 
@@ -150,7 +148,7 @@
                     @change="onSlotMemberChange(slot)"
                   >
                     <option value="">-- 未指派 --</option>
-                    <!-- 若已排定但不在目前過濾範圍內，顯示於首位 -->
+                    <!-- 若已指派志工不在目前過濾條件中，固定列於首位 -->
                     <option 
                       v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
                       :value="slot.memberId"
@@ -221,7 +219,6 @@ const assignedTotalCount = computed(() => {
   return matrixList.value.filter(s => !!s.memberName).length;
 });
 
-// 格式化組織選單選項 (樹狀層級清楚顯示)
 const formattedOrgOptions = computed(() => {
   const options = [];
   orgsStore.orgTree.forEach(heqi => {
@@ -241,7 +238,6 @@ function clearFilters() {
   searchKeyword.value = '';
 }
 
-// 跨場地與同日排班衝突檢測
 const conflictList = computed(() => {
   const conflicts = [];
   const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
@@ -291,7 +287,6 @@ function getMemberOrgPathText(memberId) {
   return path ? `(${path})` : '';
 }
 
-// 過濾志工清單（支援任一組織層級遞迴匹配與關鍵字搜尋）
 function getFilteredVolunteers(gender) {
   const baseList = gender === '男' ? maleMembers.value : femaleMembers.value;
   const allowedOrgIds = filterOrgId.value ? orgsStore.getDescendantOrgIds(filterOrgId.value) : null;
@@ -317,16 +312,13 @@ function getMemberShiftCount(memberName) {
 function onSlotMemberChange(slot) {
   const found = allMembers.value.find(m => m.id === slot.memberId);
   slot.memberName = found ? found.name : '';
-  slot.orgPath = found ? orgsStore.getOrgPath(found.orgId) : '';
 }
 
 function clearSlot(slot) {
   slot.memberId = '';
   slot.memberName = '';
-  slot.orgPath = '';
 }
 
-// 按日分組與班次分組
 const groupedDays = computed(() => {
   const daysMap = {};
   matrixList.value.forEach(slot => {
@@ -360,16 +352,7 @@ const groupedDays = computed(() => {
   }));
 });
 
-function getShiftNormalizedKey(shiftId, label, gender) {
-  if (shiftId === 'DG_F' || shiftId === 'donggang_female' || (label && label.includes('女') && gender === '女')) return 'female_1';
-  if (shiftId === 'DG_M' || shiftId === 'donggang_male' || (label && label.includes('男') && gender === '男')) return 'male_1';
-  if (shiftId === 'YL_F' || shiftId === 'yilan_female') return 'female_1';
-  if (shiftId === 'YL_M1' || shiftId === 'yilan_male_1' || label === '男眾一班' || label === '男眾班(一)') return 'male_1';
-  if (shiftId === 'YL_M2' || shiftId === 'yilan_male_2' || label === '男眾二班' || label === '男眾班(二)') return 'male_2';
-  return shiftId || label || gender;
-}
-
-// 初始化排班矩陣
+// 初始化排班矩陣：精確以標準 Slot ID (例如 宜蘭園區_2026-08-26_YL_M1_1) 進行 1-to-1 匹配
 async function initMatrix() {
   loading.value = true;
   try {
@@ -384,12 +367,10 @@ async function initMatrix() {
 
     otherLocationDuties.value = otherExisting || [];
 
-    const existingGrouped = {};
+    // 以唯一 ID 建立對照表
+    const existingMap = {};
     existing.forEach(item => {
-      const normKey = getShiftNormalizedKey(item.shiftId, item.shiftLabel, item.genderType);
-      const key = `${item.dutyDate}_${normKey}`;
-      if (!existingGrouped[key]) existingGrouped[key] = [];
-      existingGrouped[key].push(item);
+      if (item.id) existingMap[item.id] = item;
     });
 
     const nameToMemberMap = {};
@@ -398,10 +379,7 @@ async function initMatrix() {
     });
 
     matrixList.value = template.map(t => {
-      const normKey = getShiftNormalizedKey(t.shiftId, t.shiftLabel, t.genderType);
-      const key = `${t.dutyDate}_${normKey}`;
-      const matchedItems = existingGrouped[key] || [];
-      const existingItem = matchedItems[t.slotIndex - 1];
+      const existingItem = existingMap[t.id];
 
       if (existingItem) {
         let memberId = existingItem.memberId || '';
@@ -415,7 +393,6 @@ async function initMatrix() {
 
         return {
           ...t,
-          docId: existingItem.id,
           memberId,
           memberName,
           timeRange: t.timeRange || existingItem.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, t.shiftId, t.shiftLabel)
@@ -439,7 +416,7 @@ async function handleSave() {
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     await dutiesStore.saveMonthlyDuties(selectedLocation.value, year, month, matrixList.value);
-    toast.success('全月排班表儲存成功（已通過跨場地衝突防呆驗證）！');
+    toast.success('全月排班表儲存成功（已同步更新至資料庫）！');
   } catch (err) {
     toast.error('儲存失敗：' + err.message);
   } finally {
