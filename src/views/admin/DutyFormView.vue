@@ -6,27 +6,49 @@
         <h1 class="text-2xl font-bold">📝 編輯月度值班表</h1>
         <p class="text-sm text-muted">
           已排班進度：<strong class="text-primary">{{ assignedTotalCount }} / {{ matrixList.length }} 席</strong>
-          （包含完整值班時段、各班次配額人數與所屬組織路徑）
+          <span v-if="conflictList.length > 0" class="text-danger font-bold ml-2">
+            ⚠️ 發現 {{ conflictList.length }} 處跨場地/時段排班衝突！
+          </span>
         </p>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
         <router-link to="/admin/duty-schedule" class="btn btn-outline">
           ← 返回值班月曆
         </router-link>
-        <button class="btn btn-primary" :disabled="saving" @click="handleSave">
-          {{ saving ? '儲存中...' : '💾 儲存本月排班表' }}
+        <button 
+          class="btn btn-primary" 
+          :class="{ 'btn-danger': conflictList.length > 0 }"
+          :disabled="saving" 
+          @click="handleSave"
+        >
+          {{ saving ? '儲存中...' : (conflictList.length > 0 ? '⚠️ 存在衝突請先修正' : '💾 儲存本月排班表') }}
         </button>
       </div>
     </div>
 
-    <!-- 1. 場地與月份選擇控制卡片 -->
+    <!-- 衝突警告 Banner (若有跨場地重複排班) -->
+    <div v-if="conflictList.length > 0" class="card conflict-banner mb-6 p-4">
+      <div class="flex items-start gap-3">
+        <span class="text-2xl">⚠️</span>
+        <div class="flex-1">
+          <h4 class="font-bold text-danger mb-1">檢測到重複排班衝突（不可同一人在同日排在不同場地）：</h4>
+          <ul class="text-sm text-gray-700 pl-4 list-disc">
+            <li v-for="(c, idx) in conflictList" :key="idx" class="mb-1">
+              <strong>{{ c.dateStr }}</strong>：志工「<strong class="text-primary">{{ c.memberName }}</strong>」已在【<strong>{{ c.otherLocation }}</strong> - {{ c.otherShiftLabel }}】排班，不可重複排入當前場地！
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. 場地與月份選擇控制卡片 (選項文字簡化) -->
     <div class="card mb-6 p-4">
       <div class="grid grid-cols-3 gap-4 items-end">
         <div class="form-group mb-0">
           <label class="form-label font-bold">1. 選擇場地：</label>
           <select v-model="selectedLocation" class="form-select" @change="initMatrix">
-            <option value="宜蘭園區">宜蘭園區 (女眾08:00~16:00, 男眾一班16:00~18:30, 男眾二班18:30~20:30)</option>
-            <option value="東港聯絡處">東港聯絡處 (女眾08:00~13:00, 男眾13:00~17:00)</option>
+            <option value="宜蘭園區">宜蘭園區</option>
+            <option value="東港聯絡處">東港聯絡處</option>
           </select>
         </div>
 
@@ -67,13 +89,13 @@
       <p class="text-muted text-lg">載入排班表與志工資料中...</p>
     </div>
 
-    <!-- 每日值班名單填寫 (經典版面結構) -->
+    <!-- 每日值班名單填寫 -->
     <div v-else class="days-container flex flex-col gap-6">
       <div 
         v-for="day in groupedDays" 
         :key="day.dateStr" 
         class="card day-block-card"
-        :class="{ 'weekend-highlight': day.isWeekend }"
+        :class="{ 'weekend-highlight': day.isWeekend, 'has-conflict': dayHasConflict(day.dateStr) }"
       >
         <!-- 日期標題欄 -->
         <div class="day-block-header flex items-center justify-between">
@@ -82,13 +104,16 @@
             <span class="badge" :class="day.isWeekend ? 'badge-warning' : 'badge-gray'">
               {{ day.dayOfWeek }}
             </span>
+            <span v-if="dayHasConflict(day.dateStr)" class="badge badge-danger">
+              ⚠️ 此日期有衝突
+            </span>
           </div>
           <span class="text-xs text-muted">
             已排定 {{ day.slots.filter(s => !!s.memberName).length }} / {{ day.slots.length }} 席
           </span>
         </div>
 
-        <!-- 班次分區網格 (女眾班、男眾一班、男眾二班) -->
+        <!-- 班次分區網格 -->
         <div class="grid grid-cols-2 gap-4 mt-4">
           <div 
             v-for="shiftGroup in day.shiftGroups" 
@@ -96,41 +121,47 @@
             class="shift-group-box"
             :class="shiftGroup.genderType === '男' ? 'box-male' : 'box-female'"
           >
-            <!-- 班次標題 (包含完整時間與人數配額) -->
+            <!-- 班次標題 -->
             <div class="shift-group-title flex items-center justify-between mb-3">
               <span class="font-bold text-sm text-gray-800">
                 {{ shiftGroup.shiftLabel }} ({{ shiftGroup.timeRange }}) - {{ shiftGroup.genderType }}眾 ({{ shiftGroup.quota }}位)
               </span>
             </div>
 
-            <!-- 各個席位下拉選單 (支援 姓名 + 和氣/互愛/協力 完整路徑) -->
+            <!-- 各個席位下拉選單 -->
             <div class="slots-list flex flex-col gap-2">
               <div 
                 v-for="slot in shiftGroup.slots" 
                 :key="slot.id" 
                 class="slot-row flex items-center gap-2"
+                :class="{ 'slot-conflict': slotConflictInfo(slot) }"
               >
-                <select 
-                  v-model="slot.memberId" 
-                  class="form-select form-select-sm flex-1"
-                  @change="onSlotMemberChange(slot)"
-                >
-                  <option value="">-- 未指派 --</option>
-                  <!-- 若已排定但不在目前過濾範圍內，顯示於首位 -->
-                  <option 
-                    v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
-                    :value="slot.memberId"
+                <div class="flex-1">
+                  <select 
+                    v-model="slot.memberId" 
+                    class="form-select form-select-sm"
+                    :class="{ 'border-danger': slotConflictInfo(slot) }"
+                    @change="onSlotMemberChange(slot)"
                   >
-                    ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
-                  </option>
-                  <option 
-                    v-for="m in getFilteredVolunteers(slot.genderType)" 
-                    :key="m.id" 
-                    :value="m.id"
-                  >
-                    {{ m.name }} {{ getMemberOrgPathText(m.id) }} [本月: {{ getMemberShiftCount(m.name) }}班]
-                  </option>
-                </select>
+                    <option value="">-- 未指派 --</option>
+                    <option 
+                      v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
+                      :value="slot.memberId"
+                    >
+                      ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
+                    </option>
+                    <option 
+                      v-for="m in getFilteredVolunteers(slot.genderType)" 
+                      :key="m.id" 
+                      :value="m.id"
+                    >
+                      {{ m.name }} {{ getMemberOrgPathText(m.id) }} [本月: {{ getMemberShiftCount(m.name) }}班]
+                    </option>
+                  </select>
+                  <span v-if="slotConflictInfo(slot)" class="text-xs text-danger font-bold block mt-1">
+                    ⚠️ {{ slotConflictInfo(slot) }}
+                  </span>
+                </div>
 
                 <button 
                   v-if="slot.memberId || slot.memberName" 
@@ -169,6 +200,7 @@ const loading = ref(false);
 const saving = ref(false);
 
 const matrixList = ref([]);
+const otherLocationDuties = ref([]); // 另一個場地的排班資料，用於跨場地衝突檢測
 const allMembers = ref([]);
 const maleMembers = ref([]);
 const femaleMembers = ref([]);
@@ -182,6 +214,50 @@ const assignedTotalCount = computed(() => {
   return matrixList.value.filter(s => !!s.memberName).length;
 });
 
+// 跨場地與同日排班衝突檢測演算法
+const conflictList = computed(() => {
+  const conflicts = [];
+  const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
+
+  // 1. 建立另一場地的日期志工對照表 (日期 -> 志工名稱 -> 排班資料)
+  const otherMap = {};
+  otherLocationDuties.value.forEach(d => {
+    if (d.memberName && d.dutyDate) {
+      if (!otherMap[d.dutyDate]) otherMap[d.dutyDate] = {};
+      otherMap[d.dutyDate][d.memberName] = d;
+    }
+  });
+
+  // 2. 檢查當前編輯矩陣中是否有同日重複排入另一場地
+  matrixList.value.forEach(slot => {
+    if (slot.memberName && slot.dutyDate) {
+      if (otherMap[slot.dutyDate] && otherMap[slot.dutyDate][slot.memberName]) {
+        const otherShift = otherMap[slot.dutyDate][slot.memberName];
+        conflicts.push({
+          dateStr: slot.dutyDate,
+          memberName: slot.memberName,
+          slotId: slot.id,
+          currentShiftLabel: slot.shiftLabel,
+          otherLocation: otherLocationName,
+          otherShiftLabel: otherShift.shiftLabel || '值班'
+        });
+      }
+    }
+  });
+
+  return conflicts;
+});
+
+function dayHasConflict(dateStr) {
+  return conflictList.value.some(c => c.dateStr === dateStr);
+}
+
+function slotConflictInfo(slot) {
+  const found = conflictList.value.find(c => c.slotId === slot.id);
+  if (!found) return '';
+  return `已在【${found.otherLocation} - ${found.otherShiftLabel}】排班`;
+}
+
 function getMemberOrgPathText(memberId) {
   if (!memberId) return '';
   const m = allMembers.value.find(x => x.id === memberId);
@@ -190,7 +266,7 @@ function getMemberOrgPathText(memberId) {
   return path ? `(${path})` : '';
 }
 
-// 過濾志工清單（支援組織、搜尋關鍵字）
+// 過濾志工清單
 function getFilteredVolunteers(gender) {
   const baseList = gender === '男' ? maleMembers.value : femaleMembers.value;
   return baseList.filter(m => {
@@ -223,7 +299,7 @@ function clearSlot(slot) {
   slot.orgPath = '';
 }
 
-// 按日分組與班次分組（重構為舊版清楚排版）
+// 按日分組與班次分組
 const groupedDays = computed(() => {
   const daysMap = {};
   matrixList.value.forEach(slot => {
@@ -238,7 +314,6 @@ const groupedDays = computed(() => {
     }
     daysMap[slot.dutyDate].slots.push(slot);
 
-    // 依班次 shiftId 分組
     if (!daysMap[slot.dutyDate].shiftGroupsMap[slot.shiftId]) {
       daysMap[slot.dutyDate].shiftGroupsMap[slot.shiftId] = {
         shiftId: slot.shiftId,
@@ -267,13 +342,20 @@ function getShiftNormalizedKey(shiftId, label, gender) {
   return shiftId || label || gender;
 }
 
-// 初始化排班矩陣並精準綁定現有資料庫資料
+// 初始化排班矩陣並同時載入另一個場地的資料進行衝突防呆
 async function initMatrix() {
   loading.value = true;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
-    const template = dutiesStore.generateMonthlyTemplate(selectedLocation.value, year, month);
-    const existing = await dutiesStore.fetchDutySchedule(selectedLocation.value, year, month);
+    const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
+
+    const [template, existing, otherExisting] = await Promise.all([
+      Promise.resolve(dutiesStore.generateMonthlyTemplate(selectedLocation.value, year, month)),
+      dutiesStore.fetchDutySchedule(selectedLocation.value, year, month),
+      dutiesStore.fetchDutySchedule(otherLocationName, year, month)
+    ]);
+
+    otherLocationDuties.value = otherExisting || [];
 
     const existingGrouped = {};
     existing.forEach(item => {
@@ -321,11 +403,16 @@ async function initMatrix() {
 }
 
 async function handleSave() {
+  if (conflictList.value.length > 0) {
+    alert(`⚠️ 排班衝突未解決！\n共有 ${conflictList.value.length} 處跨場地重複排班衝突，請先修正衝突席位再進行儲存。`);
+    return;
+  }
+
   saving.value = true;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     await dutiesStore.saveMonthlyDuties(selectedLocation.value, year, month, matrixList.value);
-    toast.success('全月排班表儲存成功！');
+    toast.success('全月排班表儲存成功（已通過跨場地衝突防呆驗證）！');
   } catch (err) {
     toast.error('儲存失敗：' + err.message);
   } finally {
@@ -361,6 +448,15 @@ onMounted(async () => {
 .weekend-highlight {
   border-left: 5px solid var(--warning);
 }
+.has-conflict {
+  border: 2px solid var(--danger) !important;
+  background: #fef2f2;
+}
+.conflict-banner {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-left: 5px solid var(--danger);
+}
 .day-block-header {
   border-bottom: 1px solid var(--gray-200);
   padding-bottom: 0.75rem;
@@ -373,11 +469,16 @@ onMounted(async () => {
 }
 .box-female { border-top: 3px solid var(--accent-500); }
 .box-male { border-top: 3px solid var(--primary-500); }
+.border-danger {
+  border-color: var(--danger) !important;
+  background-color: #fff1f2 !important;
+}
 .btn-clear {
   padding: 0.25rem 0.5rem;
   min-height: 36px;
   font-size: 0.85rem;
 }
+.ml-2 { margin-left: 0.5rem; }
 @media (max-width: 992px) {
   .grid-cols-3 { grid-template-columns: 1fr; }
   .grid-cols-2 { grid-template-columns: 1fr; }
