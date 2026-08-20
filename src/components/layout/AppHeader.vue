@@ -4,7 +4,7 @@
       <router-link to="/" class="logo-group">
         <span class="logo-symbol">慈</span>
         <div class="logo-text">
-          <span class="logo-title">慈濟活動報名系統</span>
+          <span class="logo-title">慈濟小祕書系統</span>
           <span class="logo-subtitle">社區志工與道場服務平台</span>
         </div>
       </router-link>

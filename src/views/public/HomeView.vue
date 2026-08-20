@@ -3,8 +3,8 @@
     <!-- Hero Banner -->
     <section class="hero-section text-center">
       <div class="container">
-        <h1 class="hero-title">慈濟活動報名與道場服務平台</h1>
-        <p class="hero-desc">凝聚善心，步步踏實。歡迎志工大德與社會大眾共同參與各項志業活動。</p>
+        <h1 class="hero-title">慈濟小祕書系統</h1>
+        <p class="hero-desc">凝聚善心，步步踏實。社區志工排班、活動報名與會議服務平台。</p>
         
         <div class="quick-nav-cards grid grid-cols-3 gap-4 mt-6">
           <router-link to="/my" class="quick-card card-hover">

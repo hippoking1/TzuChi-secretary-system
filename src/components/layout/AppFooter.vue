@@ -2,7 +2,7 @@
   <footer class="app-footer">
     <div class="container text-center">
       <p class="slogan">「願人心淨化，社會祥和，天下無災無難」</p>
-      <p class="copyright">佛教慈濟慈善事業基金會 © {{ new Date().getFullYear() }} 活動報名與志工系統 2.0</p>
+      <p class="copyright">佛教慈濟慈善事業基金會 © {{ new Date().getFullYear() }} 慈濟小祕書系統 2.0</p>
     </div>
   </footer>
 </template>

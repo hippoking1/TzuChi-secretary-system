@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico'],
       manifest: {
-        name: '慈濟活動報名與志工系統',
-        short_name: '慈濟報名',
-        description: '慈濟活動報名、道場值班與會議簽到管理系統',
+        name: '慈濟小祕書系統',
+        short_name: '慈濟小祕書',
+        description: '慈濟社區志工排班、活動報名與會議簽到管理系統',
         theme_color: '#1A5FAA',
         background_color: '#F8FAFC',
         display: 'standalone'
