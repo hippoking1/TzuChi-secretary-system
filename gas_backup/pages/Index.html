@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>慈濟活動報名系統 — 前台首頁</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <!-- Hero 區塊 (重設深藍高對比琉璃背景與金色線條) -->
+  <section style="background: linear-gradient(135deg, #134C8A 0%, #08294D 100%); color: #ffffff; padding: 52px 0; text-align: center; border-bottom: 3px solid var(--gold-400); box-shadow: 0 4px 12px rgba(8, 41, 77, 0.15);">
+    <div class="container">
+      <div style="display: inline-block; background: rgba(255,255,255,0.15); padding: 4px 16px; border-radius: 20px; font-size: 14px; margin-bottom: 12px; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2);">
+        🪷 靜思人文 ｜ 慈悲喜捨
+      </div>
+      <h1 style="color: #ffffff; font-size: 34px; margin-bottom: 16px; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">用愛鋪路 ｜ 以善導航</h1>
+      <p style="font-size: 18px; color: #E0EDFF; max-width: 640px; margin: 0 auto; line-height: 1.6; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">歡迎報名參與慈濟各項志工關懷、環保教育、慈善訪視與人文活動。</p>
+    </div>
+  </section>
+
+  <!-- 三大模組快捷列 -->
+  <section class="container" style="margin-top: -24px; margin-bottom: 24px; position: relative; z-index: 10;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+      <div onclick="filterCategory('全部')" class="card card-hover" style="cursor: pointer; padding: 20px; border-left: 4px solid var(--primary-500); display: flex; align-items: center; gap: 16px;">
+        <div style="font-size: 32px;">📅</div>
+        <div>
+          <h4 style="font-size: 18px; margin-bottom: 4px;">一般活動</h4>
+          <p style="font-size: 13px; color: var(--neutral-500);">瀏覽並線上報名一般志工活動</p>
+        </div>
+      </div>
+
+      <div onclick="navTo('duty-search')" class="card card-hover" style="cursor: pointer; padding: 20px; border-left: 4px solid var(--secondary-500); display: flex; align-items: center; gap: 16px;">
+        <div style="font-size: 32px;">🏛️</div>
+        <div>
+          <h4 style="font-size: 18px; margin-bottom: 4px;">道場值班查詢</h4>
+          <p style="font-size: 13px; color: var(--neutral-500);">多層選單查詢個人值班時段</p>
+        </div>
+      </div>
+
+      <div onclick="navTo('my')" class="card card-hover" style="cursor: pointer; padding: 20px; border-left: 4px solid var(--gold-500); display: flex; align-items: center; gap: 16px;">
+        <div style="font-size: 32px;">📋</div>
+        <div>
+          <h4 style="font-size: 18px; margin-bottom: 4px;">我的行程紀錄</h4>
+          <p style="font-size: 13px; color: var(--neutral-500);">查詢個人報名與會議/值班行程</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 分類篩選與活動列表 -->
+  <main class="container" style="margin-top: 24px; min-height: 500px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
+      <h2 style="font-size: 24px;">近期開放一般活動</h2>
+      <div id="category-chips" style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn btn-primary" onclick="filterCategory('全部')">全部活動</button>
+        <button class="btn btn-outline" onclick="filterCategory('慈善')">❤️ 慈善</button>
+        <button class="btn btn-outline" onclick="filterCategory('環保')">🌿 環保</button>
+        <button class="btn btn-outline" onclick="filterCategory('教育')">📚 教育</button>
+        <button class="btn btn-outline" onclick="filterCategory('醫療')">🏥 醫療</button>
+        <button class="btn btn-outline" onclick="filterCategory('人文')">🎨 人文</button>
+      </div>
+    </div>
+
+    <!-- 活動卡片 Grid -->
+    <div id="events-grid" class="grid grid-cols-3">
+      <!-- JavaScript 動態渲染 -->
+    </div>
+  </main>
+
+  <?!= include('partials/Footer') ?>
+
+  <script>
+    let currentCategory = '全部';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadEvents();
+    });
+
+    async function loadEvents() {
+      showLoading('正在載入活動名單...');
+      try {
+        const events = await api('getPublishedEvents', currentCategory);
+        renderEvents(events);
+      } catch (e) {
+        showToast('活動載入失敗，請重新整理頁面', 'error');
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function filterCategory(cat) {
+      currentCategory = cat;
+      loadEvents();
+    }
+
+    function renderEvents(events) {
+      const grid = document.getElementById('events-grid');
+      if (!events || events.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 48px; color: var(--neutral-500);">目前暫無開放報名之活動</div>';
+        return;
+      }
+
+      grid.innerHTML = events.map(e => {
+        const max = Number(e.maxParticipants) || 0;
+        const progressPercent = max > 0 ? Math.min(100, Math.round((e.confirmedCount / max) * 100)) : 0;
+        const isFull = max > 0 && e.confirmedCount >= max;
+
+        return `
+          <div class="card card-hover" style="display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span class="badge" style="background: var(--primary-50); color: var(--primary-600);">${e.category || '活動'}</span>
+                <span style="font-size: 14px; color: var(--neutral-500);">${e.organizer || ''}</span>
+              </div>
+              <h3 style="font-size: 20px; margin-bottom: 12px; line-height: 1.4;">${e.title}</h3>
+              <p style="color: var(--neutral-600); font-size: 14px; margin-bottom: 8px;">📍 ${e.location}</p>
+              <p style="color: var(--neutral-600); font-size: 14px; margin-bottom: 16px;">📅 截止：${e.registrationEnd ? e.registrationEnd.slice(0, 10) : ''}</p>
+            </div>
+            
+            <div>
+              <div style="margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px;">
+                  <span>已報名名額</span>
+                  <span>${e.confirmedCount} ${max > 0 ? '/ ' + max + ' 人' : '人'}</span>
+                </div>
+                ${max > 0 ? `
+                  <div style="width: 100%; height: 8px; background: var(--neutral-200); border-radius: 4px; overflow: hidden;">
+                    <div style="width: ${progressPercent}%; height: 100%; background: ${isFull ? 'var(--warning)' : 'var(--primary-500)'}; transition: width 0.3s;"></div>
+                  </div>
+                ` : ''}
+              </div>
+
+              <a href="javascript:void(0)" onclick="navTo('event', {id: '${e.id}'})" class="btn btn-primary btn-block">
+                ${isFull ? '加入候補名單' : '查看詳情與報名'}
+              </a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  </script>
+</body>
+</html>

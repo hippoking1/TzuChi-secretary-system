@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>編輯月度值班表 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px; max-width: 1000px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="font-size: 24px;">✍️ 編輯月度值班表</h2>
+        <a href="javascript:void(0)" onclick="navTo('admin-duty')" class="btn btn-outline">← 返回值班月曆</a>
+      </div>
+
+      <div class="card" style="margin-bottom: 20px; padding: 16px;">
+        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+          <div>
+            <label style="font-weight: 600; margin-right: 8px;">1. 選擇場地：</label>
+            <select id="form-location" class="form-input" style="padding: 8px; border-radius: 6px;">
+              <option value="宜蘭園區">宜蘭園區</option>
+              <option value="東港聯絡處">東港聯絡處</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="font-weight: 600; margin-right: 8px;">2. 選擇月份：</label>
+            <input type="month" id="form-month" class="form-input" style="padding: 7px; border-radius: 6px;">
+          </div>
+
+          <button type="button" onclick="generateTemplate()" class="btn btn-primary">產生/載入該月排班表</button>
+        </div>
+      </div>
+
+      <!-- 排班列表 -->
+      <div id="duty-form-area" class="card" style="display: none;">
+        <h3 style="font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px;">每日值班名單填寫</h3>
+        <div id="days-container"></div>
+
+        <div style="margin-top: 24px; text-align: right;">
+          <button type="button" onclick="saveMonthlyDuty()" class="btn btn-primary" style="padding: 12px 32px; font-size: 16px;">💾 儲存月度排班表</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    let maleVolunteers = [];
+    let femaleVolunteers = [];
+    let templateData = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+
+      const now = new Date();
+      const mStr = now.getMonth() + 1 < 10 ? '0' + (now.getMonth() + 1) : (now.getMonth() + 1);
+      document.getElementById('form-month').value = `${now.getFullYear()}-${mStr}`;
+
+      // 預先載入男女志工清單並自動載入排班表
+      showLoading('載入志工名冊與排班資料中...');
+      try {
+        maleVolunteers = await api('getMembersByGender', token, '男');
+        femaleVolunteers = await api('getMembersByGender', token, '女');
+        await generateTemplate(true); // 自動載入當月排班
+      } catch (e) {
+        hideLoading();
+        console.error(e);
+      }
+    });
+
+    async function generateTemplate(isAuto = false) {
+      const location = document.getElementById('form-location').value;
+      const monthVal = document.getElementById('form-month').value;
+      if (!monthVal) return;
+
+      const [year, month] = monthVal.split('-');
+
+      if (!isAuto) showLoading('產生排班模板中...');
+      try {
+        templateData = await api('generateMonthlyTemplate', location, parseInt(year), parseInt(month));
+        const existingDuties = await api('getDutySchedule', token, location, parseInt(year), parseInt(month));
+        hideLoading();
+        renderDutyForm(templateData, existingDuties);
+      } catch (e) {
+        hideLoading();
+        showToast('產生模板失敗', 'error');
+      }
+    }
+
+    function renderDutyForm(template, existing) {
+      const area = document.getElementById('duty-form-area');
+      const container = document.getElementById('days-container');
+      area.style.display = 'block';
+      container.innerHTML = '';
+
+      // 依日期分組
+      const grouped = {};
+      template.forEach(item => {
+        if (!grouped[item.dutyDate]) grouped[item.dutyDate] = [];
+        grouped[item.dutyDate].push(item);
+      });
+
+      Object.keys(grouped).forEach(dateStr => {
+        const shifts = grouped[dateStr];
+        let dayHtml = `
+          <div style="border: 1px solid var(--neutral-200); border-radius: 8px; padding: 12px; margin-bottom: 12px; background: var(--neutral-50);">
+            <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: var(--primary-700);">📅 ${dateStr}</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+        `;
+
+        shifts.forEach(shift => {
+          const list = shift.genderType === '男' ? maleVolunteers : femaleVolunteers;
+          // 找出已有值班人 (增加 .substring(0, 10) 安全比對)
+          const matchedEx = existing.filter(ex => String(ex.dutyDate).substring(0, 10) === dateStr && String(ex.shiftId) === shift.shiftId);
+
+          dayHtml += `
+            <div style="flex: 1; min-width: 280px; background: white; padding: 10px; border-radius: 6px; border: 1px solid var(--neutral-200);">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+                ${shift.shiftLabel} (${shift.shiftStart}~${shift.shiftEnd}) - ${shift.genderType}眾 (${shift.quota}位)
+              </div>
+          `;
+
+          for (let q = 0; q < shift.quota; q++) {
+            const currentEx = matchedEx[q] || {};
+            dayHtml += `
+              <select data-date="${dateStr}" data-shift-id="${shift.shiftId}" data-shift-label="${shift.shiftLabel}" data-shift-start="${shift.shiftStart}" data-shift-end="${shift.shiftEnd}" data-gender="${shift.genderType}" class="duty-select form-input" style="width: 100%; margin-bottom: 6px; padding: 6px; border-radius: 4px;">
+                <option value="">-- 請選擇志工 (${q+1}) --</option>
+                ${list.map(v => `<option value="${v.id}" data-name="${v.name}" ${currentEx.memberId === v.id ? 'selected' : ''}>${v.name} (${v.orgPath || ''})</option>`).join('')}
+              </select>
+            `;
+          }
+
+          dayHtml += `</div>`;
+        });
+
+        dayHtml += `</div></div>`;
+        container.innerHTML += dayHtml;
+      });
+    }
+
+    async function saveMonthlyDuty() {
+      const location = document.getElementById('form-location').value;
+      const monthVal = document.getElementById('form-month').value;
+      const [year, month] = monthVal.split('-');
+
+      const selects = document.querySelectorAll('.duty-select');
+      const dutyList = [];
+
+      selects.forEach(sel => {
+        const val = sel.value;
+        if (val) {
+          const opt = sel.options[sel.selectedIndex];
+          dutyList.push({
+            dutyDate: sel.dataset.date,
+            shiftId: sel.dataset.shiftId,
+            shiftLabel: sel.dataset.shiftLabel,
+            shiftStart: sel.dataset.shiftStart,
+            shiftEnd: sel.dataset.shiftEnd,
+            genderType: sel.dataset.gender,
+            memberId: val,
+            memberName: opt.dataset.name
+          });
+        }
+      });
+
+      showLoading('儲存月度排班表中...');
+      try {
+        const res = await api('batchSaveDutyShifts', token, location, parseInt(year), parseInt(month), dutyList);
+        hideLoading();
+        if (res.success) {
+          showToast(`✅ 成功儲存 ${res.count} 筆值班紀錄！`, 'success');
+          // 原地更新排班表，避免全頁重導向卡在頁面切換中
+          await generateTemplate(true);
+        } else {
+          showToast(res.error || '儲存失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('儲存失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

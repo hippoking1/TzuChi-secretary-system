@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>建立/編輯活動 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main style="flex: 1; padding: 32px; max-width: 900px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <h2 id="form-title" style="font-size: 24px;">➕ 新建活動表單</h2>
+        <a href="javascript:void(0)" onclick="navTo('admin-events')" class="btn btn-outline">← 返回活動列表</a>
+      </div>
+
+      <form id="event-form" class="card" onsubmit="saveEvent(event)">
+        <!-- 1. 基本資訊 -->
+        <h3 style="font-size: 17px; margin-bottom: 16px; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px; color: var(--primary-700);">📌 活動基本資訊</h3>
+        
+        <div class="form-group">
+          <label class="form-label">活動名稱 <span class="required">*</span></label>
+          <input type="text" id="title" class="form-input" placeholder="例如: 2026 社區環保日 — 七星潭淨灘行動" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label">活動分類 <span class="required">*</span></label>
+            <select id="category" class="form-select" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+              <option value="慈善">❤️ 慈善</option>
+              <option value="環保">🌿 環保</option>
+              <option value="教育">📚 教育</option>
+              <option value="醫療">🏥 醫療</option>
+              <option value="人文">🎨 人文</option>
+              <option value="其他">📋 其他</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">發佈狀態 <span class="required">*</span></label>
+            <select id="status" class="form-select" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+              <option value="草稿">草稿 (僅內部可見)</option>
+              <option value="已發佈">已發佈 (前台開放報名)</option>
+              <option value="已截止">已截止</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label">活動地點 <span class="required">*</span></label>
+            <input type="text" id="location" class="form-input" placeholder="例如: 花蓮七星潭海灘 / 宜蘭園區" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">主辦單位 <span class="required">*</span></label>
+            <input type="text" id="organizer" class="form-input" placeholder="例如: 花蓮區環保組" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+        </div>
+
+        <!-- 2. 活動日期與時間 (🌟 關鍵修復) -->
+        <h3 style="font-size: 17px; margin-top: 24px; margin-bottom: 16px; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px; color: var(--primary-700);">📅 活動舉辦日期與時間</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label">活動舉辦日期 <span class="required">*</span></label>
+            <input type="date" id="eventDate" class="form-input" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">活動開始時間</label>
+            <input type="time" id="eventStartTime" class="form-input" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">活動結束時間</label>
+            <input type="time" id="eventEndTime" class="form-input" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+        </div>
+
+        <!-- 3. 報名時間與人數 -->
+        <h3 style="font-size: 17px; margin-top: 24px; margin-bottom: 16px; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px; color: var(--primary-700);">📝 報名時間與限制</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label">報名開始日期 <span class="required">*</span></label>
+            <input type="date" id="registrationStart" class="form-input" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">報名截止日期 <span class="required">*</span></label>
+            <input type="date" id="registrationEnd" class="form-input" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">總人數上限 (0代表無限制)</label>
+            <input type="number" id="maxParticipants" class="form-input" value="0" min="0" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+        </div>
+
+        <!-- 4. 動態活動場次設定 (🌟 關鍵修復 2) -->
+        <div style="margin-top: 24px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px;">
+          <h3 style="font-size: 17px; color: var(--primary-700); margin: 0;">⏱️ 活動場次管理 (Sessions)</h3>
+          <button type="button" onclick="addSessionRow()" class="btn btn-outline" style="padding: 4px 12px; font-size: 13px;">➕ 新增場次</button>
+        </div>
+        <p style="font-size: 13px; color: var(--neutral-500); margin-bottom: 12px;">若活動區分為多個場次（例如：上午場、下午場），可在下方進行設定；若只有一個場次，可直接保持預設。</p>
+        
+        <div id="sessions-container" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px;">
+          <!-- 動態場次列將由 JS 渲染 -->
+        </div>
+
+        <!-- 5. 高級細節與聯絡資訊 -->
+        <h3 style="font-size: 17px; margin-top: 24px; margin-bottom: 16px; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px; color: var(--primary-700);">🍲 膳食與聯絡資訊設定</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label">膳食提供方式</label>
+            <select id="mealOption" class="form-select" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+              <option value="全素">🌱 全素</option>
+              <option value="蛋奶素">🥛 蛋奶素</option>
+              <option value="不提供膳食">🚫 不提供膳食</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">活動聯絡人</label>
+            <input type="text" id="contactName" class="form-input" placeholder="例如: 林師姊" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">聯絡電話</label>
+            <input type="text" id="contactPhone" class="form-input" placeholder="例如: 03-8266779" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="requireVolunteerCode" style="width: 16px; height: 16px;">
+            僅限受證委員/慈誠報名 (報名時需驗證委員編號)
+          </label>
+        </div>
+
+        <!-- 6. 詳細說明 -->
+        <div class="form-group" style="margin-top: 24px;">
+          <label class="form-label">活動詳細說明 (支援 Markdown 語法)</label>
+          <textarea id="description" class="form-textarea" style="width: 100%; min-height: 180px; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;" placeholder="支援 **粗體**、# 標題、- 清單等 Markdown 格式"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="font-size: 18px; margin-top: 24px; padding: 12px; width: 100%;">
+          💾 儲存活動資料與場次
+        </button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    
+    let params = {};
+    try {
+      params = JSON.parse(<?!= params ?>);
+    } catch (e1) {
+      try {
+        const raw = '<?= params ?>'.replace(/&quot;/g, '"');
+        params = JSON.parse(raw);
+      } catch (e2) {
+        params = {};
+      }
+    }
+    
+    function getUrlParam(name) {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const eventId = (params && params.id) ? params.id : getUrlParam('id');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      if (eventId) {
+        document.getElementById('form-title').innerText = '✏️ 編輯活動內容';
+        loadEventData();
+      } else {
+        // 新建活動預設新增一個全天場次
+        addSessionRow('全天場 09:00 - 17:00', '09:00', '17:00', 0);
+      }
+    });
+
+    function addSessionRow(name = '', start = '', end = '', max = 0) {
+      const container = document.getElementById('sessions-container');
+      const rowId = 'session_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      
+      const div = document.createElement('div');
+      div.className = 'session-row';
+      div.id = rowId;
+      div.style.cssText = 'display: flex; gap: 10px; align-items: center; background: var(--neutral-50); padding: 10px; border-radius: 6px; border: 1px solid var(--neutral-200);';
+      
+      div.innerHTML = `
+        <input type="text" class="sess-name form-input" placeholder="場次名稱 (如: 上午場)" value="${name}" style="flex: 2; padding: 8px; border-radius: 4px; border: 1px solid var(--neutral-300);">
+        <input type="time" class="sess-start form-input" value="${start}" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--neutral-300);">
+        <span style="color: var(--neutral-500);">至</span>
+        <input type="time" class="sess-end form-input" value="${end}" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--neutral-300);">
+        <input type="number" class="sess-max form-input" placeholder="名額(0無限)" value="${max}" min="0" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--neutral-300);">
+        <button type="button" onclick="removeSessionRow('${rowId}')" style="background: none; border: none; color: var(--error); cursor: pointer; font-size: 18px; font-weight: bold;">&times;</button>
+      `;
+
+      container.appendChild(div);
+    }
+
+    function removeSessionRow(rowId) {
+      const container = document.getElementById('sessions-container');
+      if (container.children.length <= 1) {
+        showToast('請至少保留一個活動場次', 'warning');
+        return;
+      }
+      const el = document.getElementById(rowId);
+      if (el) el.remove();
+    }
+
+    async function loadEventData() {
+      showLoading('載入活動詳情...');
+      try {
+        const detail = await api('getEventDetail', eventId);
+        hideLoading();
+        if (detail) {
+          document.getElementById('title').value = detail.title || '';
+          document.getElementById('category').value = detail.category || '環保';
+          document.getElementById('status').value = detail.status || '草稿';
+          document.getElementById('location').value = detail.location || '';
+          document.getElementById('organizer').value = detail.organizer || '';
+          document.getElementById('maxParticipants').value = detail.maxParticipants || 0;
+          document.getElementById('description').value = detail.description || '';
+          
+          if (detail.eventDate) document.getElementById('eventDate').value = String(detail.eventDate).slice(0, 10);
+          if (detail.eventStartTime) document.getElementById('eventStartTime').value = formatTimeOnly(detail.eventStartTime);
+          if (detail.eventEndTime) document.getElementById('eventEndTime').value = formatTimeOnly(detail.eventEndTime);
+
+          if (detail.registrationStart) document.getElementById('registrationStart').value = String(detail.registrationStart).slice(0, 10);
+          if (detail.registrationEnd) document.getElementById('registrationEnd').value = String(detail.registrationEnd).slice(0, 10);
+
+          document.getElementById('mealOption').value = detail.mealOption || '全素';
+          document.getElementById('contactName').value = detail.contactName || '';
+          document.getElementById('contactPhone').value = detail.contactPhone || '';
+          document.getElementById('requireVolunteerCode').checked = detail.requireVolunteerCode === true || detail.requireVolunteerCode === 'true';
+
+          // 載入場次 Sessions
+          const container = document.getElementById('sessions-container');
+          container.innerHTML = '';
+          if (detail.sessions && detail.sessions.length > 0) {
+            detail.sessions.forEach(s => {
+              addSessionRow(s.sessionName || '', formatTimeOnly(s.startTime), formatTimeOnly(s.endTime), s.maxParticipants || 0);
+            });
+          } else {
+            addSessionRow('預設場次', formatTimeOnly(detail.eventStartTime), formatTimeOnly(detail.eventEndTime), detail.maxParticipants || 0);
+          }
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('載入失敗', 'error');
+      }
+    }
+
+    async function saveEvent(e) {
+      e.preventDefault();
+
+      const data = {
+        title: document.getElementById('title').value,
+        category: document.getElementById('category').value,
+        status: document.getElementById('status').value,
+        location: document.getElementById('location').value,
+        organizer: document.getElementById('organizer').value,
+        eventDate: document.getElementById('eventDate').value,
+        eventStartTime: document.getElementById('eventStartTime').value,
+        eventEndTime: document.getElementById('eventEndTime').value,
+        registrationStart: document.getElementById('registrationStart').value,
+        registrationEnd: document.getElementById('registrationEnd').value,
+        maxParticipants: Number(document.getElementById('maxParticipants').value) || 0,
+        mealOption: document.getElementById('mealOption').value,
+        contactName: document.getElementById('contactName').value,
+        contactPhone: document.getElementById('contactPhone').value,
+        requireVolunteerCode: document.getElementById('requireVolunteerCode').checked,
+        description: document.getElementById('description').value
+      };
+
+      // 蒐集場次 Sessions
+      const sessionRows = document.querySelectorAll('.session-row');
+      const sessionsData = [];
+      sessionRows.forEach(row => {
+        const sName = row.querySelector('.sess-name').value.trim();
+        const sStart = row.querySelector('.sess-start').value;
+        const sEnd = row.querySelector('.sess-end').value;
+        const sMax = Number(row.querySelector('.sess-max').value) || 0;
+
+        if (sName) {
+          sessionsData.push({
+            sessionName: sName,
+            startTime: sStart,
+            endTime: sEnd,
+            maxParticipants: sMax
+          });
+        }
+      });
+
+      showLoading('儲存活動資料中...');
+      try {
+        let res;
+        if (eventId) {
+          res = await api('updateEvent', token, eventId, data, sessionsData);
+        } else {
+          res = await api('createEvent', token, data, sessionsData);
+        }
+        hideLoading();
+        if (res && res.success) {
+          showToast('✅ 活動資料與場次儲存成功！', 'success');
+          navTo('admin-events');
+        } else {
+          showToast((res ? res.error : null) || '儲存失敗', 'error');
+        }
+      } catch (err) {
+        hideLoading();
+        showToast('儲存過程發生錯誤: ' + err.toString(), 'error');
+      }
+    }
+  </script>
+</body>
+</html>

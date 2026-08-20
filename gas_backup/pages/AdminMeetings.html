@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>會議列表與管理 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <h2 style="font-size: 24px;">📋 會議列表與管理</h2>
+        <a href="javascript:void(0)" onclick="navTo('admin-meeting-form')" class="btn btn-primary">➕ 新建會議</a>
+      </div>
+
+      <div class="card">
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse; min-width: 700px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left;">
+                <th style="padding: 12px 8px;">會議主題</th>
+                <th style="padding: 12px 8px;">會議時間</th>
+                <th style="padding: 12px 8px;">地點</th>
+                <th style="padding: 12px 8px;">召集人</th>
+                <th style="padding: 12px 8px;">指定出席人數</th>
+                <th style="padding: 12px 8px;">LINE通知</th>
+                <th style="padding: 12px 8px; text-align: right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="meetings-table">
+              <!-- 內建動態渲染 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 【指定參與人員 Modal 對話框 (對標活動報名對話框)】 -->
+  <div id="participant-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; align-items: center; justify-content: center; padding: 16px;">
+    <div class="card" style="width: 100%; max-width: 760px; max-height: 90vh; display: flex; flex-direction: column; background: white; border-radius: 12px; overflow: hidden; padding: 0;">
+      <!-- Modal Header -->
+      <div style="padding: 16px 24px; background: var(--primary-600); color: white; display: flex; justify-content: space-between; align-items: center;">
+        <h3 id="modal-meeting-title" style="margin: 0; font-size: 18px; color: white;">👥 指定出席人員名單</h3>
+        <button onclick="closeModal()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div style="padding: 24px; overflow-y: auto; flex: 1;">
+        <!-- 多層連動選單新增指定人員區 -->
+        <div style="background: var(--primary-50); padding: 16px; border-radius: 8px; border: 1px solid var(--primary-200); margin-bottom: 20px;">
+          <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--primary-800);">🪷 依組織多層連動選取指定人員：</h4>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+            <div>
+              <label class="form-label" style="font-size: 12px; font-weight: 600;">1. 選擇和氣：</label>
+              <select id="modal-select-heqi" class="form-select" onchange="onModalHeqiChange()" style="width:100%; padding:7px; border-radius:6px; background:white;">
+                <option value="">-- 請選擇和氣 --</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 12px; font-weight: 600;">2. 選擇互愛：</label>
+              <select id="modal-select-huai" class="form-select" onchange="onModalHuaiChange()" disabled style="width:100%; padding:7px; border-radius:6px; background:white;">
+                <option value="">-- 請先選擇和氣 --</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 12px; font-weight: 600;">3. 選擇協力：</label>
+              <select id="modal-select-xieli" class="form-select" onchange="onModalXieliChange()" disabled style="width:100%; padding:7px; border-radius:6px; background:white;">
+                <option value="">-- 請先選擇互愛 --</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 12px; font-weight: 600;">4. 選擇志工姓名：</label>
+              <select id="modal-select-member" class="form-select" disabled style="width:100%; padding:7px; border-radius:6px; background:white;">
+                <option value="">-- 請先選擇協力 --</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button onclick="addSingleParticipantFromModal()" class="btn btn-primary" style="padding: 7px 14px; font-size: 13px;">➕ 加入單個志工</button>
+            <button onclick="addXieliParticipantsFromModal()" class="btn btn-secondary" style="padding: 7px 14px; font-size: 13px;">👥 將該協力整組加入</button>
+          </div>
+        </div>
+
+        <!-- 人員名單表格 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <span style="font-weight: 600;">已指定應出席名單 (<span id="modal-participant-count">0</span> 人)：</span>
+          <button onclick="sendLineNoticeFromModal()" class="btn btn-secondary" style="padding: 6px 14px; font-size: 13px; background: #00B900; color: white; border: none;">📲 立即發送 LINE 開會通知</button>
+        </div>
+
+        <div class="table-responsive" style="border: 1px solid var(--neutral-200); border-radius: 6px;">
+          <table style="width: 100%; border-collapse: collapse; min-width: 500px;">
+            <thead>
+              <tr style="background: var(--neutral-100); text-align: left; border-bottom: 1px solid var(--neutral-200);">
+                <th style="padding: 10px;">序號</th>
+                <th style="padding: 10px;">姓名</th>
+                <th style="padding: 10px;">電話</th>
+                <th style="padding: 10px;">簽到狀態</th>
+                <th style="padding: 10px; text-align: right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="modal-participants-tbody">
+              <!-- 動態渲染 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div style="padding: 16px 24px; background: var(--neutral-50); border-top: 1px solid var(--neutral-200); text-align: right;">
+        <button onclick="closeModal()" class="btn btn-outline">完成關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    
+    let params = {};
+    try {
+      params = JSON.parse(<?!= params ?>);
+    } catch (e1) {
+      try {
+        const raw = '<?= params ?>'.replace(/&quot;/g, '"');
+        params = JSON.parse(raw);
+      } catch (e2) {
+        params = {};
+      }
+    }
+
+    let currentMeetingId = null;
+    let modalOrgTreeData = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadMeetings();
+      loadModalOrgTree();
+
+      // 如果從新建會議頁面帶入 openParticipants 參數，自動開啟該會議的 modal
+      if (params && params.openParticipants) {
+        openParticipantsModal(params.openParticipants);
+      }
+    });
+
+    async function loadModalOrgTree() {
+      try {
+        modalOrgTreeData = await api('getOrgTree');
+        const heqiSelect = document.getElementById('modal-select-heqi');
+        heqiSelect.innerHTML = '<option value="">-- 請選擇和氣 --</option>';
+        if (Array.isArray(modalOrgTreeData)) {
+          modalOrgTreeData.forEach(h => {
+            heqiSelect.innerHTML += `<option value="${h.id}">${h.name}</option>`;
+          });
+        }
+      } catch (e) {
+        console.error('載入組織失敗:', e);
+      }
+    }
+
+    function onModalHeqiChange() {
+      const heqiId = document.getElementById('modal-select-heqi').value;
+      const huaiSelect = document.getElementById('modal-select-huai');
+      const xieliSelect = document.getElementById('modal-select-xieli');
+      const memberSelect = document.getElementById('modal-select-member');
+
+      huaiSelect.innerHTML = '<option value="">-- 請選擇互愛 --</option>';
+      xieliSelect.innerHTML = '<option value="">-- 請先選擇互愛 --</option>';
+      memberSelect.innerHTML = '<option value="">-- 請先選擇協力 --</option>';
+      xieliSelect.disabled = true;
+      memberSelect.disabled = true;
+
+      if (!heqiId) {
+        huaiSelect.disabled = true;
+        return;
+      }
+
+      const heqiNode = modalOrgTreeData.find(h => h.id === heqiId);
+      if (heqiNode && heqiNode.children) {
+        heqiNode.children.forEach(a => {
+          huaiSelect.innerHTML += `<option value="${a.id}">${a.name}</option>`;
+        });
+        huaiSelect.disabled = false;
+      }
+    }
+
+    function onModalHuaiChange() {
+      const heqiId = document.getElementById('modal-select-heqi').value;
+      const huaiId = document.getElementById('modal-select-huai').value;
+      const xieliSelect = document.getElementById('modal-select-xieli');
+      const memberSelect = document.getElementById('modal-select-member');
+
+      xieliSelect.innerHTML = '<option value="">-- 請選擇協力 --</option>';
+      memberSelect.innerHTML = '<option value="">-- 請先選擇協力 --</option>';
+      memberSelect.disabled = true;
+
+      if (!huaiId) {
+        xieliSelect.disabled = true;
+        return;
+      }
+
+      const heqiNode = modalOrgTreeData.find(h => h.id === heqiId);
+      if (heqiNode) {
+        const huaiNode = (heqiNode.children || []).find(a => a.id === huaiId);
+        if (huaiNode && huaiNode.children) {
+          huaiNode.children.forEach(x => {
+            xieliSelect.innerHTML += `<option value="${x.id}">${x.name}</option>`;
+          });
+          xieliSelect.disabled = false;
+        }
+      }
+    }
+
+    async function onModalXieliChange() {
+      const xieliId = document.getElementById('modal-select-xieli').value;
+      const memberSelect = document.getElementById('modal-select-member');
+
+      memberSelect.innerHTML = '<option value="">載入成員中...</option>';
+      memberSelect.disabled = true;
+
+      if (!xieliId) {
+        memberSelect.innerHTML = '<option value="">-- 請先選擇協力 --</option>';
+        return;
+      }
+
+      try {
+        const members = await api('getMembers', null, { orgId: xieliId });
+        memberSelect.innerHTML = '<option value="">-- 請選擇志工姓名 --</option>';
+        if (Array.isArray(members)) {
+          members.forEach(m => {
+            memberSelect.innerHTML += `<option value="${m.id}">${m.name} ${m.dharmaName ? '(' + m.dharmaName + ')' : ''}</option>`;
+          });
+        }
+        memberSelect.disabled = false;
+      } catch (e) {
+        memberSelect.innerHTML = '<option value="">載入成員失敗</option>';
+      }
+    }
+
+    async function addSingleParticipantFromModal() {
+      const select = document.getElementById('modal-select-member');
+      const memberId = select.value;
+      if (!memberId) {
+        showToast('請先完成選擇志工姓名', 'warning');
+        return;
+      }
+
+      showLoading('新增指定人員中...');
+      try {
+        const res = await api('addParticipants', token, currentMeetingId, [memberId]);
+        hideLoading();
+        if (res.success) {
+          showToast('✅ 成功加入指定人員！', 'success');
+          openParticipantsModal(currentMeetingId);
+          loadMeetings();
+        } else {
+          showToast(res.error || '新增失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('新增失敗: ' + e.toString(), 'error');
+      }
+    }
+
+    async function addXieliParticipantsFromModal() {
+      const xieliId = document.getElementById('modal-select-xieli').value;
+      if (!xieliId) {
+        showToast('請先選擇協力組別', 'warning');
+        return;
+      }
+
+      showLoading('整組批次加入中...');
+      try {
+        const members = await api('getMembers', null, { orgId: xieliId });
+        if (!Array.isArray(members) || members.length === 0) {
+          hideLoading();
+          showToast('該協力尚無成員資料', 'warning');
+          return;
+        }
+
+        const memberIds = members.map(m => m.id);
+        const res = await api('addParticipants', token, currentMeetingId, memberIds);
+        hideLoading();
+        if (res.success) {
+          showToast(`✅ 已成功將該協力 ${res.addedCount || members.length} 位志工批次加入！`, 'success');
+          openParticipantsModal(currentMeetingId);
+          loadMeetings();
+        } else {
+          showToast(res.error || '加入失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('整組加入失敗', 'error');
+      }
+    }
+
+    async function loadMeetings() {
+      showLoading('載入會議列表中...');
+      try {
+        const meetings = await api('getMeetings', token, '全部');
+        hideLoading();
+        renderMeetings(meetings);
+      } catch (e) {
+        hideLoading();
+        showToast('載入失敗', 'error');
+      }
+    }
+
+    function renderMeetings(meetings) {
+      const tbody = document.getElementById('meetings-table');
+      if (!meetings || meetings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="padding: 24px; text-align: center; color: var(--neutral-500);">尚無會議紀錄</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = meetings.map(m => {
+        const sTime = formatTimeOnly(m.startTime);
+        const eTime = formatTimeOnly(m.endTime);
+        const mDate = String(m.meetingDate || '').substring(0, 10);
+        const timeDisplay = (sTime && eTime) ? `${sTime} ~ ${eTime}` : (sTime || eTime || '');
+
+        return `
+          <tr style="border-bottom: 1px solid var(--neutral-200);">
+            <td style="padding: 12px 8px; font-weight: 600; color: var(--primary-700);">${m.title}</td>
+            <td style="padding: 12px 8px;">${mDate} ${timeDisplay}</td>
+            <td style="padding: 12px 8px;">${m.location || ''}</td>
+            <td style="padding: 12px 8px;">${m.organizerName || '會議召集人'}</td>
+            <td style="padding: 12px 8px; font-weight: 600;"><span class="badge" style="background: var(--primary-50); color: var(--primary-700);">${m.participantCount || 0} 人</span></td>
+            <td style="padding: 12px 8px;">
+              <span class="badge" style="background: ${m.lineNotifyStatus === '已發送' ? 'var(--secondary-100)' : 'var(--neutral-200)'}; color: ${m.lineNotifyStatus === '已發送' ? 'var(--secondary-700)' : 'var(--neutral-700)'};">
+                ${m.lineNotifyStatus || '未發送'}
+              </span>
+            </td>
+            <td style="padding: 12px 8px; text-align: right;">
+              <button onclick="openParticipantsModal('${m.id}')" class="btn btn-secondary" style="padding: 4px 10px; font-size: 13px; margin-right: 6px;">👥 指定名單</button>
+              <a href="javascript:void(0)" onclick="sendLineNotice('${m.id}')" style="margin-right: 8px; color: #00B900; font-weight: 600; font-size: 13px; text-decoration: none;">📲 LINE通知</a>
+              <a href="javascript:void(0)" onclick="navTo('admin-meeting-form', {id: '${m.id}'})" style="margin-right: 8px; font-size: 13px;">✏️ 編輯</a>
+              <button onclick="handleDelete('${m.id}')" style="background:none;border:none;color:var(--error);cursor:pointer;font-size:13px;">🗑️ 刪除</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function openParticipantsModal(meetingId) {
+      currentMeetingId = meetingId;
+      const modal = document.getElementById('participant-modal');
+      modal.style.display = 'flex';
+
+      showLoading('載入參與人員名單...');
+      try {
+        const meeting = await api('getMeetingById', meetingId);
+        hideLoading();
+        if (meeting) {
+          document.getElementById('modal-meeting-title').innerText = `👥 【${meeting.title}】指定出席名單`;
+          renderModalParticipants(meeting.participants || []);
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('載入名單失敗', 'error');
+      }
+    }
+
+    function renderModalParticipants(participants) {
+      document.getElementById('modal-participant-count').innerText = participants.length;
+      const tbody = document.getElementById('modal-participants-tbody');
+
+      if (!participants || participants.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center; color: var(--neutral-500);">此會議目前尚未指定任何出席人員</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = participants.map((p, idx) => `
+        <tr style="border-bottom: 1px solid var(--neutral-200);">
+          <td style="padding: 10px;">${idx + 1}</td>
+          <td style="padding: 10px; font-weight: 600;">👤 ${p.memberName}</td>
+          <td style="padding: 10px;">${p.memberPhone || ''}</td>
+          <td style="padding: 10px;"><span class="badge" style="background: var(--primary-50); color: var(--primary-700);">${p.attendance || '未簽到'}</span></td>
+          <td style="padding: 10px; text-align: right;">
+            <button onclick="removeParticipantFromModal('${p.id}')" style="background: none; border: none; color: var(--error); cursor: pointer; font-weight: 600;">❌ 移除</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function addParticipantFromModal() {
+      const select = document.getElementById('modal-member-select');
+      const memberId = select.value;
+      if (!memberId) {
+        showToast('請先選擇一位志工', 'warning');
+        return;
+      }
+
+      showLoading('新增指定人員中...');
+      try {
+        const res = await api('addParticipants', token, currentMeetingId, [memberId]);
+        hideLoading();
+        if (res.success) {
+          showToast('✅ 成功加入指定人員！', 'success');
+          select.value = '';
+          openParticipantsModal(currentMeetingId);
+          loadMeetings();
+        } else {
+          showToast(res.error || '新增失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('新增失敗: ' + e.toString(), 'error');
+      }
+    }
+
+    async function removeParticipantFromModal(participantId) {
+      if (!confirm('確定要移除此指定人員嗎？')) return;
+      showLoading('移除中...');
+      try {
+        const res = await api('removeParticipant', token, participantId);
+        hideLoading();
+        if (res.success) {
+          showToast('已移除指定人員', 'success');
+          openParticipantsModal(currentMeetingId);
+          loadMeetings();
+        } else {
+          showToast(res.error || '移除失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('移除失敗', 'error');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('participant-modal').style.display = 'none';
+      currentMeetingId = null;
+    }
+
+    async function sendLineNoticeFromModal() {
+      if (!currentMeetingId) return;
+      sendLineNotice(currentMeetingId);
+    }
+
+    async function sendLineNotice(meetingId) {
+      if (!confirm('確定要發送 LINE 開會通知給該會議的所有指定出席人員嗎？')) return;
+      showLoading('發送 LINE 通知中...');
+      try {
+        const res = await api('sendMeetingNotification', token, meetingId);
+        hideLoading();
+        if (res.success) {
+          showToast(`已成功將開會通知推播給 ${res.sentCount || 0} 位志工！`, 'success');
+          loadMeetings();
+        } else {
+          showToast(res.error || '推播失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('發送失敗: ' + e.toString(), 'error');
+      }
+    }
+
+    async function handleDelete(meetingId) {
+      if (!confirm('確定要刪除此會議及其參與人員名單嗎？')) return;
+      showLoading('刪除中...');
+      try {
+        const res = await api('deleteMeeting', token, meetingId);
+        hideLoading();
+        if (res.success) {
+          showToast('已刪除會議', 'success');
+          loadMeetings();
+        } else {
+          showToast(res.error || '刪除失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('刪除失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

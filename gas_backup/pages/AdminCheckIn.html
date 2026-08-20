@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>現場簽到點名 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <h2 style="font-size: 24px; margin-bottom: 24px;">✅ 活動現場快速簽到點名</h2>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label">選擇進行中活動</label>
+          <select id="checkin-event-select" class="form-select" onchange="loadCheckInList()"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse; min-width: 600px;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left;">
+              <th style="padding: 12px 8px;">姓名</th>
+              <th style="padding: 12px 8px;">電話</th>
+              <th style="padding: 12px 8px;">組織歸屬</th>
+              <th style="padding: 12px 8px;">膳食</th>
+              <th style="padding: 12px 8px;">簽到狀態</th>
+              <th style="padding: 12px 8px; text-align: right;">即時點名</th>
+            </tr>
+          </thead>
+          <tbody id="checkin-table">
+            <!-- 內建動態渲染 -->
+          </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadEvents();
+    });
+
+    async function loadEvents() {
+      try {
+        const events = await api('getAllEvents', token, '已發佈');
+        const select = document.getElementById('checkin-event-select');
+        select.innerHTML = events.map(e => `<option value="${e.id}">${e.title}</option>`).join('');
+        if (events.length > 0) loadCheckInList();
+      } catch (e) {
+        showToast('載入活動失敗', 'error');
+      }
+    }
+
+    async function loadCheckInList() {
+      const eventId = document.getElementById('checkin-event-select').value;
+      if (!eventId) return;
+
+      showLoading('載入點名名單...');
+      try {
+        const list = await api('getEventRegistrations', token, eventId);
+        hideLoading();
+        renderCheckInTable(list);
+      } catch (e) {
+        hideLoading();
+        showToast('載入名單失敗', 'error');
+      }
+    }
+
+    function renderCheckInTable(list) {
+      const tbody = document.getElementById('checkin-table');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--neutral-500);">此活動無報名人員</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map(item => `
+        <tr style="border-bottom: 1px solid var(--neutral-200);">
+          <td style="padding: 12px 8px; font-weight: 600;">${item.name}</td>
+          <td style="padding: 12px 8px;">${item.phone}</td>
+          <td style="padding: 12px 8px; font-size: 14px; color: var(--neutral-600);">${item.orgPath}</td>
+          <td style="padding: 12px 8px;">${item.mealType}</td>
+          <td style="padding: 12px 8px;"><span class="badge ${item.status === '已簽到' ? 'badge-attended' : 'badge-confirmed'}">${item.status}</span></td>
+          <td style="padding: 12px 8px; text-align: right;">
+            ${item.status !== '已簽到' ? `
+              <button onclick="doCheckIn('${item.id}')" class="btn btn-secondary" style="min-height: 36px; padding: 6px 16px;">
+                ✅ 簽到點名
+              </button>
+            ` : '<span style="color:var(--secondary-700);font-weight:600;">已簽到</span>'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function doCheckIn(regId) {
+      showLoading('點名中...');
+      try {
+        const res = await api('checkInRegistration', token, regId);
+        hideLoading();
+        if (res.success) {
+          showToast('簽到成功！', 'success');
+          loadCheckInList();
+        } else {
+          showToast(res.error || '點名失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('簽到失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

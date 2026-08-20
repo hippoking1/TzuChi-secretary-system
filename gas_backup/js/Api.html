@@ -1,0 +1,121 @@
+<script>
+/**
+ * Api.html
+ * 前端 google.script.run 非同步呼叫與元件狀態處理
+ */
+
+/**
+ * 封裝 google.script.run 為 ES6 Promise
+ * 範例: const events = await api('getPublishedEvents', '環保');
+ */
+function api(functionName, ...args) {
+  return new Promise((resolve, reject) => {
+    if (!google || !google.script || !google.script.run) {
+      console.warn('非 GAS 環境，模擬模式');
+      reject(new Error('請在 GAS Web App 環境下運作'));
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(err => {
+        console.error('API Error [' + functionName + ']:', err);
+        reject(err);
+      })
+      [functionName](...args);
+  });
+}
+
+/**
+ * 顯示 Loading 全頁遮罩
+ */
+function showLoading(msg) {
+  let el = document.getElementById('global-loading');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'global-loading';
+    el.innerHTML = `
+      <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="width:48px;height:48px;border:4px solid var(--primary-100);border-top:4px solid var(--primary-500);border-radius:50%;animation:spin 1s linear infinite;"></div>
+        <p id="global-loading-msg" style="margin-top:16px;font-weight:600;color:var(--primary-700);">${msg || '資料載入中...'}</p>
+      </div>
+      <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    `;
+    document.body.appendChild(el);
+  } else {
+    const msgEl = document.getElementById('global-loading-msg');
+    if (msgEl) msgEl.innerText = msg || '資料載入中...';
+    el.style.display = 'block';
+  }
+}
+
+/**
+ * 隱藏 Loading
+ */
+function hideLoading() {
+  const el = document.getElementById('global-loading');
+  if (el) el.style.display = 'none';
+}
+
+/**
+ * Toast 通知訊息
+ */
+function showToast(msg, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  const bg = type === 'error' ? 'var(--error)' : type === 'success' ? 'var(--success)' : 'var(--primary-600)';
+  toast.style.cssText = `background:${bg};color:#fff;padding:12px 20px;border-radius:var(--radius-md);box-shadow:var(--shadow-lg);font-weight:600;min-width:240px;animation:slideUp 0.3s ease;`;
+  toast.innerText = msg;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
+
+/**
+ * 通用頁面跳轉函式 (恢復早期經典順暢跳轉機制，防範 Google Drive 網址攔截)
+ */
+function navTo(page, extraParams = {}) {
+  let query = '?page=' + page;
+  for (let k in extraParams) {
+    if (extraParams[k] !== undefined && extraParams[k] !== null && extraParams[k] !== '') {
+      query += '&' + k + '=' + encodeURIComponent(extraParams[k]);
+    }
+  }
+
+  // 優先嘗試取得 Web App 官方完整對外絕對 URL，防止 Drive 攔截相對路徑
+  api('getScriptUrl').then(url => {
+    if (url && url.length > 0 && url.indexOf('script.google.com') !== -1) {
+      const targetUrl = url.split('?')[0] + query;
+      try {
+        window.top.location.href = targetUrl;
+      } catch(e) {
+        window.location.href = targetUrl;
+      }
+    } else {
+      window.location.search = query;
+    }
+  }).catch(err => {
+    window.location.search = query;
+  });
+}
+
+/**
+ * 洗淨時間字串 (例如將 "1899-12-30 19:30:00" 或 Date 物件字串洗淨為 "19:30")
+ */
+function formatTimeOnly(val) {
+  if (!val) return '';
+  const str = String(val).trim();
+  const match = str.match(/(\d{2}:\d{2})/);
+  return match ? match[1] : str;
+}
+</script>

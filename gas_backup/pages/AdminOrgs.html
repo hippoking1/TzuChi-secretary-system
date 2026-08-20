@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>組織架構維護 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+  <style>
+    .org-node-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: var(--radius-md);
+      background: var(--neutral-100);
+      margin-bottom: 6px;
+    }
+    .org-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .org-btn:hover { background: rgba(0,0,0,0.08); }
+  </style>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <h2 style="font-size: 24px;">🏢 慈濟三層組織架構管理 (和氣 ➔ 互愛 ➔ 協力)</h2>
+        <button onclick="openAddOrgModal('', '和氣')" class="btn btn-primary">➕ 新增和氣 (頂層組織)</button>
+      </div>
+
+      <div class="card">
+        <div id="org-tree-container">
+          <!-- 動態渲染樹狀圖與編輯工具 -->
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 新增/編輯組織 Modal -->
+  <div id="org-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width: 100%; max-width: 440px;">
+      <h3 id="org-modal-title" style="margin-bottom: 20px;">➕ 新增組織名稱</h3>
+      <form onsubmit="saveOrgNode(event)">
+        <input type="hidden" id="org-id">
+        <input type="hidden" id="org-parent-id">
+        <input type="hidden" id="org-level">
+
+        <div class="form-group">
+          <label class="form-label">組織名稱 <span class="required">*</span></label>
+          <input type="text" id="org-name" class="form-input" placeholder="例如: 第一和氣 / 第一互愛 / 第一協力" required>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="button" onclick="toggleOrgModal(false)" class="btn btn-outline btn-block">取消</button>
+          <button type="submit" class="btn btn-primary btn-block">儲存組織</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    let rawOrgTree = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadOrgTree();
+    });
+
+    async function loadOrgTree() {
+      showLoading('載入組織樹狀圖...');
+      try {
+        rawOrgTree = await api('getOrgTree');
+        hideLoading();
+        renderTree(rawOrgTree);
+      } catch (e) {
+        hideLoading();
+        showToast('載入組織樹失敗', 'error');
+      }
+    }
+
+    function renderTree(tree) {
+      const container = document.getElementById('org-tree-container');
+      if (!tree || tree.length === 0) {
+        container.innerHTML = '<p style="color:var(--neutral-500);padding:16px;">目前尚無組織資料，點擊右上角「新增和氣」進行建置。</p>';
+        return;
+      }
+
+      function buildHtml(nodes) {
+        return `<ul style="list-style: none; padding-left: 24px; margin: 4px 0;">` +
+          nodes.map(n => {
+            const isHeqi = n.level === '和氣';
+            const isHuai = n.level === '互愛';
+            const icon = isHeqi ? '🏛️' : isHuai ? '🤝' : '🌱';
+            const badgeBg = isHeqi ? 'var(--primary-50)' : isHuai ? 'var(--secondary-50)' : 'var(--neutral-100)';
+            const badgeColor = isHeqi ? 'var(--primary-700)' : isHuai ? 'var(--secondary-700)' : 'var(--neutral-800)';
+
+            const nextLevel = isHeqi ? '互愛' : isHuai ? '協力' : '';
+
+            return `
+              <li style="margin: 8px 0;">
+                <div class="org-node-item" style="background:${badgeBg}; color:${badgeColor}; border:1px solid rgba(0,0,0,0.05);">
+                  <span style="font-weight:600;">${icon} ${n.name}</span>
+                  <span style="font-size:12px; opacity:0.7;">(${n.level})</span>
+
+                  <div style="margin-left: 12px; display: inline-flex; gap: 4px;">
+                    ${nextLevel ? `<button class="org-btn" onclick="openAddOrgModal('${n.id}', '${nextLevel}')" style="color:var(--primary-600);" title="新增下級${nextLevel}">➕ 新增${nextLevel}</button>` : ''}
+                    <button class="org-btn" onclick="openEditOrgModal('${n.id}', '${n.name}')" style="color:var(--neutral-700);" title="編輯名稱">✏️ 編輯</button>
+                    <button class="org-btn" onclick="deleteOrgNode('${n.id}', '${n.name}')" style="color:var(--error);" title="刪除">🗑️ 刪除</button>
+                  </div>
+                </div>
+                ${n.children && n.children.length > 0 ? buildHtml(n.children) : ''}
+              </li>
+            `;
+          }).join('') +
+        `</ul>`;
+      }
+
+      container.innerHTML = buildHtml(tree);
+    }
+
+    function toggleOrgModal(show) {
+      document.getElementById('org-modal').style.display = show ? 'flex' : 'none';
+    }
+
+    function openAddOrgModal(parentId, level) {
+      document.getElementById('org-modal-title').innerText = `➕ 新增${level}`;
+      document.getElementById('org-id').value = '';
+      document.getElementById('org-parent-id').value = parentId || '';
+      document.getElementById('org-level').value = level;
+      document.getElementById('org-name').value = '';
+      toggleOrgModal(true);
+    }
+
+    function openEditOrgModal(id, name) {
+      document.getElementById('org-modal-title').innerText = `✏️ 編輯組織名稱`;
+      document.getElementById('org-id').value = id;
+      document.getElementById('org-parent-id').value = '';
+      document.getElementById('org-name').value = name;
+      toggleOrgModal(true);
+    }
+
+    async function saveOrgNode(e) {
+      e.preventDefault();
+      const id = document.getElementById('org-id').value;
+      const parentId = document.getElementById('org-parent-id').value;
+      const level = document.getElementById('org-level').value;
+      const name = document.getElementById('org-name').value.trim();
+
+      if (!name) return;
+
+      showLoading('儲存組織中...');
+      try {
+        let res;
+        if (id) {
+          res = await api('updateOrg', token, id, { name: name });
+        } else {
+          res = await api('createOrg', token, { name: name, level: level, parentId: parentId });
+        }
+        hideLoading();
+        if (res.success) {
+          showToast(id ? '修改成功！' : '新增成功！', 'success');
+          toggleOrgModal(false);
+          loadOrgTree();
+        } else {
+          showToast(res.error || '失敗', 'error');
+        }
+      } catch (err) {
+        hideLoading();
+        showToast('儲存失敗', 'error');
+      }
+    }
+
+    async function deleteOrgNode(id, name) {
+      if (!confirm(`確定要刪除組織【${name}】嗎？\n⚠️ 注意：連同該組織底下的所有下級組織也將一併刪除！`)) return;
+
+      showLoading('刪除組織中...');
+      try {
+        const res = await api('deleteOrg', token, id);
+        hideLoading();
+        if (res.success) {
+          showToast('刪除成功！', 'success');
+          loadOrgTree();
+        } else {
+          showToast(res.error || '刪除失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('刪除失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

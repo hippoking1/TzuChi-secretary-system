@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>志工個人值班查詢 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <main style="max-width: 800px; margin: 32px auto; padding: 0 16px;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="font-size: 26px; color: var(--primary-700); margin-bottom: 8px;">🏛️ 志工個人值班查詢</h2>
+      <p style="color: var(--neutral-600);">請依序透過多層下拉式選單選擇您的組織、姓名與年月進行值班查詢</p>
+    </div>
+
+    <!-- 多層下拉選單卡片 -->
+    <div class="card" style="padding: 24px; margin-bottom: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- 1. 和氣 -->
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">1. 選擇和氣：</label>
+          <select id="select-heqi" onchange="onHeqiChange()" class="form-input" style="width: 100%; padding: 10px; border-radius: 6px;">
+            <option value="">-- 請選擇和氣 --</option>
+          </select>
+        </div>
+
+        <!-- 2. 互愛 -->
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">2. 選擇互愛：</label>
+          <select id="select-huai" onchange="onHuaiChange()" class="form-input" disabled style="width: 100%; padding: 10px; border-radius: 6px;">
+            <option value="">-- 請先選擇和氣 --</option>
+          </select>
+        </div>
+
+        <!-- 3. 協力 -->
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">3. 選擇協力：</label>
+          <select id="select-xieli" onchange="onXieliChange()" class="form-input" disabled style="width: 100%; padding: 10px; border-radius: 6px;">
+            <option value="">-- 請先選擇互愛 --</option>
+          </select>
+        </div>
+
+        <!-- 4. 志工姓名 -->
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">4. 選擇志工姓名：</label>
+          <select id="select-member" class="form-input" disabled style="width: 100%; padding: 10px; border-radius: 6px;">
+            <option value="">-- 請先選擇協力 --</option>
+          </select>
+        </div>
+
+        <!-- 5. 年月 -->
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 6px;">5. 選擇查詢年月：</label>
+          <input type="month" id="select-year-month" class="form-input" style="width: 100%; padding: 9px; border-radius: 6px;">
+        </div>
+
+        <button type="button" onclick="doSearchDuty()" class="btn btn-primary" style="padding: 12px; font-size: 16px; margin-top: 8px;">🔍 查詢個人值班</button>
+      </div>
+    </div>
+
+    <!-- 查詢結果區域 -->
+    <div id="duty-result-card" class="card" style="display: none;">
+      <h3 id="result-title" style="font-size: 18px; margin-bottom: 16px; border-bottom: 2px solid var(--primary-100); padding-bottom: 8px; color: var(--primary-700);">
+        📋 查詢結果
+      </h3>
+
+      <div class="table-responsive">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left; background: var(--neutral-50);">
+              <th style="padding: 12px 8px;">值班場地</th>
+              <th style="padding: 12px 8px;">值班日期</th>
+              <th style="padding: 12px 8px;">值班班次</th>
+              <th style="padding: 12px 8px;">值班時段</th>
+            </tr>
+          </thead>
+          <tbody id="duty-result-tbody">
+            <!-- 動態填入 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <?!= include('partials/Footer') ?>
+
+  <script>
+    let orgTreeData = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 預設當年月
+      const now = new Date();
+      const mStr = now.getMonth() + 1 < 10 ? '0' + (now.getMonth() + 1) : (now.getMonth() + 1);
+      document.getElementById('select-year-month').value = `${now.getFullYear()}-${mStr}`;
+
+      loadOrgTree();
+    });
+
+    async function loadOrgTree() {
+      try {
+        orgTreeData = await api('getOrgTree');
+        const heqiSelect = document.getElementById('select-heqi');
+        heqiSelect.innerHTML = '<option value="">-- 請選擇和氣 --</option>';
+
+        orgTreeData.forEach(h => {
+          heqiSelect.innerHTML += `<option value="${h.id}">${h.name}</option>`;
+        });
+      } catch (e) {}
+    }
+
+    function onHeqiChange() {
+      const heqiId = document.getElementById('select-heqi').value;
+      const huaiSelect = document.getElementById('select-huai');
+      const xieliSelect = document.getElementById('select-xieli');
+      const memberSelect = document.getElementById('select-member');
+
+      huaiSelect.innerHTML = '<option value="">-- 請選擇互愛 --</option>';
+      xieliSelect.innerHTML = '<option value="">-- 請先選擇互愛 --</option>';
+      memberSelect.innerHTML = '<option value="">-- 請先選擇協力 --</option>';
+      xieliSelect.disabled = true;
+      memberSelect.disabled = true;
+
+      if (!heqiId) {
+        huaiSelect.disabled = true;
+        return;
+      }
+
+      const heqiNode = orgTreeData.find(h => h.id === heqiId);
+      if (heqiNode && heqiNode.children) {
+        heqiNode.children.forEach(a => {
+          huaiSelect.innerHTML += `<option value="${a.id}">${a.name}</option>`;
+        });
+        huaiSelect.disabled = false;
+      }
+    }
+
+    function onHuaiChange() {
+      const heqiId = document.getElementById('select-heqi').value;
+      const huaiId = document.getElementById('select-huai').value;
+      const xieliSelect = document.getElementById('select-xieli');
+      const memberSelect = document.getElementById('select-member');
+
+      xieliSelect.innerHTML = '<option value="">-- 請選擇協力 --</option>';
+      memberSelect.innerHTML = '<option value="">-- 請先選擇協力 --</option>';
+      memberSelect.disabled = true;
+
+      if (!huaiId) {
+        xieliSelect.disabled = true;
+        return;
+      }
+
+      const heqiNode = orgTreeData.find(h => h.id === heqiId);
+      if (heqiNode) {
+        const huaiNode = (heqiNode.children || []).find(a => a.id === huaiId);
+        if (huaiNode && huaiNode.children) {
+          huaiNode.children.forEach(x => {
+            xieliSelect.innerHTML += `<option value="${x.id}">${x.name}</option>`;
+          });
+          xieliSelect.disabled = false;
+        }
+      }
+    }
+
+    async function onXieliChange() {
+      const xieliId = document.getElementById('select-xieli').value;
+      const memberSelect = document.getElementById('select-member');
+
+      memberSelect.innerHTML = '<option value="">載入成員中...</option>';
+      memberSelect.disabled = true;
+
+      if (!xieliId) {
+        memberSelect.innerHTML = '<option value="">-- 請先選擇協力 --</option>';
+        return;
+      }
+
+      try {
+        const members = await api('getMembers', null, { orgId: xieliId });
+        memberSelect.innerHTML = '<option value="">-- 請選擇志工姓名 --</option>';
+        members.forEach(m => {
+          memberSelect.innerHTML += `<option value="${m.id}">${m.name} ${m.dharmaName ? '(' + m.dharmaName + ')' : ''}</option>`;
+        });
+        memberSelect.disabled = false;
+      } catch (e) {
+        memberSelect.innerHTML = '<option value="">載入成員失敗</option>';
+      }
+    }
+
+    async function doSearchDuty() {
+      const memberId = document.getElementById('select-member').value;
+      const yearMonth = document.getElementById('select-year-month').value;
+
+      if (!memberId) {
+        showToast('請先完成選擇志工姓名', 'warning');
+        return;
+      }
+      if (!yearMonth) {
+        showToast('請選擇查詢年月', 'warning');
+        return;
+      }
+
+      const memberSelect = document.getElementById('select-member');
+      const memberName = memberSelect.options[memberSelect.selectedIndex].text;
+
+      showLoading('查詢個人值班中...');
+      try {
+        const duties = await api('searchDutyByMemberAndMonth', memberId, yearMonth);
+        hideLoading();
+
+        const card = document.getElementById('duty-result-card');
+        const tbody = document.getElementById('duty-result-tbody');
+        const title = document.getElementById('result-title');
+
+        card.style.display = 'block';
+        title.innerText = `📋 ${memberName} — ${yearMonth} 值班表`;
+
+        if (duties.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="padding: 24px; text-align: center; color: var(--neutral-500);">該月份尚無您的值班紀錄</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = duties.map(d => `
+          <tr style="border-bottom: 1px solid var(--neutral-200);">
+            <td style="padding: 12px 8px; font-weight: 600; color: var(--primary-700);">${d.location}</td>
+            <td style="padding: 12px 8px; font-weight: 500;">${d.dutyDate}</td>
+            <td style="padding: 12px 8px;"><span class="badge" style="background: var(--primary-50); color: var(--primary-700);">${d.shiftLabel}</span></td>
+            <td style="padding: 12px 8px; font-size: 14px; color: var(--neutral-700);">${d.shiftTime}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        hideLoading();
+        showToast('查詢失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

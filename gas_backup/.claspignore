@@ -1,0 +1,6 @@
+# .claspignore
+# 忽略不需要上傳至 Google Apps Script 伺服器的檔案
+**/*.md
+.git/**
+node_modules/**
+.clasp.json

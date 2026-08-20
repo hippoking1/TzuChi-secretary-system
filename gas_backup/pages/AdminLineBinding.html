@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>LINE 綁定管理 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <h2 style="font-size: 24px;">📱 LINE 用戶綁定與推播管理</h2>
+        <button onclick="triggerSetupTriggers()" class="btn btn-outline">⏰ 重新建立每日定時提醒觸發器</button>
+      </div>
+
+      <!-- 說明區塊 -->
+      <div class="card" style="margin-bottom: 24px; background: var(--primary-50); border: 1px solid var(--primary-200);">
+        <h4 style="font-size: 16px; color: var(--primary-700); margin-bottom: 8px;">ℹ️ LINE Bot 設定說明</h4>
+        <p style="font-size: 14px; color: var(--neutral-700); line-height: 1.6;">
+          1. <b>個資保護規範</b>：系統採用「姓名 與 組織名稱」進行帳號綁定。志工只要加入官方帳號並回覆「姓名 組織」（例如：<code>張志工 第一協力</code>），系統即會自動對應綁定。<br>
+          2. 系統已設定每天晚上 20:00 自動推播隔日道場值班提醒。<br>
+          3. 會議開會通知可在「會議列表」點擊「📲 LINE通知」即時推播至應到班/應開會人員個人 LINE。
+        </p>
+      </div>
+
+      <!-- 綁定名單表格 -->
+      <div class="card">
+        <h3 style="font-size: 18px; margin-bottom: 16px;">已綁定志工名單</h3>
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse; min-width: 650px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left;">
+                <th style="padding: 12px 8px;">志工姓名</th>
+                <th style="padding: 12px 8px;">所屬組別</th>
+                <th style="padding: 12px 8px;">LINE User ID</th>
+                <th style="padding: 12px 8px;">綁定時間</th>
+                <th style="padding: 12px 8px;">狀態</th>
+                <th style="padding: 12px 8px; text-align: right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="line-table">
+              <!-- 內建動態渲染 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadBindings();
+    });
+
+    async function loadBindings() {
+      showLoading('載入 LINE 綁定列表中...');
+      try {
+        const list = await api('getLineBindings', token);
+        hideLoading();
+        renderBindings(list);
+      } catch (e) {
+        hideLoading();
+        showToast('載入失敗', 'error');
+      }
+    }
+
+    function renderBindings(list) {
+      const tbody = document.getElementById('line-table');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 24px; text-align: center; color: var(--neutral-500);">目前尚無志工綁定 LINE 帳號</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map(item => `
+        <tr style="border-bottom: 1px solid var(--neutral-200);">
+          <td style="padding: 12px 8px; font-weight: 600;">${item.memberName}</td>
+          <td style="padding: 12px 8px; color: var(--primary-700); font-weight: 500;">${item.orgPath || '未分組'}</td>
+          <td style="padding: 12px 8px; font-family: monospace; font-size: 12px; color: var(--neutral-600);">${item.lineUserId ? item.lineUserId.slice(0, 12) + '...' : ''}</td>
+          <td style="padding: 12px 8px; font-size: 13px; color: var(--neutral-600);">${item.bindingTime ? item.bindingTime.slice(0, 16).replace('T', ' ') : ''}</td>
+          <td style="padding: 12px 8px;"><span class="badge" style="background: #E8F5E9; color: #2E7D32;">已綁定</span></td>
+          <td style="padding: 12px 8px; text-align: right;">
+            <button onclick="handleUnbind('${item.id}')" style="background:none;border:none;color:var(--error);cursor:pointer;">解除綁定</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function handleUnbind(id) {
+      if (!confirm('確定要解除此志工的 LINE 綁定嗎？')) return;
+      showLoading('解除綁定中...');
+      try {
+        const res = await api('unbindLineUser', token, id);
+        hideLoading();
+        if (res.success) {
+          showToast('已解除綁定', 'success');
+          loadBindings();
+        } else {
+          showToast(res.error || '解除失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('解除失敗', 'error');
+      }
+    }
+
+    async function triggerSetupTriggers() {
+      showLoading('設定觸發器中...');
+      try {
+        await api('setupDailyTriggers');
+        hideLoading();
+        showToast('已設定每日 20:00 值班提醒觸發器！', 'success');
+      } catch (e) {
+        hideLoading();
+        showToast('設定失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

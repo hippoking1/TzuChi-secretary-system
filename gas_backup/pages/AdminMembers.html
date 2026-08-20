@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>成員名單維護 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <h2 style="font-size: 24px;">👥 志工與成員建檔名單</h2>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="openBatchModal()" class="btn btn-outline">📥 批次建檔 / 匯入</button>
+          <button onclick="openCreateModal()" class="btn btn-primary">➕ 新建單筆名單</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div style="display: flex; gap: 16px;">
+          <input type="text" id="search-member" class="form-input" placeholder="搜尋姓名、電話、法號或委員/慈誠編號..." oninput="debounceSearch()">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse; min-width: 640px;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left;">
+              <th style="padding: 12px 8px;">姓名</th>
+              <th style="padding: 12px 8px;">性別</th>
+              <th style="padding: 12px 8px;">電話</th>
+              <th style="padding: 12px 8px;">法號</th>
+              <th style="padding: 12px 8px;">委員/慈誠編號</th>
+              <th style="padding: 12px 8px;">組織歸屬 (和氣/互愛/協力)</th>
+              <th style="padding: 12px 8px;">身份角色</th>
+              <th style="padding: 12px 8px; text-align: right;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="members-table">
+            <!-- 動態渲染 -->
+          </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 新建/編輯人員 Modal -->
+  <div id="member-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+      <h3 id="modal-title" style="margin-bottom: 20px;">➕ 新建志工資料</h3>
+      <form onsubmit="saveMember(event)">
+        <input type="hidden" id="m-id">
+
+        <div class="form-group">
+          <label class="form-label">姓名 <span class="required">*</span></label>
+          <input type="text" id="m-name" class="form-input" placeholder="請輸入志工姓名" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">性別 <span class="required">*</span></label>
+          <select id="m-gender" class="form-select" required>
+            <option value="男">男 (男眾)</option>
+            <option value="女">女 (女眾)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">法號 <span class="required">*</span></label>
+          <input type="text" id="m-dharma" class="form-input" placeholder="例如: 靜觀" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">電話 (選填)</label>
+          <input type="tel" id="m-phone" class="form-input" placeholder="例如: 0912345678">
+        </div>
+        <div class="form-group">
+          <label class="form-label">委員/慈誠編號 (選填)</label>
+          <input type="text" id="m-code" class="form-input" placeholder="例如: TC20260001">
+        </div>
+
+        <!-- 三層連動下拉選單 (和氣 -> 互愛 -> 協力) -->
+        <div class="form-group">
+          <label class="form-label">所屬組織 (和氣 ➔ 互愛 ➔ 協力) (選填)</label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <select id="m-heqi" class="form-select" onchange="onHeqiChange()">
+              <option value="">-- 1. 請選擇和氣 --</option>
+            </select>
+            <select id="m-huai" class="form-select" onchange="onHuaiChange()" disabled>
+              <option value="">-- 2. 請先選擇和氣 --</option>
+            </select>
+            <select id="m-xieli" class="form-select" onchange="onXieliChange()" disabled>
+              <option value="">-- 3. 請先選擇互愛 --</option>
+            </select>
+          </div>
+          <input type="hidden" id="m-org">
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="button" onclick="toggleModal(false)" class="btn btn-outline btn-block">取消</button>
+          <button type="submit" class="btn btn-primary btn-block">儲存資料</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 批次建檔 Modal -->
+  <div id="batch-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width: 100%; max-width: 650px; max-height: 90vh; overflow-y: auto;">
+      <h3 style="margin-bottom: 12px; color: var(--primary-700);">📥 批次志工建檔 / 匯入</h3>
+      
+      <div style="background: var(--primary-50); padding: 12px; border-radius: 6px; font-size: 13px; color: var(--neutral-700); margin-bottom: 16px; line-height: 1.5;">
+        <b>格式說明：</b>每行代表一位志工，欄位請用「逗點 (,)」或「Tab 鍵 (從 Excel 複製直接貼上)」分隔。<br>
+        <b>欄位順序：</b><code>姓名, 性別(男/女), 法號, 電話(選填), 委員編號(選填)</code><br>
+        <b>範例：</b><br>
+        <code>張志工,男,明志,0912345678,TC20260001</code><br>
+        <code>李師姊,女,靜觀,,</code>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">選擇匯入人員預設組織組別 (選填)：</label>
+        <select id="batch-org" class="form-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">請貼上 Excel 或 CSV 內容：</label>
+        <textarea id="batch-input" class="form-textarea" rows="8" placeholder="張志工,男,明志,0912345678,TC20260001&#10;李師姊,女,靜觀,," style="font-family: monospace; font-size: 13px;"></textarea>
+      </div>
+
+      <div style="display: flex; gap: 12px; margin-top: 20px;">
+        <button type="button" onclick="toggleBatchModal(false)" class="btn btn-outline btn-block">取消</button>
+        <button type="button" onclick="submitBatchImport()" class="btn btn-primary btn-block">🚀 開始批次匯入</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    let timer;
+    let globalOrgTree = [];
+    let currentMembersList = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadMembers();
+      loadOrgTreeForSelect();
+    });
+
+    function debounceSearch() {
+      clearTimeout(timer);
+      timer = setTimeout(loadMembers, 300);
+    }
+
+    async function loadMembers() {
+      const q = document.getElementById('search-member').value;
+      showLoading('載入名單中...');
+      try {
+        currentMembersList = await api('getMembers', token, { search: q });
+        hideLoading();
+        renderMembers(currentMembersList);
+      } catch (e) {
+        hideLoading();
+        showToast('載入成員失敗', 'error');
+      }
+    }
+
+    async function loadOrgTreeForSelect() {
+      try {
+        globalOrgTree = await api('getOrgTree');
+        populateHeqiSelect();
+      } catch (e) {
+        console.error('載入組織樹失敗:', e);
+      }
+    }
+
+    function populateHeqiSelect() {
+      const heqiSelect = document.getElementById('m-heqi');
+      if (!globalOrgTree || globalOrgTree.length === 0) {
+        heqiSelect.innerHTML = '<option value="">-- 尚無組織資料 --</option>';
+        return;
+      }
+      heqiSelect.innerHTML = '<option value="">-- 1. 請選擇和氣 --</option>' +
+        globalOrgTree.map(h => `<option value="${h.id}">🏛️ ${h.name}</option>`).join('');
+    }
+
+    function onHeqiChange() {
+      const heqiId = document.getElementById('m-heqi').value;
+      const huaiSelect = document.getElementById('m-huai');
+      const xieliSelect = document.getElementById('m-xieli');
+      const hiddenOrg = document.getElementById('m-org');
+
+      hiddenOrg.value = heqiId;
+
+      if (!heqiId) {
+        huaiSelect.innerHTML = '<option value="">-- 2. 請先選擇和氣 --</option>';
+        huaiSelect.disabled = true;
+        xieliSelect.innerHTML = '<option value="">-- 3. 請先選擇互愛 --</option>';
+        xieliSelect.disabled = true;
+        return;
+      }
+
+      const selectedHeqi = globalOrgTree.find(h => h.id === heqiId);
+      if (selectedHeqi && selectedHeqi.children && selectedHeqi.children.length > 0) {
+        huaiSelect.innerHTML = '<option value="">-- 2. 請選擇互愛 (可不選) --</option>' +
+          selectedHeqi.children.map(hu => `<option value="${hu.id}">🤝 ${hu.name}</option>`).join('');
+        huaiSelect.disabled = false;
+      } else {
+        huaiSelect.innerHTML = '<option value="">(無下級互愛)</option>';
+        huaiSelect.disabled = true;
+      }
+
+      xieliSelect.innerHTML = '<option value="">-- 3. 請先選擇互愛 --</option>';
+      xieliSelect.disabled = true;
+    }
+
+    function onHuaiChange() {
+      const heqiId = document.getElementById('m-heqi').value;
+      const huaiId = document.getElementById('m-huai').value;
+      const xieliSelect = document.getElementById('m-xieli');
+      const hiddenOrg = document.getElementById('m-org');
+
+      if (!huaiId) {
+        hiddenOrg.value = heqiId;
+        xieliSelect.innerHTML = '<option value="">-- 3. 請先選擇互愛 --</option>';
+        xieliSelect.disabled = true;
+        return;
+      }
+
+      hiddenOrg.value = huaiId;
+
+      const selectedHeqi = globalOrgTree.find(h => h.id === heqiId);
+      if (selectedHeqi) {
+        const selectedHuai = selectedHeqi.children ? selectedHeqi.children.find(hu => hu.id === huaiId) : null;
+        if (selectedHuai && selectedHuai.children && selectedHuai.children.length > 0) {
+          xieliSelect.innerHTML = '<option value="">-- 3. 請選擇協力 (可不選) --</option>' +
+            selectedHuai.children.map(xi => `<option value="${xi.id}">🌱 ${xi.name}</option>`).join('');
+          xieliSelect.disabled = false;
+        } else {
+          xieliSelect.innerHTML = '<option value="">(無下級協力)</option>';
+          xieliSelect.disabled = true;
+        }
+      }
+    }
+
+    function onXieliChange() {
+      const huaiId = document.getElementById('m-huai').value;
+      const xieliId = document.getElementById('m-xieli').value;
+      const hiddenOrg = document.getElementById('m-org');
+
+      hiddenOrg.value = xieliId || huaiId;
+    }
+
+    function renderMembers(members) {
+      const tbody = document.getElementById('members-table');
+      if (!members || members.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--neutral-500);">目前尚無建檔人員</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = members.map(m => `
+        <tr style="border-bottom: 1px solid var(--neutral-200);">
+          <td style="padding: 12px 8px; font-weight: 600;">${m.name}</td>
+          <td style="padding: 12px 8px;"><span class="badge" style="background:${m.gender === '女' ? 'var(--accent-100)' : 'var(--primary-50)'}; color:${m.gender === '女' ? 'var(--accent-500)' : 'var(--primary-600)'};">${m.gender || '-'}</span></td>
+          <td style="padding: 12px 8px;">${m.phone}</td>
+          <td style="padding: 12px 8px;">${m.dharmaName || '-'}</td>
+          <td style="padding: 12px 8px;">${m.volunteerCode || '-'}</td>
+          <td style="padding: 12px 8px; font-size: 14px; color: var(--neutral-600);">${m.orgPath || '未分組'}</td>
+          <td style="padding: 12px 8px;"><span class="badge" style="background:var(--neutral-100);">${m.role || 'member'}</span></td>
+          <td style="padding: 12px 8px; text-align: right;">
+            <button onclick="editMember('${m.id}')" style="background:none;border:none;color:var(--primary-500);cursor:pointer;font-weight:600;padding:4px 8px;">✏️ 編輯</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openCreateModal() {
+      document.getElementById('modal-title').innerText = '➕ 新建志工資料';
+      document.getElementById('m-id').value = '';
+      document.getElementById('m-name').value = '';
+      document.getElementById('m-gender').value = '男';
+      document.getElementById('m-phone').value = '';
+      document.getElementById('m-dharma').value = '';
+      document.getElementById('m-code').value = '';
+      document.getElementById('m-heqi').value = '';
+      onHeqiChange();
+      toggleModal(true);
+    }
+
+    function editMember(id) {
+      const m = currentMembersList.find(x => String(x.id) === String(id));
+      if (!m) return;
+
+      document.getElementById('modal-title').innerText = '✏️ 編輯志工資料';
+      document.getElementById('m-id').value = m.id;
+      document.getElementById('m-name').value = m.name || '';
+      document.getElementById('m-gender').value = m.gender || '男';
+      document.getElementById('m-phone').value = m.phone || '';
+      document.getElementById('m-dharma').value = m.dharmaName || '';
+      document.getElementById('m-code').value = m.volunteerCode || '';
+
+      // 自動還原下拉選單組織
+      setOrgDropdowns(m.orgId);
+      toggleModal(true);
+    }
+
+    function setOrgDropdowns(orgId) {
+      if (!orgId || !globalOrgTree || globalOrgTree.length === 0) {
+        document.getElementById('m-heqi').value = '';
+        onHeqiChange();
+        return;
+      }
+
+      // 在組織樹中尋找層級
+      for (const h of globalOrgTree) {
+        if (h.id === orgId) {
+          document.getElementById('m-heqi').value = h.id;
+          onHeqiChange();
+          return;
+        }
+        if (h.children) {
+          for (const hu of h.children) {
+            if (hu.id === orgId) {
+              document.getElementById('m-heqi').value = h.id;
+              onHeqiChange();
+              document.getElementById('m-huai').value = hu.id;
+              onHuaiChange();
+              return;
+            }
+            if (hu.children) {
+              for (const xi of hu.children) {
+                if (xi.id === orgId) {
+                  document.getElementById('m-heqi').value = h.id;
+                  onHeqiChange();
+                  document.getElementById('m-huai').value = hu.id;
+                  onHuaiChange();
+                  document.getElementById('m-xieli').value = xi.id;
+                  onXieliChange();
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    function toggleModal(show) {
+      document.getElementById('member-modal').style.display = show ? 'flex' : 'none';
+    }
+
+    function openBatchModal() {
+      const select = document.getElementById('batch-org');
+      select.innerHTML = '<option value="">-- 無預設 (留空) --</option>';
+      
+      function populate(nodes, indent = '') {
+        nodes.forEach(n => {
+          select.innerHTML += `<option value="${n.id}">${indent}${n.name}</option>`;
+          if (n.children && n.children.length > 0) populate(n.children, indent + '└ ');
+        });
+      }
+      populate(globalOrgTree);
+
+      document.getElementById('batch-input').value = '';
+      toggleBatchModal(true);
+    }
+
+    function toggleBatchModal(show) {
+      document.getElementById('batch-modal').style.display = show ? 'flex' : 'none';
+    }
+
+    async function submitBatchImport() {
+      const text = document.getElementById('batch-input').value.trim();
+      const defaultOrgId = document.getElementById('batch-org').value;
+
+      if (!text) {
+        showToast('請貼上或輸入批次建檔文字內容', 'warning');
+        return;
+      }
+
+      const lines = text.split('\n');
+      const rows = [];
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+
+        // 支援逗點 (,) 或 Tab 鍵 (\t) 切分
+        const parts = trimmed.split(/,|\t/).map(p => p.trim());
+        if (parts.length >= 1 && parts[0]) {
+          rows.push({
+            name: parts[0] || '',
+            gender: (parts[1] === '女' || parts[1] === '女眾') ? '女' : '男',
+            dharmaName: parts[2] || '',
+            phone: parts[3] || '',
+            volunteerCode: parts[4] || '',
+            orgId: defaultOrgId || ''
+          });
+        }
+      });
+
+      if (rows.length === 0) {
+        showToast('無法解析有效格式，請檢查輸入內容', 'error');
+        return;
+      }
+
+      showLoading(`批次匯入 ${rows.length} 筆志工資料中...`);
+      try {
+        const res = await api('batchImportMembers', token, rows);
+        hideLoading();
+        if (res.successCount > 0) {
+          showToast(`成功批次建檔 ${res.successCount} 筆資料！`, 'success');
+          toggleBatchModal(false);
+          loadMembers();
+        } else {
+          showToast('匯入失敗，請檢查格式', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('批次匯入失敗: ' + e.toString(), 'error');
+      }
+    }
+
+    async function saveMember(e) {
+      e.preventDefault();
+      const id = document.getElementById('m-id').value;
+      const data = {
+        name: document.getElementById('m-name').value,
+        gender: document.getElementById('m-gender').value,
+        phone: document.getElementById('m-phone').value,
+        dharmaName: document.getElementById('m-dharma').value,
+        volunteerCode: document.getElementById('m-code').value,
+        orgId: document.getElementById('m-org').value
+      };
+
+      showLoading('儲存中...');
+      try {
+        let res;
+        if (id) {
+          res = await api('updateMember', token, id, data);
+        } else {
+          res = await api('createMember', token, data);
+        }
+        hideLoading();
+        if (res.success) {
+          showToast(id ? '修改成功！' : '建立成功！', 'success');
+          toggleModal(false);
+          loadMembers();
+        } else {
+          showToast(res.error || '失敗', 'error');
+        }
+      } catch (err) {
+        hideLoading();
+        showToast('儲存失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

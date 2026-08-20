@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>資料匯出 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main style="flex: 1; padding: 32px; max-width: 800px;">
+      <h2 style="font-size: 24px; margin-bottom: 24px;">📤 名單與統計表單匯出</h2>
+
+      <!-- 匯出類型切換卡片 -->
+      <div class="card" style="margin-bottom: 24px;">
+        <h3 style="font-size: 18px; margin-bottom: 16px;">📅 一般活動報名名單匯出</h3>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">選擇活動項目</label>
+          <select id="export-event-select" class="form-input" style="width: 100%; padding: 10px; border-radius: 6px;"></select>
+        </div>
+        <button onclick="handleExportEvent()" class="btn btn-primary" style="width: 100%;">
+          📥 下載一般活動報名 CSV
+        </button>
+      </div>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <h3 style="font-size: 18px; margin-bottom: 16px;">📋 會議參與名單匯出</h3>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">選擇會議項目</label>
+          <select id="export-meeting-select" class="form-input" style="width: 100%; padding: 10px; border-radius: 6px;"></select>
+        </div>
+        <button onclick="handleExportMeeting()" class="btn btn-primary" style="width: 100%;">
+          📥 下載會議參與名單 CSV
+        </button>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size: 18px; margin-bottom: 16px;">🏛️ 道場值班表匯出</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">選擇場地</label>
+            <select id="export-duty-location" class="form-input" style="width: 100%; padding: 10px; border-radius: 6px;">
+              <option value="宜蘭園區">宜蘭園區</option>
+              <option value="東港聯絡處">東港聯絡處</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">選擇月份</label>
+            <input type="month" id="export-duty-month" class="form-input" style="width: 100%; padding: 9px; border-radius: 6px;">
+          </div>
+        </div>
+        <button onclick="handleExportDuty()" class="btn btn-primary" style="width: 100%;">
+          📥 下載月度值班表 CSV
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+
+      const now = new Date();
+      const mStr = now.getMonth() + 1 < 10 ? '0' + (now.getMonth() + 1) : (now.getMonth() + 1);
+      document.getElementById('export-duty-month').value = `${now.getFullYear()}-${mStr}`;
+
+      loadOptions();
+    });
+
+    async function loadOptions() {
+      try {
+        const events = await api('getAllEvents', token, '全部');
+        const eventSelect = document.getElementById('export-event-select');
+        eventSelect.innerHTML = events.map(e => `<option value="${e.id}">${e.title}</option>`).join('');
+
+        const meetings = await api('getMeetings', token, '全部');
+        const meetingSelect = document.getElementById('export-meeting-select');
+        meetingSelect.innerHTML = meetings.map(m => `<option value="${m.id}">${m.title} (${m.meetingDate})</option>`).join('');
+      } catch (e) {
+        showToast('載入選單失敗', 'error');
+      }
+    }
+
+    function downloadBlob(csv, filename) {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'download.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function handleExportEvent() {
+      const eventId = document.getElementById('export-event-select').value;
+      if (!eventId) return;
+
+      showLoading('產生 CSV 中...');
+      try {
+        const res = await api('exportRegistrationsCsv', token, eventId);
+        hideLoading();
+        if (res.csv) {
+          downloadBlob(res.csv, res.filename);
+          showToast('匯出成功！', 'success');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('匯出失敗', 'error');
+      }
+    }
+
+    async function handleExportMeeting() {
+      const meetingId = document.getElementById('export-meeting-select').value;
+      if (!meetingId) return;
+
+      showLoading('產生 CSV 中...');
+      try {
+        const res = await api('exportMeetingParticipantsCsv', token, meetingId);
+        hideLoading();
+        if (res.csv) {
+          downloadBlob(res.csv, res.filename);
+          showToast('匯出成功！', 'success');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('匯出失敗', 'error');
+      }
+    }
+
+    async function handleExportDuty() {
+      const location = document.getElementById('export-duty-location').value;
+      const monthVal = document.getElementById('export-duty-month').value;
+      if (!monthVal) return;
+
+      const [year, month] = monthVal.split('-');
+
+      showLoading('產生 CSV 中...');
+      try {
+        const res = await api('exportDutyScheduleCsv', token, location, parseInt(year), parseInt(month));
+        hideLoading();
+        if (res.csv) {
+          downloadBlob(res.csv, res.filename);
+          showToast('匯出成功！', 'success');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('匯出失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

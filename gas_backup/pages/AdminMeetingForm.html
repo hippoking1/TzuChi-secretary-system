@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>新建/編輯會議 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px; max-width: 800px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <h2 id="page-title" style="font-size: 24px;">➕ 新建會議</h2>
+        <a href="javascript:void(0)" onclick="navTo('admin-meetings')" class="btn btn-outline">← 返回會議列表</a>
+      </div>
+
+      <!-- 會議基本資料 -->
+      <form id="meeting-form" class="card" onsubmit="saveMeetingForm(event)">
+        <h3 style="font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid var(--neutral-200); padding-bottom: 8px;">📋 會議資訊 (對標活動建立模式)</h3>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div style="grid-column: span 2;">
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">會議主題 <span class="required">*</span></label>
+            <input type="text" id="m-title" class="form-input" placeholder="例如：7月份幹部共識會議" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">會議日期 <span class="required">*</span></label>
+            <input type="date" id="m-date" class="form-input" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">會議地點 <span class="required">*</span></label>
+            <input type="text" id="m-location" class="form-input" placeholder="例如：花蓮本會三樓會議室" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">開始時間 <span class="required">*</span></label>
+            <input type="time" id="m-start" class="form-input" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">結束時間 <span class="required">*</span></label>
+            <input type="time" id="m-end" class="form-input" required style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">召集人姓名</label>
+            <input type="text" id="m-organizer" class="form-input" placeholder="會議召集人" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+          </div>
+
+          <div>
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">狀態</label>
+            <select id="m-status" class="form-input" style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;">
+              <option value="已發佈">已發佈</option>
+              <option value="草稿">草稿</option>
+              <option value="已結束">已結束</option>
+            </select>
+          </div>
+
+          <div style="grid-column: span 2;">
+            <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">會議說明 / 議程</label>
+            <textarea id="m-desc" class="form-input" rows="3" placeholder="請填寫會議討論要點或議程說明..." style="width: 100%; padding: 10px; border: 1px solid var(--neutral-300); border-radius: 6px;"></textarea>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 16px; margin-top: 20px;">
+          💾 儲存會議資料並開啟名單指定
+        </button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    const params = JSON.parse('<?= params ?>');
+
+    function getUrlParam(name) {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const meetingId = (params && params.id) ? params.id : getUrlParam('id');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      if (meetingId) {
+        document.getElementById('page-title').innerText = '✏️ 編輯會議內容';
+        loadMeetingDetail();
+      }
+    });
+
+    async function loadMeetingDetail() {
+      showLoading('載入會議詳情...');
+      try {
+        const meeting = await api('getMeetingById', meetingId);
+        hideLoading();
+        if (!meeting) return;
+
+        document.getElementById('m-title').value = meeting.title || '';
+        document.getElementById('m-date').value = String(meeting.meetingDate || '').substring(0, 10);
+        document.getElementById('m-location').value = meeting.location || '';
+        document.getElementById('m-start').value = formatTimeOnly(meeting.startTime);
+        document.getElementById('m-end').value = formatTimeOnly(meeting.endTime);
+        document.getElementById('m-organizer').value = meeting.organizerName || '';
+        document.getElementById('m-status').value = meeting.status || '已發佈';
+        document.getElementById('m-desc').value = meeting.description || '';
+      } catch (e) {
+        hideLoading();
+        showToast('載入詳情失敗', 'error');
+      }
+    }
+
+    async function saveMeetingForm(e) {
+      e.preventDefault();
+
+      const meetingData = {
+        title: document.getElementById('m-title').value,
+        meetingDate: document.getElementById('m-date').value,
+        location: document.getElementById('m-location').value,
+        startTime: document.getElementById('m-start').value,
+        endTime: document.getElementById('m-end').value,
+        organizerName: document.getElementById('m-organizer').value || '會議召集人',
+        status: document.getElementById('m-status').value,
+        description: document.getElementById('m-desc').value
+      };
+
+      showLoading('儲存會議中...');
+      try {
+        let res;
+        if (meetingId) {
+          res = await api('updateMeeting', token, meetingId, meetingData);
+        } else {
+          res = await api('createMeeting', token, meetingData, []);
+        }
+
+        hideLoading();
+        if (res && res.success) {
+          showToast('✅ 會議資料儲存成功！', 'success');
+          const targetId = meetingId || res.id;
+          navTo('admin-meetings', { openParticipants: targetId });
+        } else {
+          showToast((res ? res.error : null) || '儲存失敗', 'error');
+        }
+      } catch (err) {
+        hideLoading();
+        showToast('儲存失敗: ' + err.toString(), 'error');
+      }
+    }
+  </script>
+</body>
+</html>

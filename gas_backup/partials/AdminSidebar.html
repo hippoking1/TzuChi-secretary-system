@@ -1,0 +1,44 @@
+<!-- AdminSidebar.html -->
+<div class="admin-sidebar" style="background:#fff;border-right:1px solid var(--neutral-200);padding:20px 16px;width:240px;min-height:calc(100vh - 64px);">
+  <div class="admin-sidebar-title" style="font-weight:700;color:var(--neutral-400);font-size:12px;margin-bottom:12px;text-transform:uppercase;">後台管理選單</div>
+  <nav style="display:flex;flex-direction:column;gap:4px;">
+    <a href="javascript:void(0)" onclick="navTo('admin')" class="admin-nav-item">📊 總覽儀表板</a>
+
+    <div style="font-size: 11px; font-weight: 700; color: var(--neutral-400); margin-top: 12px; margin-bottom: 4px; padding-left: 8px;">一般活動</div>
+    <a href="javascript:void(0)" onclick="navTo('admin-events')" class="admin-nav-item">📅 活動管理</a>
+    <a href="javascript:void(0)" onclick="navTo('admin-regs')" class="admin-nav-item">📝 報名名單</a>
+    <a href="javascript:void(0)" onclick="navTo('admin-checkin')" class="admin-nav-item">✅ 現場簽到</a>
+
+    <div style="font-size: 11px; font-weight: 700; color: var(--neutral-400); margin-top: 12px; margin-bottom: 4px; padding-left: 8px;">會議管理</div>
+    <a href="javascript:void(0)" onclick="navTo('admin-meetings')" class="admin-nav-item">📋 會議列表</a>
+
+    <div style="font-size: 11px; font-weight: 700; color: var(--neutral-400); margin-top: 12px; margin-bottom: 4px; padding-left: 8px;">道場值班</div>
+    <a href="javascript:void(0)" onclick="navTo('admin-duty')" class="admin-nav-item">🏛️ 值班月曆</a>
+    <a href="javascript:void(0)" onclick="navTo('admin-duty-form')" class="admin-nav-item">✍️ 編輯值班表</a>
+
+    <div style="font-size: 11px; font-weight: 700; color: var(--neutral-400); margin-top: 12px; margin-bottom: 4px; padding-left: 8px;">人員與 LINE</div>
+    <a href="javascript:void(0)" onclick="navTo('admin-members')" class="admin-nav-item">👥 志工名單維護</a>
+    <a href="javascript:void(0)" onclick="navTo('admin-orgs')" class="admin-nav-item">🏢 組織架構</a>
+    <a href="javascript:void(0)" onclick="navTo('admin-line')" class="admin-nav-item">📱 LINE 綁定管理</a>
+
+    <div style="font-size: 11px; font-weight: 700; color: var(--neutral-400); margin-top: 12px; margin-bottom: 4px; padding-left: 8px;">系統</div>
+    <a href="javascript:void(0)" onclick="navTo('admin-export')" class="admin-nav-item">📤 資料匯出</a>
+  </nav>
+</div>
+<style>
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  color: var(--neutral-700);
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.admin-nav-item:hover {
+  background-color: var(--primary-50);
+  color: var(--primary-600);
+}
+</style>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>後台總覽 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <h2 style="font-size: 24px; margin-bottom: 24px;">📊 管理員儀表板</h2>
+
+      <!-- 指標卡片 -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px;">
+        <div class="card">
+          <p style="color: var(--neutral-500); font-size: 14px;">進行中一般活動</p>
+          <h3 id="stat-events" style="font-size: 24px; color: var(--primary-600);">-</h3>
+        </div>
+        <div class="card">
+          <p style="color: var(--neutral-500); font-size: 14px;">總報名人數</p>
+          <h3 id="stat-regs" style="font-size: 24px; color: var(--secondary-700);">-</h3>
+        </div>
+        <div class="card">
+          <p style="color: var(--neutral-500); font-size: 14px;">總會議數</p>
+          <h3 id="stat-meetings" style="font-size: 24px; color: var(--primary-700);">-</h3>
+        </div>
+        <div class="card">
+          <p style="color: var(--neutral-500); font-size: 14px;">今日值班人數</p>
+          <h3 id="stat-duties" style="font-size: 24px; color: var(--gold-500);">-</h3>
+        </div>
+        <div class="card">
+          <p style="color: var(--neutral-500); font-size: 14px;">LINE 綁定志工</p>
+          <h3 id="stat-line" style="font-size: 24px; color: #00B900;">-</h3>
+        </div>
+        <div class="card">
+          <p style="color: var(--neutral-500); font-size: 14px;">建檔志工總數</p>
+          <h3 id="stat-members" style="font-size: 24px; color: var(--neutral-700);">-</h3>
+        </div>
+      </div>
+
+      <!-- 近期報名列表 -->
+      <div class="card">
+        <h3 style="font-size: 18px; margin-bottom: 16px;">⚡ 近期報名動態</h3>
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse; min-width: 600px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left;">
+                <th style="padding: 8px;">姓名</th>
+                <th style="padding: 8px;">活動名稱</th>
+                <th style="padding: 8px;">所屬組織</th>
+                <th style="padding: 8px;">狀態</th>
+                <th style="padding: 8px;">報名時間</th>
+              </tr>
+            </thead>
+            <tbody id="recent-table">
+              <!-- 內建動態渲染 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadDashboardData();
+    });
+
+    async function loadDashboardData() {
+      showLoading('載入統計數據...');
+      try {
+        const stats = await api('getAdminDashboardStats', token);
+        hideLoading();
+        if (stats.error) {
+          showToast(stats.error, 'error');
+          return;
+        }
+
+        document.getElementById('stat-events').innerText = stats.activeEvents + ' 場';
+        document.getElementById('stat-regs').innerText = stats.totalRegs + ' 人次';
+        document.getElementById('stat-meetings').innerText = (stats.totalMeetings || 0) + ' 場';
+        document.getElementById('stat-duties').innerText = (stats.todayDuties || 0) + ' 人';
+        document.getElementById('stat-line').innerText = (stats.lineBindingCount || 0) + ' 人';
+        document.getElementById('stat-members').innerText = stats.totalMembers + ' 人';
+
+        const tbody = document.getElementById('recent-table');
+        if (!stats.recentRegs || stats.recentRegs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;">暫無近況報名</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = stats.recentRegs.map(r => `
+          <tr style="border-bottom: 1px solid var(--neutral-200);">
+            <td style="padding: 12px 8px; font-weight: 600;">${r.name}</td>
+            <td style="padding: 12px 8px;">${r.eventTitle}</td>
+            <td style="padding: 12px 8px; color: var(--neutral-600);">${r.orgPath}</td>
+            <td style="padding: 12px 8px;"><span class="badge ${r.status === '已確認' ? 'badge-confirmed' : 'badge-waitlisted'}">${r.status}</span></td>
+            <td style="padding: 12px 8px; font-size: 14px; color: var(--neutral-500);">${r.time}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        hideLoading();
+        showToast('載入失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

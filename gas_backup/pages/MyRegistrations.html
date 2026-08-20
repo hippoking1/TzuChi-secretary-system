@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>查詢我的報名 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <main class="narrow-container" style="margin-top: 32px; min-height: 600px;">
+    <div class="card" style="margin-bottom: 24px;">
+      <h2 style="font-size: 24px; margin-bottom: 16px; text-align: center;">查詢與管理個人報名紀錄</h2>
+      
+      <div style="display: flex; gap: 12px;">
+        <input type="text" id="query-name" class="form-input" placeholder="請輸入您的姓名">
+        <input type="text" id="query-phone" class="form-input" maxlength="4" placeholder="手機末四碼" style="width: 140px;">
+        <button onclick="searchMyRegs()" class="btn btn-primary" style="white-space: nowrap;">🔍 查詢</button>
+      </div>
+    </div>
+
+    <!-- 查詢結果列表 -->
+    <div id="results-container"></div>
+  </main>
+
+  <?!= include('partials/Footer') ?>
+
+  <script>
+    async function searchMyRegs() {
+      const name = document.getElementById('query-name').value.trim();
+      const phone = document.getElementById('query-phone').value.trim();
+
+      if (!name || !phone) {
+        showToast('請輸入姓名與手機末四碼', 'error');
+        return;
+      }
+
+      showLoading('搜尋紀錄中...');
+      try {
+        const idRes = await api('identifyMember', name, phone);
+        if (idRes.status !== 'found') {
+          hideLoading();
+          document.getElementById('results-container').innerHTML = `
+            <div class="card" style="text-align: center; color: var(--neutral-500);">未找到相符的志工成員資料</div>
+          `;
+          return;
+        }
+
+        const regs = await api('getMyRegistrations', idRes.member.id, phone);
+        hideLoading();
+        renderResults(regs, idRes.member.id);
+      } catch (e) {
+        hideLoading();
+        showToast('查詢失敗', 'error');
+      }
+    }
+
+    function renderResults(regs, memberId) {
+      const container = document.getElementById('results-container');
+      if (!regs || regs.length === 0) {
+        container.innerHTML = `<div class="card" style="text-align: center; color: var(--neutral-500);">您目前尚無任何活動報名紀錄</div>`;
+        return;
+      }
+
+      container.innerHTML = regs.map(r => `
+        <div class="card" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+              <span class="badge ${r.status === '已確認' ? 'badge-confirmed' : r.status === '候補中' ? 'badge-waitlisted' : 'badge-cancelled'}">${r.status}</span>
+              <strong style="font-size: 18px;">${r.eventTitle}</strong>
+            </div>
+            <p style="font-size: 14px; color: var(--neutral-600);">📍 地點：${r.eventLocation}</p>
+            <p style="font-size: 14px; color: var(--neutral-600);">🍱 膳食：${r.mealType || '無'}</p>
+          </div>
+
+          ${r.status !== '已取消' ? `
+            <button onclick="handleCancel('${r.id}', '${memberId}')" class="btn btn-outline" style="border-color: var(--error); color: var(--error);">
+              取消報名
+            </button>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    async function handleCancel(regId, memberId) {
+      if (!confirm('確定要取消此項活動報名嗎？若已滿額，將釋出名額給候補人員。')) return;
+
+      showLoading('取消報名中...');
+      try {
+        const res = await api('cancelRegistration', regId, memberId);
+        hideLoading();
+        if (res.success) {
+          showToast('已取消報名', 'success');
+          searchMyRegs();
+        } else {
+          showToast(res.error || '取消失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('操作失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

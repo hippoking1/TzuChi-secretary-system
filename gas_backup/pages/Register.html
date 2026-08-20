@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>填寫報名資料 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+  <style>
+    .mode-tab {
+      flex: 1;
+      padding: 14px 16px;
+      text-align: center;
+      font-weight: 600;
+      border: 2px solid var(--neutral-300);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      background: #fff;
+      transition: all 0.2s;
+    }
+    .mode-tab.active {
+      border-color: var(--primary-500);
+      background: var(--primary-50);
+      color: var(--primary-700);
+    }
+  </style>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <main class="narrow-container" style="margin-top: 32px; min-height: 600px;">
+    <div class="card">
+      <h2 style="font-size: 24px; margin-bottom: 24px; text-align: center;">線上活動報名</h2>
+
+      <!-- 身分模式切換 Tab -->
+      <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+        <div id="tab-member" class="mode-tab active" onclick="switchMode('member')">
+          🪷 慈濟志工 / 建檔成員
+        </div>
+        <div id="tab-guest" class="mode-tab" onclick="switchMode('guest')">
+          👥 一般民眾 / 訪客報名
+        </div>
+      </div>
+
+      <!-- 模式一：慈濟志工比對/選擇區 -->
+      <div id="section-member" style="margin-bottom: 24px;">
+        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+          <label style="cursor:pointer;"><input type="radio" name="match-type" value="phone" checked onchange="toggleMatchType()"> 快速電話比對</label>
+          <label style="cursor:pointer;"><input type="radio" name="match-type" value="org" onchange="toggleMatchType()"> 從組織選單選擇</label>
+        </div>
+
+        <!-- 方式 A：電話姓名比對 -->
+        <div id="match-by-phone">
+          <div class="form-group">
+            <label class="form-label">您的姓名 <span class="required">*</span></label>
+            <input type="text" id="identify-name" class="form-input" placeholder="請輸入姓名 (例如: 張志工)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">手機號碼末四碼 <span class="required">*</span></label>
+            <input type="text" id="identify-phone" class="form-input" maxlength="4" placeholder="例如: 5678">
+          </div>
+          <button type="button" onclick="handleIdentify()" class="btn btn-outline btn-block">
+            🔍 比對名單帶入
+          </button>
+        </div>
+
+        <!-- 方式 B：三層組織選擇配對 -->
+        <div id="match-by-org" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">選擇組織 (和氣 ➔ 互愛 ➔ 協力)</label>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <select id="reg-heqi" class="form-select" onchange="onRegHeqiChange()">
+                <option value="">-- 1. 請選擇和氣 --</option>
+              </select>
+              <select id="reg-huai" class="form-select" onchange="onRegHuaiChange()" disabled>
+                <option value="">-- 2. 請先選擇和氣 --</option>
+              </select>
+              <select id="reg-xieli" class="form-select" onchange="onRegXieliChange()" disabled>
+                <option value="">-- 3. 請先選擇互愛 --</option>
+              </select>
+              <select id="reg-member-select" class="form-select" onchange="onMemberSelectChange()" disabled>
+                <option value="">-- 4. 請選擇志工人員 --</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 模式二：一般民眾自訂個人資料 -->
+      <div id="section-guest" style="display: none;">
+        <div class="form-group">
+          <label class="form-label">姓名 <span class="required">*</span></label>
+          <input type="text" id="guest-name-input" class="form-input" placeholder="請輸入您的姓名">
+        </div>
+        <div class="form-group">
+          <label class="form-label">聯絡手機電話 <span class="required">*</span></label>
+          <input type="tel" id="guest-phone-input" class="form-input" placeholder="請輸入您的聯絡電話">
+        </div>
+      </div>
+
+      <!-- 驗證成員成功標籤 -->
+      <div id="member-badge" style="display: none; background: var(--secondary-50); border: 1px solid var(--secondary-500); padding: 16px; border-radius: var(--radius-md); margin-bottom: 24px;">
+        <p style="font-weight: 700; color: var(--secondary-700); margin-bottom: 4px;">✅ 已確認報名人員：<span id="member-name-text"></span></p>
+        <p style="font-size: 14px; color: var(--neutral-600);">組織歸屬：<span id="member-org-text"></span></p>
+      </div>
+
+      <!-- 共用報名表單 -->
+      <form id="register-form" onsubmit="handleSubmit(event)">
+        <input type="hidden" id="member-id-input">
+
+        <!-- 報名人數 -->
+        <div class="form-group">
+          <label class="form-label">報名人數 <span class="required">*</span></label>
+          <input type="number" id="participant-count" class="form-input" value="1" min="1" max="20" required>
+          <p style="font-size: 12px; color: var(--neutral-500); margin-top: 4px;">包含本人與同行家人/菩薩之總人數。</p>
+        </div>
+
+        <div id="session-select-container" class="form-group" style="display: none;">
+          <label class="form-label">選擇參加場次 <span class="required">*</span></label>
+          <select id="session-id" class="form-select"></select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">膳食習慣 <span class="required">*</span></label>
+          <select id="meal-type" class="form-select">
+            <option value="全素">🌱 全素 (無蛋無奶)</option>
+            <option value="蛋奶素">🥛 蛋奶素</option>
+            <option value="不需要">🚫 不需要供餐</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">特殊需求 / 輔具 (選填)</label>
+          <input type="text" id="special-needs" class="form-input" placeholder="如輪椅通行、過敏源備註等">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">備註</label>
+          <textarea id="note" class="form-textarea" placeholder="如有其他事項可填寫在此..."></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" style="font-size: 18px; margin-top: 16px;">
+          📝 確認並提交報名
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <?!= include('partials/Footer') ?>
+
+  <script>
+    const params = JSON.parse('<?= params ?>');
+    const eventId = params.eventId;
+    let currentMode = 'member';
+    let globalOrgTree = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!eventId) {
+        showToast('活動 ID 無效', 'error');
+        return;
+      }
+      loadEventSessions();
+      loadOrgTreeData();
+    });
+
+    async function loadEventSessions() {
+      try {
+        const detail = await api('getEventDetail', eventId);
+        if (detail && detail.sessions && detail.sessions.length > 0) {
+          const container = document.getElementById('session-select-container');
+          const select = document.getElementById('session-id');
+          select.innerHTML = detail.sessions.map(s => `<option value="${s.id}">${s.sessionName}</option>`).join('');
+          container.style.display = 'block';
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadOrgTreeData() {
+      try {
+        globalOrgTree = await api('getOrgTree');
+        const heqiSelect = document.getElementById('reg-heqi');
+        heqiSelect.innerHTML = '<option value="">-- 1. 請選擇和氣 --</option>' +
+          globalOrgTree.map(h => `<option value="${h.id}">🏛️ ${h.name}</option>`).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.getElementById('tab-member').className = 'mode-tab ' + (mode === 'member' ? 'active' : '');
+      document.getElementById('tab-guest').className = 'mode-tab ' + (mode === 'guest' ? 'active' : '');
+
+      document.getElementById('section-member').style.display = mode === 'member' ? 'block' : 'none';
+      document.getElementById('section-guest').style.display = mode === 'guest' ? 'block' : 'none';
+
+      if (mode === 'guest') {
+        document.getElementById('member-id-input').value = '';
+        document.getElementById('member-badge').style.display = 'none';
+      }
+    }
+
+    function toggleMatchType() {
+      const type = document.querySelector('input[name="match-type"]:checked').value;
+      document.getElementById('match-by-phone').style.display = type === 'phone' ? 'block' : 'none';
+      document.getElementById('match-by-org').style.display = type === 'org' ? 'block' : 'none';
+    }
+
+    function onRegHeqiChange() {
+      const heqiId = document.getElementById('reg-heqi').value;
+      const huaiSelect = document.getElementById('reg-huai');
+      const xieliSelect = document.getElementById('reg-xieli');
+      const memberSelect = document.getElementById('reg-member-select');
+
+      huaiSelect.disabled = true;
+      xieliSelect.disabled = true;
+      memberSelect.disabled = true;
+
+      if (!heqiId) return;
+
+      const selectedHeqi = globalOrgTree.find(h => h.id === heqiId);
+      if (selectedHeqi && selectedHeqi.children) {
+        huaiSelect.innerHTML = '<option value="">-- 2. 請選擇互愛 --</option>' +
+          selectedHeqi.children.map(hu => `<option value="${hu.id}">🤝 ${hu.name}</option>`).join('');
+        huaiSelect.disabled = false;
+      }
+      loadMembersByOrg(heqiId);
+    }
+
+    function onRegHuaiChange() {
+      const heqiId = document.getElementById('reg-heqi').value;
+      const huaiId = document.getElementById('reg-huai').value;
+      const xieliSelect = document.getElementById('reg-xieli');
+      const memberSelect = document.getElementById('reg-member-select');
+
+      xieliSelect.disabled = true;
+      memberSelect.disabled = true;
+
+      if (!huaiId) return;
+
+      const selectedHeqi = globalOrgTree.find(h => h.id === heqiId);
+      if (selectedHeqi) {
+        const selectedHuai = selectedHeqi.children ? selectedHeqi.children.find(hu => hu.id === huaiId) : null;
+        if (selectedHuai && selectedHuai.children) {
+          xieliSelect.innerHTML = '<option value="">-- 3. 請選擇協力 --</option>' +
+            selectedHuai.children.map(xi => `<option value="${xi.id}">🌱 ${xi.name}</option>`).join('');
+          xieliSelect.disabled = false;
+        }
+      }
+      loadMembersByOrg(huaiId);
+    }
+
+    function onRegXieliChange() {
+      const xieliId = document.getElementById('reg-xieli').value;
+      if (xieliId) loadMembersByOrg(xieliId);
+    }
+
+    async function loadMembersByOrg(orgId) {
+      const memberSelect = document.getElementById('reg-member-select');
+      memberSelect.innerHTML = '<option value="">載入人員中...</option>';
+      try {
+        const members = await api('getMembers', null, { orgId: orgId });
+        if (members && members.length > 0) {
+          memberSelect.innerHTML = '<option value="">-- 4. 請選擇志工姓名 --</option>' +
+            members.map(m => `<option value="${m.id}" data-name="${m.name}" data-org="${m.orgPath}">${m.name} (${m.volunteerCode || m.phone})</option>`).join('');
+          memberSelect.disabled = false;
+        } else {
+          memberSelect.innerHTML = '<option value="">(此組織尚無建檔志工)</option>';
+          memberSelect.disabled = true;
+        }
+      } catch (e) {
+        memberSelect.innerHTML = '<option value="">(載入失敗)</option>';
+      }
+    }
+
+    function onMemberSelectChange() {
+      const select = document.getElementById('reg-member-select');
+      const opt = select.options[select.selectedIndex];
+      if (opt && opt.value) {
+        document.getElementById('member-id-input').value = opt.value;
+        document.getElementById('member-name-text').innerText = opt.getAttribute('data-name');
+        document.getElementById('member-org-text').innerText = opt.getAttribute('data-org');
+        document.getElementById('member-badge').style.display = 'block';
+        showToast('已選擇志工：' + opt.getAttribute('data-name'), 'success');
+      }
+    }
+
+    async function handleIdentify() {
+      const name = document.getElementById('identify-name').value.trim();
+      const phone = document.getElementById('identify-phone').value.trim();
+
+      if (!name || !phone) {
+        showToast('請填寫姓名與手機號碼末四碼', 'error');
+        return;
+      }
+
+      showLoading('比對成員名單中...');
+      try {
+        const result = await api('identifyMember', name, phone);
+        hideLoading();
+
+        if (result.status === 'found') {
+          const m = result.member;
+          document.getElementById('member-id-input').value = m.id;
+          document.getElementById('member-name-text').innerText = m.name;
+          document.getElementById('member-org-text').innerText = m.orgPath || '無';
+          document.getElementById('member-badge').style.display = 'block';
+          showToast('比對成功！已自動帶入成員資料', 'success');
+        } else {
+          showToast('名單中未找到相符資料，請切換至「一般民眾報名」模式', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('比對失敗', 'error');
+      }
+    }
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+
+      let memberId = '';
+      let guestName = '';
+      let guestPhone = '';
+
+      if (currentMode === 'member') {
+        memberId = document.getElementById('member-id-input').value;
+        if (!memberId) {
+          showToast('請先進行比對或選擇志工人員', 'error');
+          return;
+        }
+      } else {
+        guestName = document.getElementById('guest-name-input').value.trim();
+        guestPhone = document.getElementById('guest-phone-input').value.trim();
+        if (!guestName || !guestPhone) {
+          showToast('請填寫姓名與電話', 'error');
+          return;
+        }
+      }
+
+      const pCount = Number(document.getElementById('participant-count').value) || 1;
+
+      const data = {
+        eventId: eventId,
+        memberId: memberId,
+        guestName: guestName,
+        guestPhone: guestPhone,
+        sessionId: document.getElementById('session-id').value || '',
+        participantCount: pCount,
+        mealType: document.getElementById('meal-type').value,
+        specialNeeds: document.getElementById('special-needs').value,
+        note: document.getElementById('note').value
+      };
+
+      showLoading('提交報名中...');
+      try {
+        const res = await api('registerForEvent', data);
+        hideLoading();
+        if (res.error) {
+          showToast(res.error, 'error');
+        } else {
+          alert(res.message || '報名成功！');
+          navTo('index');
+        }
+      } catch (err) {
+        hideLoading();
+        showToast('報名失敗，請稍後再試', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

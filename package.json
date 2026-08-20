@@ -1,0 +1,24 @@
+{
+  "name": "tzuchi-registration-system",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dompurify": "^3.1.6",
+    "firebase": "^10.12.5",
+    "marked": "^12.0.2",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.31",
+    "vue-router": "^4.3.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.5",
+    "vite": "^5.3.3",
+    "vite-plugin-pwa": "^0.20.0"
+  }
+}

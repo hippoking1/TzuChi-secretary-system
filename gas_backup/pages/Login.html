@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>管理員登入 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body style="background: var(--primary-50); display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+
+  <div class="card" style="width: 100%; max-width: 400px; padding: 32px;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 40px;">🪷</span>
+      <h2 style="font-size: 22px; margin-top: 8px;">後台管理員登入</h2>
+      <p style="font-size: 14px; color: var(--neutral-500);">慈濟活動報名系統管理端</p>
+    </div>
+
+    <form onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label">管理密碼</label>
+        <input type="password" id="admin-password" class="form-input" placeholder="請輸入管理密碼" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" style="font-size: 16px;">
+        🔑 登入後台
+      </button>
+    </form>
+  </div>
+
+  <script>
+    async function handleLogin(e) {
+      e.preventDefault();
+      const pw = document.getElementById('admin-password').value;
+
+      showLoading('驗證密碼中...');
+      try {
+        const res = await api('adminLogin', pw);
+        hideLoading();
+        if (res.success && res.token) {
+          localStorage.setItem('tzuchi_admin_token', res.token);
+          showToast('登入成功', 'success');
+          navTo('admin');
+        } else {
+          showToast(res.error || '密碼錯誤', 'error');
+        }
+      } catch (err) {
+        hideLoading();
+        showToast('登入過程發生錯誤', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

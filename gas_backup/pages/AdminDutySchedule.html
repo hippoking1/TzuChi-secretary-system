@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>道場值班排程 — 慈濟活動管理系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <h2 style="font-size: 24px;">🏛️ 道場值班排程管理</h2>
+        <a href="javascript:void(0)" onclick="navTo('admin-duty-form')" class="btn btn-primary">➕ 編輯月度值班表</a>
+      </div>
+
+      <!-- 控制列：場地切換 + 年月選擇 -->
+      <div class="card" style="margin-bottom: 20px; padding: 16px;">
+        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+          <div>
+            <label style="font-weight: 600; margin-right: 8px;">選擇場地：</label>
+            <select id="duty-location-select" onchange="loadSchedule()" class="form-input" style="padding: 8px 12px; border-radius: 6px; border: 1px solid var(--neutral-300); font-weight: 600; color: var(--primary-700);">
+              <option value="宜蘭園區">宜蘭園區</option>
+              <option value="東港聯絡處">東港聯絡處</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="font-weight: 600; margin-right: 8px;">選擇月份：</label>
+            <input type="month" id="duty-month-input" onchange="loadSchedule()" class="form-input" style="padding: 7px 12px; border-radius: 6px; border: 1px solid var(--neutral-300);">
+          </div>
+        </div>
+      </div>
+
+      <!-- 月曆區域 -->
+      <div class="card">
+        <h3 id="calendar-title" style="font-size: 18px; margin-bottom: 16px;">值班月曆</h3>
+
+        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; text-align: center; font-weight: 600; margin-bottom: 8px; background: var(--neutral-100); padding: 8px 0; border-radius: 6px;">
+          <div style="color: var(--error);">日</div>
+          <div>一</div>
+          <div>二</div>
+          <div>三</div>
+          <div>四</div>
+          <div>五</div>
+          <div style="color: var(--primary-600);">六</div>
+        </div>
+
+        <div id="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;">
+          <!-- 動態渲染日曆格子 -->
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+
+      // 預設當月
+      const now = new Date();
+      const mStr = now.getMonth() + 1 < 10 ? '0' + (now.getMonth() + 1) : (now.getMonth() + 1);
+      document.getElementById('duty-month-input').value = `${now.getFullYear()}-${mStr}`;
+
+      loadSchedule();
+    });
+
+    async function loadSchedule() {
+      const location = document.getElementById('duty-location-select').value;
+      const monthVal = document.getElementById('duty-month-input').value; // 'YYYY-MM'
+      if (!monthVal) return;
+
+      const [year, month] = monthVal.split('-');
+      document.getElementById('calendar-title').innerText = `${location} — ${year}年${month}月 值班月曆`;
+
+      showLoading('載入值班排程中...');
+      try {
+        const duties = await api('getDutySchedule', token, location, parseInt(year), parseInt(month));
+        hideLoading();
+        renderCalendar(parseInt(year), parseInt(month), duties);
+      } catch (e) {
+        hideLoading();
+        showToast('載入失敗', 'error');
+      }
+    }
+
+    function renderCalendar(year, month, duties) {
+      const grid = document.getElementById('calendar-grid');
+      grid.innerHTML = '';
+
+      const firstDay = new Date(year, month - 1, 1).getDay(); // 0 = Sunday
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      // 填補月初空白
+      for (let i = 0; i < firstDay; i++) {
+        grid.innerHTML += '<div style="min-height: 100px; background: var(--neutral-50); border-radius: 6px;"></div>';
+      }
+
+      // 填入日期格子
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dayStr = d < 10 ? '0' + d : String(d);
+        const mStr = month < 10 ? '0' + month : String(month);
+        const dateStr = `${year}-${mStr}-${dayStr}`;
+
+        const dayDuties = duties.filter(item => String(item.dutyDate).substring(0, 10) === dateStr);
+
+        grid.innerHTML += `
+          <div style="min-height: 100px; border: 1px solid var(--neutral-200); border-radius: 6px; padding: 6px; background: white;">
+            <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px; border-bottom: 1px solid var(--neutral-100); padding-bottom: 2px;">
+              ${d} 日
+            </div>
+            <div style="font-size: 12px;">
+              ${dayDuties.length === 0 ? '<span style="color:var(--neutral-400);">未排班</span>' : dayDuties.map(dd => `
+                <div style="background: var(--primary-50); color: var(--primary-700); padding: 2px 4px; margin-bottom: 2px; border-radius: 4px; font-size: 11px;">
+                  ${dd.shiftLabel}: ${dd.memberName}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>報名名單管理 — 慈濟活動報名系統</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <?!= include('css/Styles') ?>
+  <?!= include('js/Api') ?>
+</head>
+<body>
+  <?!= include('partials/Header') ?>
+
+  <div class="admin-container" style="display: flex;">
+    <?!= include('partials/AdminSidebar') ?>
+
+    <main class="admin-main" style="flex: 1; padding: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <h2 style="font-size: 24px;">📝 活動報名人員名單</h2>
+        <button onclick="downloadCsv()" class="btn btn-outline">📥 匯出 CSV 名單</button>
+      </div>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label">選擇活動項目</label>
+          <select id="event-select" class="form-select" onchange="loadRegistrations()"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-responsive">
+          <table style="width: 100%; border-collapse: collapse; min-width: 700px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--neutral-200); text-align: left;">
+                <th style="padding: 12px 8px;">序號</th>
+                <th style="padding: 12px 8px;">姓名</th>
+                <th style="padding: 12px 8px;">電話</th>
+                <th style="padding: 12px 8px;">委員/慈誠編號</th>
+                <th style="padding: 12px 8px;">組織歸屬</th>
+                <th style="padding: 12px 8px;">人數</th>
+                <th style="padding: 12px 8px;">膳食</th>
+                <th style="padding: 12px 8px;">狀態</th>
+                <th style="padding: 12px 8px;">簽到時間</th>
+                <th style="padding: 12px 8px; text-align: right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="regs-table">
+              <!-- 動態渲染 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('tzuchi_admin_token');
+    const params = JSON.parse('<?= params ?>');
+    let currentEventId = params.eventId;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!token) {
+        navTo('login');
+        return;
+      }
+      loadEventsOptions();
+    });
+
+    async function loadEventsOptions() {
+      try {
+        const events = await api('getAllEvents', token, '全部');
+        const select = document.getElementById('event-select');
+        select.innerHTML = events.map(e => `<option value="${e.id}" ${e.id === currentEventId ? 'selected' : ''}>${e.title}</option>`).join('');
+        if (!currentEventId && events.length > 0) currentEventId = events[0].id;
+        if (currentEventId) loadRegistrations();
+      } catch (e) {
+        showToast('載入活動失敗', 'error');
+      }
+    }
+
+    async function loadRegistrations() {
+      currentEventId = document.getElementById('event-select').value;
+      if (!currentEventId) return;
+
+      showLoading('載入人員名單...');
+      try {
+        const list = await api('getEventRegistrations', token, currentEventId);
+        hideLoading();
+        renderRegistrations(list);
+      } catch (e) {
+        hideLoading();
+        showToast('載入名單失敗', 'error');
+      }
+    }
+
+    function renderRegistrations(list) {
+      const tbody = document.getElementById('regs-table');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="padding: 24px; text-align: center; color: var(--neutral-500);">此活動目前無報名紀錄</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map((item, idx) => `
+        <tr style="border-bottom: 1px solid var(--neutral-200);">
+          <td style="padding: 12px 8px;">${idx + 1}</td>
+          <td style="padding: 12px 8px; font-weight: 600;">${item.name}</td>
+          <td style="padding: 12px 8px;">${item.phone}</td>
+          <td style="padding: 12px 8px;">${item.volunteerCode}</td>
+          <td style="padding: 12px 8px; font-size: 14px; color: var(--neutral-600);">${item.orgPath}</td>
+          <td style="padding: 12px 8px; font-weight: 600; color: var(--primary-700);">${item.participantCount || 1} 人</td>
+          <td style="padding: 12px 8px;">${item.mealType}</td>
+          <td style="padding: 12px 8px;"><span class="badge ${item.status === '已確認' ? 'badge-confirmed' : item.status === '候補中' ? 'badge-waitlisted' : 'badge-attended'}">${item.status}</span></td>
+          <td style="padding: 12px 8px; font-size: 13px; color: var(--neutral-500);">${item.checkedInAt || '未簽到'}</td>
+          <td style="padding: 12px 8px; text-align: right;">
+            ${item.status !== '已簽到' ? `<button onclick="handleCheckIn('${item.id}')" style="background:none;border:none;color:var(--secondary-700);cursor:pointer;font-weight:600;">點名簽到</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function handleCheckIn(regId) {
+      showLoading('簽到記錄中...');
+      try {
+        const res = await api('checkInRegistration', token, regId);
+        hideLoading();
+        if (res.success) {
+          showToast('簽到成功！', 'success');
+          loadRegistrations();
+        } else {
+          showToast(res.error || '簽到失敗', 'error');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('簽到失敗', 'error');
+      }
+    }
+
+    async function downloadCsv() {
+      if (!currentEventId) return;
+      showLoading('產生 CSV 報表中...');
+      try {
+        const res = await api('exportRegistrationsCsv', token, currentEventId);
+        hideLoading();
+        if (res.csv) {
+          const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = res.filename || '報名名單.csv';
+          a.click();
+          URL.revokeObjectURL(url);
+          showToast('下載成功！', 'success');
+        }
+      } catch (e) {
+        hideLoading();
+        showToast('匯出失敗', 'error');
+      }
+    }
+  </script>
+</body>
+</html>
