@@ -1,17 +1,13 @@
 const { onCall } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const line = require('@line/bot-sdk');
-
-const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
-const db = admin.firestore();
+const { LINE_CHANNEL_ACCESS_TOKEN } = require('./secrets');
 
 const SHIFT_TIMES = {
   '東港聯絡處': { 'DG_F': '08:00~13:00', 'DG_M': '13:00~17:00' },
   '宜蘭園區': { 'YL_F': '08:00~16:00', 'YL_M1': '16:00~18:30', 'YL_M2': '18:30~20:30' }
 };
 
-// 手動觸發特定日期或明日值班推播 (管理員測試與即時推播用)
 exports.sendDutyRemindersForDate = onCall({
   secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   cors: true
@@ -23,12 +19,12 @@ exports.sendDutyRemindersForDate = onCall({
     targetDate = tomorrow.toISOString().substring(0, 10);
   }
 
+  const db = admin.firestore();
   const dutiesSnap = await db.collection('dutyShifts').where('dutyDate', '==', targetDate).get();
   if (dutiesSnap.empty) {
     return { success: true, sentCount: 0, unsentCount: 0, message: `${targetDate} 當天查無排班紀錄` };
   }
 
-  // 讀取所有 LINE 綁定
   const bindingsSnap = await db.collection('lineBindings').get();
   const bindingByMemberId = {};
   const bindingByMemberName = {};
@@ -67,7 +63,7 @@ exports.sendDutyRemindersForDate = onCall({
         sentCount++;
         sentDetails.push({ name: duty.memberName, location: duty.location, shift: duty.shiftLabel, status: '成功' });
       } catch (err) {
-        console.error(`值班提醒發送失敗给 ${duty.memberName}:`, err);
+        console.error(`值班提醒發送失敗給 ${duty.memberName}:`, err);
         unsentCount++;
       }
     } else {

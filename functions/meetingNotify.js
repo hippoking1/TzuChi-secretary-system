@@ -1,10 +1,7 @@
 const { onCall } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const line = require('@line/bot-sdk');
-
-const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
-const db = admin.firestore();
+const { LINE_CHANNEL_ACCESS_TOKEN } = require('./secrets');
 
 exports.sendMeetingNotifications = onCall({
   secrets: [LINE_CHANNEL_ACCESS_TOKEN],
@@ -15,14 +12,13 @@ exports.sendMeetingNotifications = onCall({
     throw new Error('未提供會議 ID (meetingId)');
   }
 
-  // 1. 讀取會議資料
+  const db = admin.firestore();
   const meetingDoc = await db.collection('meetings').doc(meetingId).get();
   if (!meetingDoc.exists) {
     throw new Error('找不到該會議記錄');
   }
   const meeting = meetingDoc.data();
 
-  // 2. 讀取會議出席名單
   const participantsSnap = await db.collection(`meetings/${meetingId}/participants`).get();
   if (participantsSnap.empty) {
     return {
@@ -34,7 +30,6 @@ exports.sendMeetingNotifications = onCall({
     };
   }
 
-  // 3. 讀取所有 LINE 綁定資料建立對照表
   const bindingsSnap = await db.collection('lineBindings').get();
   const bindingByMemberId = {};
   const bindingByMemberName = {};
@@ -71,7 +66,6 @@ exports.sendMeetingNotifications = onCall({
         sentCount++;
         sentNames.push(p.memberName);
 
-        // 標記通知時間
         await doc.ref.update({
           notifiedAt: admin.firestore.FieldValue.serverTimestamp(),
           notifyStatus: '已發送'
@@ -87,7 +81,6 @@ exports.sendMeetingNotifications = onCall({
     }
   }
 
-  // 更新會議本身的推播狀態
   await meetingDoc.ref.update({
     lastNotifyAt: admin.firestore.FieldValue.serverTimestamp(),
     notifySentCount: sentCount

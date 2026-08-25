@@ -1,10 +1,7 @@
 const { onCall } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
 const line = require('@line/bot-sdk');
+const { LINE_CHANNEL_ACCESS_TOKEN } = require('./secrets');
 
-const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
-
-// 測試發送 LINE 推播訊息
 exports.sendTestLineMessage = onCall({
   secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   cors: true
@@ -20,11 +17,11 @@ exports.sendTestLineMessage = onCall({
 
   let messageText = '';
   if (type === 'duty') {
-    messageText = `【系統測試 — 明日值班提醒】\n${memberName || '師兄/師姊'} 阿彌陀佛！\n這是系統發送的「值班提醒」測試訊息。\n您明天於「花蓮/宜蘭/東港」有值班服務，感恩您的護持與付出！🌸`;
+    messageText = `【系統測試 — 明日值班提醒】\n${memberName || '師兄/師姊'} 阿彌陀佛！\n這是系統發送的「值班提醒」測試訊息。\n您明天於道場有值班服務，感恩您的護持與付出！🌸`;
   } else if (type === 'meeting') {
     messageText = `【系統測試 — 開會通知推播】\n${memberName || '師兄/師姊'} 阿彌陀佛！\n這是系統發送的「會議通知」測試訊息。\n主題：慈濟社區組隊月例會\n時間：明晚 19:30\n地點：靜思堂 201 會議室\n請準時出席，感恩！`;
   } else {
-    messageText = `【系統測試】\n${memberName || '志工'} 您好，這是一則來自慈濟活動系統的 LINE 推播連線測試訊息！✓`;
+    messageText = `【系統測試】\n${memberName || '志工'} 您好，這是一則來自慈濟小祕書系統的 LINE 推播連線測試訊息！✓`;
   }
 
   try {

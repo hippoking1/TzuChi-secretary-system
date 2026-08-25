@@ -1,15 +1,9 @@
 const { onRequest } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const line = require('@line/bot-sdk');
+const { LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN } = require('./secrets');
 
-const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
-const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
-
-const db = admin.firestore();
-
-// LINE Webhook 端點 (含 HMAC-SHA256 簽名驗證)
 exports.lineWebhook = onRequest({
   cors: true,
   secrets: [LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN]
@@ -21,7 +15,6 @@ exports.lineWebhook = onRequest({
   const channelSecret = LINE_CHANNEL_SECRET.value();
   const signature = req.headers['x-line-signature'];
 
-  // 1. 驗證 LINE 簽名 (徹底修復資安弱點)
   if (channelSecret && signature) {
     const bodyString = JSON.stringify(req.body);
     const hash = crypto.createHmac('SHA256', channelSecret).update(bodyString).digest('base64');
@@ -31,6 +24,7 @@ exports.lineWebhook = onRequest({
     }
   }
 
+  const db = admin.firestore();
   const events = req.body.events || [];
   const client = new line.messagingApi.MessagingApiClient({
     channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value() || ''
@@ -43,7 +37,7 @@ exports.lineWebhook = onRequest({
 
       // 檢查是否為綁定指令 (格式：姓名 組織)
       if (text.includes(' ') || text.includes('　')) {
-        const [name, orgName] = text.split(/[\s　]+/);
+        const [name, orgName] = text.split(/[s　]+/);
         const membersSnap = await db.collection('members').where('name', '==', name).get();
         
         if (!membersSnap.empty) {
@@ -51,7 +45,7 @@ exports.lineWebhook = onRequest({
           await db.collection('lineBindings').doc(userId).set({
             memberId: membersSnap.docs[0].id,
             memberName: member.name,
-            memberPhone: member.phone,
+            memberPhone: member.phone || '',
             lineUserId: userId,
             bindingTime: new Date().toISOString()
           }, { merge: true });
@@ -60,14 +54,14 @@ exports.lineWebhook = onRequest({
             replyToken: event.replyToken,
             messages: [{
               type: 'text',
-              text: `感恩 ${member.name} 師兄/師姊！您已成功綁定慈濟活動系統，日後將為您推播值班提醒與開會通知。`
+              text: `感恩 ${member.name} 師兄/師姊！您已成功綁定慈濟小祕書系統，日後將自動為您推播值班提醒與開會通知。`
             }]
           });
           continue;
         }
       }
 
-      // 一般關鍵字選單回覆
+      // 關鍵字：值班查詢
       if (text === '值班查詢') {
         const bindingSnap = await db.collection('lineBindings').doc(userId).get();
         if (!bindingSnap.exists) {
