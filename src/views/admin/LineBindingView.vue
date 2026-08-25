@@ -2,7 +2,7 @@
   <div class="admin-line-bindings">
     <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
       <div>
-        <h1 class="text-2xl font-bold">LINE 帳號綁定與推播測試</h1>
+        <h1 class="text-2xl font-bold">LINE 帳號綁定與推播中心</h1>
         <p class="text-sm text-muted">管理已綁定 LINE 官方帳號之志工，並可即時發送測試推播驗證 Messaging API</p>
       </div>
       <div class="flex gap-2">
@@ -19,30 +19,30 @@
         <p class="text-sm text-muted mb-2">
           志工只要在 LINE 官方帳號輸入「<strong>姓名 + 所屬組織</strong>」（例如：<code>張志工 第一協力</code>），系統即會自動核身並綁定，日後將自動推播<strong>明日值班提醒</strong>與<strong>開會通知</strong>。
         </p>
-        <div class="flex gap-2 mt-3">
+        <div class="flex gap-2 mt-3 flex-wrap">
           <span class="badge badge-success">✓ 彰化機房 asia-east1</span>
           <span class="badge badge-info">✓ HMAC-SHA256 簽名驗證</span>
           <span class="badge badge-warning">✓ 每日 08:00 定時排程</span>
         </div>
       </div>
 
-      <div class="card bg-gray-50 flex flex-col justify-center p-4">
+      <div class="card bg-gray-50 flex flex-col justify-center p-4 border border-gray-200">
         <h4 class="font-bold text-sm mb-2">⚡ 快速推播測試</h4>
-        <p class="text-xs text-muted mb-3">若已綁定，可點擊下方按鈕向第一位志工發送即時測試：</p>
+        <p class="text-xs text-muted mb-3">即時觸發推播驗證 Messaging API：</p>
         <div class="flex flex-col gap-2">
           <button 
             class="btn btn-sm btn-secondary" 
-            :disabled="testing || bindings.length === 0"
-            @click="testDutyReminder(bindings[0])"
+            :disabled="testing"
+            @click="testDutyRemindersBatch"
           >
-            🔔 測試發送【值班提醒】
+            🚀 即刻推播【明日值班提醒】
           </button>
           <button 
             class="btn btn-sm btn-outline-primary" 
             :disabled="testing || bindings.length === 0"
-            @click="testMeetingNotice(bindings[0])"
+            @click="testDirectPush(bindings[0])"
           >
-            📢 測試發送【開會通知】
+            🔔 測試個別志工連線推播
           </button>
         </div>
       </div>
@@ -77,7 +77,7 @@
                 <button 
                   class="btn btn-sm btn-secondary" 
                   :disabled="testing"
-                  @click="testDutyReminder(b)"
+                  @click="testDutyReminderSingle(b)"
                   title="向此志工發送值班提醒測試訊息"
                 >
                   🔔 值班提醒
@@ -85,7 +85,7 @@
                 <button 
                   class="btn btn-sm btn-outline-primary" 
                   :disabled="testing"
-                  @click="testMeetingNotice(b)"
+                  @click="testMeetingNoticeSingle(b)"
                   title="向此志工發送會議通知測試訊息"
                 >
                   📢 開會通知
@@ -115,6 +115,7 @@ const testing = ref(false);
 
 const functions = getFunctions(app, 'asia-east1');
 const sendTestLine = httpsCallable(functions, 'sendTestLineMessage');
+const sendDutyRemindersForDate = httpsCallable(functions, 'sendDutyRemindersForDate');
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -129,11 +130,40 @@ async function loadBindings() {
   bindings.value = await getCollectionDocs('lineBindings');
 }
 
-async function testDutyReminder(b) {
+async function testDutyRemindersBatch() {
+  testing.value = true;
+  try {
+    const res = await sendDutyRemindersForDate({});
+    toast.success(res.data.message || '值班提醒推播完成！');
+  } catch (err) {
+    toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
+  } finally {
+    testing.value = false;
+  }
+}
+
+async function testDirectPush(b) {
   if (!b) return;
   testing.value = true;
   try {
-    const res = await sendTestLine({
+    await sendTestLine({
+      lineUserId: b.lineUserId,
+      memberName: b.memberName,
+      type: 'test'
+    });
+    toast.success(`已發送連線測試給 ${b.memberName}！`);
+  } catch (err) {
+    toast.error('發送失敗：' + err.message);
+  } finally {
+    testing.value = false;
+  }
+}
+
+async function testDutyReminderSingle(b) {
+  if (!b) return;
+  testing.value = true;
+  try {
+    await sendTestLine({
       lineUserId: b.lineUserId,
       memberName: b.memberName,
       type: 'duty'
@@ -146,11 +176,11 @@ async function testDutyReminder(b) {
   }
 }
 
-async function testMeetingNotice(b) {
+async function testMeetingNoticeSingle(b) {
   if (!b) return;
   testing.value = true;
   try {
-    const res = await sendTestLine({
+    await sendTestLine({
       lineUserId: b.lineUserId,
       memberName: b.memberName,
       type: 'meeting'

@@ -41,27 +41,33 @@
       </table>
     </div>
 
-    <!-- 出席人員管理 Modal -->
+    <!-- 出席人員管理 Modal (安全視窗大小，不超出螢幕) -->
     <div v-if="showModal" class="modal-backdrop" @click="showModal = false">
-      <div class="modal-content" style="max-width: 780px;" @click.stop>
+      <div class="modal-content meeting-modal-dialog" @click.stop>
         <div class="modal-header">
           <div>
-            <h3 class="modal-title">會議出席名單與 LINE 通知</h3>
+            <h3 class="modal-title">會議出席名單與 LINE 推播通知</h3>
             <p class="text-xs text-muted mt-1">{{ currentMeeting?.title }} ({{ currentMeeting?.meetingDate }} {{ currentMeeting?.startTime }})</p>
           </div>
           <button class="modal-close" @click="showModal = false">×</button>
         </div>
+        
         <div class="modal-body">
           <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
             <button class="btn btn-sm btn-outline-primary" @click="showAddMember = !showAddMember">
-              {{ showAddMember ? '收起加入選單' : '➕ 加入指定協力/志工' }}
+              {{ showAddMember ? '收起組織選單' : '➕ 加入指定組織/志工' }}
             </button>
-            <button class="btn btn-sm btn-secondary" :disabled="sendingLine || meetingsStore.participants.length === 0" @click="sendLineNotification">
-              {{ sendingLine ? '發送推播中...' : '💬 一鍵推播 LINE 開會通知 (' + meetingsStore.participants.length + '人)' }}
+            <button 
+              class="btn btn-sm btn-secondary flex items-center gap-1" 
+              :disabled="sendingLine || meetingsStore.participants.length === 0" 
+              @click="sendLineNotification"
+            >
+              <span>💬</span>
+              <span>{{ sendingLine ? '發送推播中...' : '一鍵推播 LINE 開會通知 (' + meetingsStore.participants.length + '人)' }}</span>
             </button>
           </div>
 
-          <!-- 加入志工區塊 (支援組織架構篩選與整組/勾選加入) -->
+          <!-- 加入志工區塊 (可依和氣/互愛/協力自由展開) -->
           <div v-if="showAddMember" class="card mb-4 p-4 bg-gray-50 border border-gray-200">
             <h4 class="font-bold text-sm mb-2 text-gray-800">1. 選擇組織架構 (和氣 / 互愛 / 協力)</h4>
             <OrgCascader v-model="targetOrgId" @change="onTargetOrgChange" />
@@ -112,31 +118,39 @@
             </div>
           </div>
 
-          <!-- 已加入名單 Table -->
-          <div class="table-responsive">
-            <table class="table">
+          <!-- 已加入名單 Table (具備獨立垂直捲軸與固定表頭，不超出視窗) -->
+          <div class="participants-table-container">
+            <table class="table mb-0">
               <thead>
                 <tr>
-                  <th>序號</th>
+                  <th style="width: 60px;">序號</th>
                   <th>姓名</th>
                   <th>聯絡電話</th>
-                  <th>出席狀態</th>
-                  <th>操作</th>
+                  <th>LINE 綁定</th>
+                  <th style="width: 140px;">出席狀態</th>
+                  <th style="width: 80px;">操作</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="meetingsStore.participants.length === 0">
-                  <td colspan="5" class="text-center text-muted p-4">目前出席名單尚無志工</td>
+                  <td colspan="6" class="text-center text-muted p-6">目前出席名單尚無志工，請點擊上方按鈕加入</td>
                 </tr>
                 <tr v-for="(p, idx) in meetingsStore.participants" :key="p.id">
                   <td>{{ idx + 1 }}</td>
-                  <td class="font-bold text-gray-800">{{ p.memberName }}</td>
+                  <td class="font-bold text-gray-900">{{ p.memberName }}</td>
                   <td>{{ p.memberPhone || '-' }}</td>
+                  <td>
+                    <span v-if="isMemberLineBound(p)" class="badge badge-success text-xs">
+                      ✓ 已綁定
+                    </span>
+                    <span v-else class="badge badge-gray text-xs">
+                      未綁定
+                    </span>
+                  </td>
                   <td>
                     <select 
                       v-model="p.attendance" 
                       class="form-select form-select-sm" 
-                      style="max-width: 110px;"
                       @change="onAttendanceChange(p)"
                     >
                       <option value="未回覆">未回覆</option>
@@ -153,6 +167,10 @@
             </table>
           </div>
         </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showModal = false">關閉</button>
+        </div>
       </div>
     </div>
   </div>
@@ -163,6 +181,7 @@ import { ref, onMounted } from 'vue';
 import { useMeetingsStore } from '@/stores/meetings';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
+import { getCollectionDocs } from '@/firebase/db';
 import OrgCascader from '@/components/ui/OrgCascader.vue';
 import { useToast } from '@/composables/useToast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -182,6 +201,7 @@ const availableOrgMembers = ref([]);
 const selectedMemberIds = ref([]);
 const loadingOrgMembers = ref(false);
 const sendingLine = ref(false);
+const lineBoundSet = ref(new Set());
 
 async function openParticipantsModal(id) {
   currentMeetingId.value = id;
@@ -190,7 +210,24 @@ async function openParticipantsModal(id) {
   availableOrgMembers.value = [];
   selectedMemberIds.value = [];
   showAddMember.value = false;
+  
+  // 載入 LINE 綁定資料供狀態比對
+  await loadLineBindings();
   showModal.value = true;
+}
+
+async function loadLineBindings() {
+  const bindings = await getCollectionDocs('lineBindings');
+  const set = new Set();
+  bindings.forEach(b => {
+    if (b.memberId) set.add(b.memberId);
+    if (b.memberName) set.add(b.memberName);
+  });
+  lineBoundSet.value = set;
+}
+
+function isMemberLineBound(p) {
+  return lineBoundSet.value.has(p.memberId) || lineBoundSet.value.has(p.memberName);
 }
 
 async function onTargetOrgChange(orgId) {
@@ -207,7 +244,7 @@ async function onTargetOrgChange(orgId) {
     // 過濾已在名單中的志工
     const existingIds = new Set(meetingsStore.participants.map(p => p.memberId));
     availableOrgMembers.value = list.filter(m => !existingIds.has(m.id));
-    selectedMemberIds.value = availableOrgMembers.value.map(m => m.id); // 預設全選
+    selectedMemberIds.value = availableOrgMembers.value.map(m => m.id);
   } finally {
     loadingOrgMembers.value = false;
   }
@@ -227,7 +264,6 @@ async function importSelectedMembers() {
   await meetingsStore.addParticipants(currentMeetingId.value, toAdd);
   toast.success(`已成功加入 ${toAdd.length} 位志工至會議名單！`);
   
-  // 更新可用名單
   const existingIds = new Set(meetingsStore.participants.map(p => p.memberId));
   availableOrgMembers.value = availableOrgMembers.value.filter(m => !existingIds.has(m.id));
   selectedMemberIds.value = [];
@@ -243,28 +279,26 @@ async function onAttendanceChange(p) {
   toast.success(`已更新 ${p.memberName} 出席狀態為「${p.attendance}」`);
 }
 
+// 呼叫專屬 Cloud Function 一鍵推播開會通知給所有已綁定志工
 async function sendLineNotification() {
+  if (!currentMeetingId.value) return;
   sendingLine.value = true;
   try {
     const functions = getFunctions(app, 'asia-east1');
-    const sendTestLine = httpsCallable(functions, 'sendTestLineMessage');
+    const sendMeetingNotify = httpsCallable(functions, 'sendMeetingNotifications');
     
-    let count = 0;
-    for (const p of meetingsStore.participants) {
-      try {
-        await sendTestLine({
-          type: 'meeting',
-          memberName: p.memberName,
-          lineUserId: p.memberPhone // fallback test
-        });
-        count++;
-      } catch {
-        // Continue for other participants
-      }
+    const result = await sendMeetingNotify({
+      meetingId: currentMeetingId.value
+    });
+
+    const res = result.data;
+    if (res.sentCount > 0) {
+      toast.success(res.message);
+    } else {
+      toast.warning(res.message || '目前出席名單中的志工均尚未綁定 LINE 官方帳號');
     }
-    toast.success('會議通知推播完成！');
   } catch (err) {
-    toast.info('推播作業已觸發完成。');
+    toast.error('LINE 開會通知推播失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
   } finally {
     sendingLine.value = false;
   }
@@ -294,13 +328,59 @@ onMounted(async () => {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 9990;
 }
-.modal-content { background: #ffffff; border-radius: var(--radius-lg); width: 90%; max-height: 90vh; overflow-y: auto; }
-.modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-200); display: flex; justify-content: space-between; align-items: center; }
-.modal-body { padding: 1.5rem; }
+.meeting-modal-dialog {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  width: 90%;
+  max-width: 820px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--gray-200);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+.modal-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+.modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
 .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
 .bg-gray-50 { background-color: var(--gray-50); }
+
+/* 名單表格捲動容器 (固定表頭，防止無限垂直拉長) */
+.participants-table-container {
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  position: relative;
+}
+.participants-table-container thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  z-index: 10;
+  border-bottom: 2px solid var(--gray-200);
+}
+
 .members-select-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; max-height: 180px; overflow-y: auto; padding: 0.5rem; background: #ffffff; border: 1px solid var(--gray-200); border-radius: var(--radius-sm);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; max-height: 160px; overflow-y: auto; padding: 0.5rem; background: #ffffff; border: 1px solid var(--gray-200); border-radius: var(--radius-sm);
 }
 .member-checkbox-card {
   display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--gray-200); cursor: pointer; font-size: 0.85rem;

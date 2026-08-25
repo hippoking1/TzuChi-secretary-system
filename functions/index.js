@@ -10,8 +10,12 @@ const { lineWebhook } = require('./lineWebhook');
 const { sendDutyRemindersScheduled } = require('./scheduledTasks');
 const { syncBackupToSheets } = require('./googleSheetsBackup');
 const { sendTestLineMessage } = require('./testLine');
+const { sendMeetingNotifications } = require('./meetingNotify');
+const { sendDutyRemindersForDate } = require('./dutyNotify');
 
 exports.lineWebhook = lineWebhook;
 exports.sendDutyRemindersScheduled = sendDutyRemindersScheduled;
 exports.syncBackupToSheets = syncBackupToSheets;
 exports.sendTestLineMessage = sendTestLineMessage;
+exports.sendMeetingNotifications = sendMeetingNotifications;
+exports.sendDutyRemindersForDate = sendDutyRemindersForDate;
