@@ -8,14 +8,14 @@ admin.initializeApp();
 
 const { lineWebhook } = require('./lineWebhook');
 const { sendDutyRemindersScheduled } = require('./scheduledTasks');
-const { syncBackupToSheets } = require('./googleSheetsBackup');
+const { syncBackupToSheetsScheduled } = require('./googleSheetsBackup');
 const { sendTestLineMessage } = require('./testLine');
 const { sendMeetingNotifications } = require('./meetingNotify');
 const { sendDutyRemindersForDate } = require('./dutyNotify');
 
 exports.lineWebhook = lineWebhook;
 exports.sendDutyRemindersScheduled = sendDutyRemindersScheduled;
-exports.syncBackupToSheets = syncBackupToSheets;
+exports.syncBackupToSheetsScheduled = syncBackupToSheetsScheduled;
 exports.sendTestLineMessage = sendTestLineMessage;
 exports.sendMeetingNotifications = sendMeetingNotifications;
 exports.sendDutyRemindersForDate = sendDutyRemindersForDate;

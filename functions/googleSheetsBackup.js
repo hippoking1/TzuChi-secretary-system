@@ -4,7 +4,7 @@ const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
 
-exports.syncBackupToSheets = onSchedule({
+exports.syncBackupToSheetsScheduled = onSchedule({
   schedule: 'every day 02:00',
   timeZone: 'Asia/Taipei'
 }, async () => {
