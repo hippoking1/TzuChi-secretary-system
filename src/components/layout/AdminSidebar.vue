@@ -1,10 +1,15 @@
 <template>
   <aside class="admin-sidebar">
     <div class="sidebar-user-card mb-4">
-      <div class="user-role-badge" :class="'role-' + authStore.role">
-        {{ roleTitle }}
+      <div class="flex items-center justify-between">
+        <div class="user-role-badge" :class="'role-' + authStore.role">
+          {{ roleTitle }}
+        </div>
+        <button v-if="isMobile" class="btn-drawer-close" @click="$emit('close')">
+          ✕
+        </button>
       </div>
-      <div class="user-email text-sm text-muted mt-2">
+      <div class="user-email text-xs text-muted mt-2">
         {{ authStore.user?.email || '已登入管理端' }}
       </div>
     </div>
@@ -12,66 +17,66 @@
     <nav class="sidebar-nav">
       <div class="nav-section">
         <span class="nav-section-title">核心概況</span>
-        <router-link to="/admin" class="nav-item" active-class="active" exact>
+        <router-link to="/admin" class="nav-item" active-class="active" exact @click="$emit('close')">
           <span>📊 總覽儀表板</span>
         </router-link>
       </div>
 
       <div class="nav-section">
         <span class="nav-section-title">活動管理</span>
-        <router-link to="/admin/events" class="nav-item" active-class="active">
+        <router-link to="/admin/events" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📋 活動列表與發佈</span>
         </router-link>
-        <router-link to="/admin/events/new" class="nav-item" active-class="active">
+        <router-link to="/admin/events/new" class="nav-item" active-class="active" @click="$emit('close')">
           <span>➕ 建立新活動</span>
         </router-link>
-        <router-link to="/admin/registrations" class="nav-item" active-class="active">
+        <router-link to="/admin/registrations" class="nav-item" active-class="active" @click="$emit('close')">
           <span>👥 報名名單管理</span>
         </router-link>
-        <router-link to="/admin/checkin" class="nav-item" active-class="active">
+        <router-link to="/admin/checkin" class="nav-item" active-class="active" @click="$emit('close')">
           <span>✅ 現場簽到點名</span>
         </router-link>
       </div>
 
       <div class="nav-section">
         <span class="nav-section-title">會議管理</span>
-        <router-link to="/admin/meetings" class="nav-item" active-class="active">
+        <router-link to="/admin/meetings" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📅 會議列表與名單</span>
         </router-link>
-        <router-link to="/admin/meetings/new" class="nav-item" active-class="active">
+        <router-link to="/admin/meetings/new" class="nav-item" active-class="active" @click="$emit('close')">
           <span>➕ 發佈新會議</span>
         </router-link>
       </div>
 
       <div v-if="authStore.isAdmin" class="nav-section">
         <span class="nav-section-title">道場值班</span>
-        <router-link to="/admin/duty-schedule" class="nav-item" active-class="active">
+        <router-link to="/admin/duty-schedule" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🗓️ 值班排程月曆</span>
         </router-link>
-        <router-link to="/admin/duty-form" class="nav-item" active-class="active">
+        <router-link to="/admin/duty-form" class="nav-item" active-class="active" @click="$emit('close')">
           <span>✏️ 月度排班維護</span>
         </router-link>
       </div>
 
       <div v-if="authStore.isAdmin" class="nav-section">
         <span class="nav-section-title">組織與志工</span>
-        <router-link to="/admin/members" class="nav-item" active-class="active">
+        <router-link to="/admin/members" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📒 志工名冊維護</span>
         </router-link>
-        <router-link to="/admin/orgs" class="nav-item" active-class="active">
+        <router-link to="/admin/orgs" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🏛️ 組織階層架構</span>
         </router-link>
-        <router-link to="/admin/line-bindings" class="nav-item" active-class="active">
+        <router-link to="/admin/line-bindings" class="nav-item" active-class="active" @click="$emit('close')">
           <span>💬 LINE 綁定管理</span>
         </router-link>
       </div>
 
       <div class="nav-section">
         <span class="nav-section-title">報表與系統</span>
-        <router-link to="/admin/export" class="nav-item" active-class="active">
+        <router-link to="/admin/export" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📥 匯出與備份中心</span>
         </router-link>
-        <router-link v-if="authStore.isSuperAdmin" to="/admin/users" class="nav-item" active-class="active">
+        <router-link v-if="authStore.isSuperAdmin" to="/admin/users" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🔐 權限與管理員帳號</span>
         </router-link>
       </div>
@@ -82,6 +87,11 @@
 <script setup>
 import { computed } from 'vue';
 import { useAuthStore } from '@/stores/auth';
+
+defineProps({
+  isMobile: { type: Boolean, default: false }
+});
+defineEmits(['close']);
 
 const authStore = useAuthStore();
 
@@ -144,6 +154,7 @@ const roleTitle = computed(() => {
   font-size: 0.9rem;
   margin-bottom: 0.2rem;
   transition: all 0.2s;
+  text-decoration: none;
 }
 
 .nav-item:hover {
@@ -155,5 +166,14 @@ const roleTitle = computed(() => {
   background: var(--primary-500);
   color: #ffffff;
   font-weight: 600;
+}
+
+.btn-drawer-close {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--gray-500);
+  padding: 0.2rem;
 }
 </style>

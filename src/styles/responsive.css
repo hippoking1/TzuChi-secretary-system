@@ -9,19 +9,27 @@
   }
   
   .container {
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
   }
   
   .card {
-    padding: 1rem;
+    padding: 0.85rem;
   }
   
   .btn {
-    min-height: 48px; /* 保證無障礙觸控 */
+    min-height: 44px; /* 保證無障礙觸控 */
   }
 
-  .admin-layout-sidebar {
-    display: none; /* 轉為抽屜或底部選單 */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+
+  /* 手機端表格字體適度緊湊 */
+  .table th, .table td {
+    padding: 0.6rem 0.5rem;
+    font-size: 0.82rem;
   }
 }
