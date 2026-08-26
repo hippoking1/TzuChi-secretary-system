@@ -15,20 +15,25 @@
     <!-- 說明與功能測試卡片 -->
     <div class="card mb-6 grid grid-cols-3 gap-6">
       <div class="p-2" style="grid-column: span 2;">
-        <h3 class="font-bold text-lg mb-2">志工 LINE 官方帳號綁定說明</h3>
+        <h3 class="font-bold text-lg mb-2">志工 LINE 官方帳號綁定與自動通知機制</h3>
         <p class="text-sm text-muted mb-2">
-          志工只要在 LINE 官方帳號輸入「<strong>姓名 + 所屬組織</strong>」（例如：<code>張志工 第一協力</code>），系統即會自動核身並綁定，日後將自動推播<strong>明日值班提醒</strong>與<strong>開會通知</strong>。
+          志工只要在 LINE 官方帳號輸入「<strong>姓名 + 所屬組織</strong>」（例如：<code>張志工 第一協力</code>），系統即會自動核身並綁定，系統將會在：
         </p>
-        <div class="flex gap-2 mt-3 flex-wrap">
+        <ul class="text-xs text-muted mb-3 pl-4 list-disc space-y-1">
+          <li><strong>每日 08:00</strong>：自動向隔日有排定<strong>道場值班</strong>之志工發出溫馨值班提醒。</li>
+          <li><strong>每日 08:30</strong>：自動向隔日有報名<strong>志業活動</strong>之成員發出活動行前提醒。</li>
+          <li><strong>隨時</strong>：幹部發佈組隊會議時，可一鍵推播開會通知。</li>
+        </ul>
+        <div class="flex gap-2 flex-wrap">
           <span class="badge badge-success">✓ 彰化機房 asia-east1</span>
           <span class="badge badge-info">✓ HMAC-SHA256 簽名驗證</span>
-          <span class="badge badge-warning">✓ 每日 08:00 定時排程</span>
+          <span class="badge badge-warning">✓ 每日定時雙排程</span>
         </div>
       </div>
 
       <div class="card bg-gray-50 flex flex-col justify-center p-4 border border-gray-200">
         <h4 class="font-bold text-sm mb-2">⚡ 快速推播測試</h4>
-        <p class="text-xs text-muted mb-3">即時觸發推播驗證 Messaging API：</p>
+        <p class="text-xs text-muted mb-3">即時手動觸發推播（不用等定時排程）：</p>
         <div class="flex flex-col gap-2">
           <button 
             class="btn btn-sm btn-secondary" 
@@ -38,11 +43,18 @@
             🚀 即刻推播【明日值班提醒】
           </button>
           <button 
+            class="btn btn-sm btn-primary" 
+            :disabled="testing"
+            @click="testEventRemindersBatch"
+          >
+            📢 即刻推播【明日活動提醒】
+          </button>
+          <button 
             class="btn btn-sm btn-outline-primary" 
             :disabled="testing || bindings.length === 0"
             @click="testDirectPush(bindings[0])"
           >
-            🔔 測試個別志工連線推播
+            🔔 測試單一志工連線
           </button>
         </div>
       </div>
@@ -116,6 +128,7 @@ const testing = ref(false);
 const functions = getFunctions(app, 'asia-east1');
 const sendTestLine = httpsCallable(functions, 'sendTestLineMessage');
 const sendDutyRemindersForDate = httpsCallable(functions, 'sendDutyRemindersForDate');
+const sendEventRemindersForDate = httpsCallable(functions, 'sendEventRemindersForDate');
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -135,6 +148,18 @@ async function testDutyRemindersBatch() {
   try {
     const res = await sendDutyRemindersForDate({});
     toast.success(res.data.message || '值班提醒推播完成！');
+  } catch (err) {
+    toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
+  } finally {
+    testing.value = false;
+  }
+}
+
+async function testEventRemindersBatch() {
+  testing.value = true;
+  try {
+    const res = await sendEventRemindersForDate({});
+    toast.success(res.data.message || '活動提醒推播完成！');
   } catch (err) {
     toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
   } finally {
