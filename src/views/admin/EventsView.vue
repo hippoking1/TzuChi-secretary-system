@@ -49,6 +49,7 @@
               <div class="flex gap-2">
                 <router-link :to="'/admin/events/edit/' + evt.id" class="btn btn-sm btn-outline">編輯</router-link>
                 <router-link :to="'/admin/registrations?eventId=' + evt.id" class="btn btn-sm btn-outline-primary">名單</router-link>
+                <button class="btn btn-sm btn-outline" title="分享報名連結 / QR Code" @click="openShareModal(evt)">📤 分享</button>
                 <button class="btn btn-sm btn-outline" @click="handleDuplicate(evt.id)">複製</button>
                 <button class="btn btn-sm btn-danger" @click="handleDelete(evt.id)">刪除</button>
               </div>
@@ -57,6 +58,9 @@
         </tbody>
       </table>
     </div>
+
+    <!-- 分享彈窗 -->
+    <ShareModal v-model:show="showShareModal" :event="selectedEvent" />
   </div>
 </template>
 
@@ -64,12 +68,20 @@
 import { ref, computed, onMounted } from 'vue';
 import { useEventsStore } from '@/stores/events';
 import { useToast } from '@/composables/useToast';
+import ShareModal from '@/components/shared/ShareModal.vue';
 
 const eventsStore = useEventsStore();
 const toast = useToast();
 
 const search = ref('');
 const statusFilter = ref('全部');
+const showShareModal = ref(false);
+const selectedEvent = ref(null);
+
+function openShareModal(evt) {
+  selectedEvent.value = evt;
+  showShareModal.value = true;
+}
 
 const filteredEvents = computed(() => {
   if (!search.value) return eventsStore.events;

@@ -34,9 +34,12 @@
         <div class="card">
           <h3 class="font-bold text-lg mb-3">立即報名</h3>
           <p class="text-sm text-muted mb-4">歡迎慈濟志工與大眾參與，請點擊下方按鈕填寫報名資料。</p>
-          <router-link :to="'/register/' + event.id" class="btn btn-primary btn-block btn-lg">
+          <router-link :to="'/register/' + event.id" class="btn btn-primary btn-block btn-lg mb-3">
             前往線上報名
           </router-link>
+          <button class="btn btn-outline btn-block flex items-center justify-center gap-2" @click="showShareModal = true">
+            <span>📤</span> 分享報名連結 / QR Code
+          </button>
         </div>
 
         <div class="card text-sm">
@@ -46,6 +49,9 @@
         </div>
       </div>
     </div>
+
+    <!-- 分享彈窗 -->
+    <ShareModal v-model:show="showShareModal" :event="event" />
   </div>
 </template>
 
@@ -54,11 +60,13 @@ import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useEventsStore } from '@/stores/events';
 import MarkdownRenderer from '@/components/shared/MarkdownRenderer.vue';
+import ShareModal from '@/components/shared/ShareModal.vue';
 
 const route = useRoute();
 const eventsStore = useEventsStore();
 const event = ref(null);
 const loading = ref(true);
+const showShareModal = ref(false);
 
 onMounted(async () => {
   const eventId = route.params.id;

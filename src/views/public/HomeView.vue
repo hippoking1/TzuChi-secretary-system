@@ -81,23 +81,45 @@
                 ></div>
               </div>
             </div>
-            <router-link :to="'/event/' + evt.id" class="btn btn-primary btn-block">
-              查看詳情與報名
-            </router-link>
+            <div class="flex gap-2">
+              <router-link :to="'/event/' + evt.id" class="btn btn-primary flex-1">
+                查看詳情與報名
+              </router-link>
+              <button 
+                type="button" 
+                class="btn btn-outline flex items-center justify-center" 
+                style="padding: 0.5rem 0.75rem;" 
+                title="分享報名連結 / QR Code"
+                @click="openShareModal(evt)"
+              >
+                📤
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </section>
+
+    <!-- 分享彈窗 -->
+    <ShareModal v-model:show="showShareModal" :event="selectedEvent" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import ShareModal from '@/components/shared/ShareModal.vue';
 import { useEventsStore } from '@/stores/events';
 
 const eventsStore = useEventsStore();
 const events = ref([]);
 const loading = ref(true);
+const showShareModal = ref(false);
+const selectedEvent = ref(null);
+
+function openShareModal(evt) {
+  selectedEvent.value = evt;
+  showShareModal.value = true;
+}
 
 const categories = ['全部', '共修精進', '法親聯誼', '環保志業', '慈善訪視', '醫療服務', '教育人文', '其他活動'];
 const selectedCategory = ref('全部');
