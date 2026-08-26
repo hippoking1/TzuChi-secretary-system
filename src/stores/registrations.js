@@ -114,6 +114,15 @@ export const useRegistrationsStore = defineStore('registrations', () => {
     registrations.value = registrations.value.map(r => r.id === regId ? { ...r, checkedIn: true } : r);
   }
 
+  async function unCheckIn(regId) {
+    await updateDocById('registrations', regId, {
+      checkedIn: false,
+      checkInTime: null,
+      checkInMethod: null
+    });
+    registrations.value = registrations.value.map(r => r.id === regId ? { ...r, checkedIn: false } : r);
+  }
+
   return {
     registrations,
     myRegistrations,
@@ -122,6 +131,7 @@ export const useRegistrationsStore = defineStore('registrations', () => {
     submitRegistration,
     fetchMyRegistrations,
     cancelRegistration,
-    checkIn
+    checkIn,
+    unCheckIn
   };
 });
