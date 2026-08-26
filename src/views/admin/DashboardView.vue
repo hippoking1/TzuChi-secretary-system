@@ -104,7 +104,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { getCollectionCount } from '@/firebase/db';
+import { getCollectionDocs, getCollectionCount } from '@/firebase/db';
 
 const loading = ref(false);
 const stats = ref({
@@ -118,15 +118,17 @@ const stats = ref({
 async function loadStats() {
   loading.value = true;
   try {
-    const [events, regs, members, duties, lines] = await Promise.all([
+    const [events, allRegs, members, duties, lines] = await Promise.all([
       getCollectionCount('events'),
-      getCollectionCount('registrations'),
+      getCollectionDocs('registrations'),
       getCollectionCount('members'),
       getCollectionCount('dutyShifts'),
       getCollectionCount('lineBindings')
     ]);
     stats.value.eventsCount = events;
-    stats.value.registrationsCount = regs;
+    // 屏除報名後取消的人數，僅統計有效報名人次（正取與候補）
+    const validRegs = (allRegs || []).filter(r => r.status !== '已取消');
+    stats.value.registrationsCount = validRegs.length;
     stats.value.membersCount = members;
     stats.value.dutiesCount = duties;
     stats.value.lineBindingsCount = lines;
