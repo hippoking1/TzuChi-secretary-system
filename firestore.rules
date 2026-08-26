@@ -25,10 +25,11 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 活動公開讀取，管理員/召集人可維護
+    // 活動：公開讀取，允許前台報名更新人數 (或管理員完整維護)
     match /events/{eventId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if true; // 允許報名 transaction 更新 currentConfirmedCount
       
       match /sessions/{sessionId} {
         allow read: if true;
@@ -36,17 +37,16 @@ service cloud.firestore {
       }
     }
 
-    // 報名紀錄：前台可建立/查詢，管理員可完全維護
+    // 報名紀錄：前台可建立/查詢/取消，管理員可完全維護
     match /registrations/{regId} {
-      allow create: if true;
-      allow read: if true;
-      allow update, delete: if isConvener();
+      allow read, create, update: if true;
+      allow delete: if isConvener();
     }
 
     // 簽到紀錄：前台或管理員點名
     match /checkins/{checkinId} {
-      allow read, create: if true;
-      allow update, delete: if isConvener();
+      allow read, create, update: if true;
+      allow delete: if isConvener();
     }
 
     // 志工名單：前台核身比對需讀取，管理員維護
@@ -80,7 +80,7 @@ service cloud.firestore {
 
     // LINE 綁定：前台綁定/後台管理
     match /lineBindings/{bindingId} {
-      allow read: if isConvener();
+      allow read: if true;
       allow write: if true;
     }
 
