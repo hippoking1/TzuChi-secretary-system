@@ -17,6 +17,7 @@
           <label class="form-label required">活動分類</label>
           <select v-model="form.category" class="form-select">
             <option value="共修精進">共修精進</option>
+            <option value="法親聯誼">法親聯誼</option>
             <option value="環保志業">環保志業</option>
             <option value="慈善訪視">慈善訪視</option>
             <option value="醫療服務">醫療服務</option>

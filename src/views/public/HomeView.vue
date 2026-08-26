@@ -99,7 +99,7 @@ const eventsStore = useEventsStore();
 const events = ref([]);
 const loading = ref(true);
 
-const categories = ['全部', '共修精進', '環保志業', '慈善訪視', '醫療服務', '教育人文', '其他活動'];
+const categories = ['全部', '共修精進', '法親聯誼', '環保志業', '慈善訪視', '醫療服務', '教育人文', '其他活動'];
 const selectedCategory = ref('全部');
 
 async function loadData() {
