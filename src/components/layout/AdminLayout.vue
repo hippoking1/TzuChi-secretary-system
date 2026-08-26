@@ -16,18 +16,19 @@
       </span>
     </div>
 
-    <!-- 手機端滑動快捷功能條 (Swipeable Pills) -->
+    <!-- 手機端滑動快捷功能條 (依據授權模組動態顯示) -->
     <div class="mobile-quick-pills md:hidden bg-gray-50 border-b px-3 py-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap">
       <router-link to="/admin" class="pill-item" active-class="active" exact>📊 總覽</router-link>
-      <router-link to="/admin/events" class="pill-item" active-class="active">📋 活動</router-link>
-      <router-link to="/admin/registrations" class="pill-item" active-class="active">👥 名單</router-link>
-      <router-link to="/admin/checkin" class="pill-item" active-class="active">✅ 簽到</router-link>
-      <router-link to="/admin/meetings" class="pill-item" active-class="active">📅 會議</router-link>
-      <router-link v-if="authStore.isAdmin" to="/admin/duty-schedule" class="pill-item" active-class="active">🗓️ 值班</router-link>
-      <router-link v-if="authStore.isAdmin" to="/admin/duty-form" class="pill-item" active-class="active">✏️ 排班</router-link>
-      <router-link v-if="authStore.isAdmin" to="/admin/members" class="pill-item" active-class="active">📒 志工</router-link>
-      <router-link v-if="authStore.isAdmin" to="/admin/line-bindings" class="pill-item" active-class="active">💬 LINE</router-link>
-      <router-link to="/admin/export" class="pill-item" active-class="active">📥 匯出</router-link>
+      <router-link v-if="authStore.canAccessEvents" to="/admin/events" class="pill-item" active-class="active">📋 活動</router-link>
+      <router-link v-if="authStore.canAccessEvents" to="/admin/registrations" class="pill-item" active-class="active">👥 名單</router-link>
+      <router-link v-if="authStore.canAccessEvents" to="/admin/checkin" class="pill-item" active-class="active">✅ 簽到</router-link>
+      <router-link v-if="authStore.canAccessMeetings" to="/admin/meetings" class="pill-item" active-class="active">📅 會議</router-link>
+      <router-link v-if="authStore.canAccessDuty" to="/admin/duty-schedule" class="pill-item" active-class="active">🗓️ 值班</router-link>
+      <router-link v-if="authStore.canAccessDuty" to="/admin/duty-form" class="pill-item" active-class="active">✏️ 排班</router-link>
+      <router-link v-if="authStore.canAccessMembers" to="/admin/members" class="pill-item" active-class="active">📒 志工</router-link>
+      <router-link v-if="authStore.canAccessMembers" to="/admin/line-bindings" class="pill-item" active-class="active">💬 LINE</router-link>
+      <router-link v-if="authStore.canAccessExport" to="/admin/export" class="pill-item" active-class="active">📥 匯出</router-link>
+      <router-link v-if="authStore.isSuperAdmin" to="/admin/users" class="pill-item" active-class="active">🔐 帳號</router-link>
     </div>
 
     <!-- 電腦端靜態側邊欄 (> 992px 顯示) -->

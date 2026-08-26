@@ -41,20 +41,30 @@ const routes = [
     meta: { requiresAuth: true },
     children: [
       { path: '', name: 'admin-dashboard', component: DashboardView },
-      { path: 'events', name: 'admin-events', component: EventsView },
-      { path: 'events/new', name: 'admin-event-new', component: EventFormView },
-      { path: 'events/edit/:id', name: 'admin-event-edit', component: EventFormView },
-      { path: 'registrations', name: 'admin-registrations', component: RegistrationsView },
-      { path: 'checkin', name: 'admin-checkin', component: CheckInView },
-      { path: 'meetings', name: 'admin-meetings', component: MeetingsView },
-      { path: 'meetings/new', name: 'admin-meeting-new', component: MeetingFormView },
-      { path: 'meetings/edit/:id', name: 'admin-meeting-edit', component: MeetingFormView },
-      { path: 'duty-schedule', name: 'admin-duty-schedule', component: DutyScheduleView, meta: { roles: ['super_admin', 'admin'] } },
-      { path: 'duty-form', name: 'admin-duty-form', component: DutyFormView, meta: { roles: ['super_admin', 'admin'] } },
-      { path: 'members', name: 'admin-members', component: MembersView, meta: { roles: ['super_admin', 'admin'] } },
-      { path: 'orgs', name: 'admin-orgs', component: OrgsView, meta: { roles: ['super_admin', 'admin'] } },
-      { path: 'line-bindings', name: 'admin-line-bindings', component: LineBindingView, meta: { roles: ['super_admin', 'admin'] } },
-      { path: 'export', name: 'admin-export', component: ExportView },
+      
+      // 活動管理模組
+      { path: 'events', name: 'admin-events', component: EventsView, meta: { permission: 'events' } },
+      { path: 'events/new', name: 'admin-event-new', component: EventFormView, meta: { permission: 'events' } },
+      { path: 'events/edit/:id', name: 'admin-event-edit', component: EventFormView, meta: { permission: 'events' } },
+      { path: 'registrations', name: 'admin-registrations', component: RegistrationsView, meta: { permission: 'events' } },
+      { path: 'checkin', name: 'admin-checkin', component: CheckInView, meta: { permission: 'events' } },
+      
+      // 會議管理模組
+      { path: 'meetings', name: 'admin-meetings', component: MeetingsView, meta: { permission: 'meetings' } },
+      { path: 'meetings/new', name: 'admin-meeting-new', component: MeetingFormView, meta: { permission: 'meetings' } },
+      { path: 'meetings/edit/:id', name: 'admin-meeting-edit', component: MeetingFormView, meta: { permission: 'meetings' } },
+      
+      // 道場值班管理模組
+      { path: 'duty-schedule', name: 'admin-duty-schedule', component: DutyScheduleView, meta: { permission: 'duty' } },
+      { path: 'duty-form', name: 'admin-duty-form', component: DutyFormView, meta: { permission: 'duty' } },
+      
+      // 組織與志工管理模組
+      { path: 'members', name: 'admin-members', component: MembersView, meta: { permission: 'members' } },
+      { path: 'orgs', name: 'admin-orgs', component: OrgsView, meta: { permission: 'members' } },
+      { path: 'line-bindings', name: 'admin-line-bindings', component: LineBindingView, meta: { permission: 'members' } },
+      
+      // 報表與系統模組
+      { path: 'export', name: 'admin-export', component: ExportView, meta: { permission: 'export' } },
       { path: 'users', name: 'admin-users', component: AdminUsersView, meta: { roles: ['super_admin'] } }
     ]
   },
@@ -69,7 +79,7 @@ const router = createRouter({
   }
 });
 
-// RBAC 路由導航守衛
+// RBAC 與功能模組權限導航守衛
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore();
   
@@ -83,9 +93,18 @@ router.beforeEach(async (to, from, next) => {
       return;
     }
 
+    // 超級管理員專屬路徑檢查
     const requiredRoles = to.meta.roles;
     if (requiredRoles && !requiredRoles.includes(authStore.role)) {
-      alert('您的權限不足以存取此頁面');
+      alert('您的角色無權存取此頁面（僅限超級管理員）');
+      next({ path: '/admin' });
+      return;
+    }
+
+    // 細緻化功能模組權限檢查
+    const requiredPerm = to.meta.permission;
+    if (requiredPerm && !authStore.hasPermission(requiredPerm)) {
+      alert('您的帳號未獲授權存取此功能模組，請洽超級管理員設定權限。');
       next({ path: '/admin' });
       return;
     }

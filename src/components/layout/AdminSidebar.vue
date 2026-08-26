@@ -15,6 +15,7 @@
     </div>
 
     <nav class="sidebar-nav">
+      <!-- 核心概況 (全體可見) -->
       <div class="nav-section">
         <span class="nav-section-title">核心概況</span>
         <router-link to="/admin" class="nav-item" active-class="active" exact @click="$emit('close')">
@@ -22,7 +23,8 @@
         </router-link>
       </div>
 
-      <div class="nav-section">
+      <!-- 1. 活動管理模組 -->
+      <div v-if="authStore.canAccessEvents" class="nav-section">
         <span class="nav-section-title">活動管理</span>
         <router-link to="/admin/events" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📋 活動列表與發佈</span>
@@ -38,7 +40,8 @@
         </router-link>
       </div>
 
-      <div class="nav-section">
+      <!-- 2. 會議管理模組 -->
+      <div v-if="authStore.canAccessMeetings" class="nav-section">
         <span class="nav-section-title">會議管理</span>
         <router-link to="/admin/meetings" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📅 會議列表與名單</span>
@@ -48,7 +51,8 @@
         </router-link>
       </div>
 
-      <div v-if="authStore.isAdmin" class="nav-section">
+      <!-- 3. 道場值班模組 -->
+      <div v-if="authStore.canAccessDuty" class="nav-section">
         <span class="nav-section-title">道場值班</span>
         <router-link to="/admin/duty-schedule" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🗓️ 值班排程月曆</span>
@@ -58,7 +62,8 @@
         </router-link>
       </div>
 
-      <div v-if="authStore.isAdmin" class="nav-section">
+      <!-- 4. 組織與志工模組 -->
+      <div v-if="authStore.canAccessMembers" class="nav-section">
         <span class="nav-section-title">組織與志工</span>
         <router-link to="/admin/members" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📒 志工名冊維護</span>
@@ -71,9 +76,10 @@
         </router-link>
       </div>
 
+      <!-- 5. 報表與系統管理模組 -->
       <div class="nav-section">
         <span class="nav-section-title">報表與系統</span>
-        <router-link to="/admin/export" class="nav-item" active-class="active" @click="$emit('close')">
+        <router-link v-if="authStore.canAccessExport" to="/admin/export" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📥 匯出與備份中心</span>
         </router-link>
         <router-link v-if="authStore.isSuperAdmin" to="/admin/users" class="nav-item" active-class="active" @click="$emit('close')">
