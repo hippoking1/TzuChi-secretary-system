@@ -1,7 +1,8 @@
 import { db } from './config';
 import { 
   collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, writeBatch, runTransaction, serverTimestamp
+  query, where, orderBy, limit, writeBatch, runTransaction, serverTimestamp,
+  getCountFromServer
 } from 'firebase/firestore';
 
 // ---- 通用 CRUD Helper ----
@@ -10,6 +11,17 @@ export async function getCollectionDocs(colName, queryConstraints = []) {
   const q = query(collection(db, colName), ...queryConstraints);
   const snapshot = await getDocs(q);
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getCollectionCount(colName, queryConstraints = []) {
+  try {
+    const q = query(collection(db, colName), ...queryConstraints);
+    const snap = await getCountFromServer(q);
+    return snap.data().count;
+  } catch {
+    const list = await getCollectionDocs(colName, queryConstraints);
+    return list.length;
+  }
 }
 
 export async function getDocById(colName, id) {
@@ -35,6 +47,8 @@ export async function setDocById(colName, id, data, merge = true) {
   }, { merge });
   return id;
 }
+
+export const setDocWithId = setDocById;
 
 export async function updateDocById(colName, id, data) {
   const docRef = doc(db, colName, id);
