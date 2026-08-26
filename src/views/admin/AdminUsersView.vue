@@ -434,7 +434,7 @@ async function handleCreate() {
       createdAt: new Date().toISOString()
     });
 
-    toast.success(\`管理員「\${form.value.name}」帳號已成功建立，並已配置指定權限！\`);
+    toast.success(`管理員「${form.value.name}」帳號已成功建立，並已配置指定權限！`);
     showCreateModal.value = false;
     await loadUsers();
   } catch (err) {
@@ -471,7 +471,7 @@ async function handleSaveEdit() {
       updatedAt: new Date().toISOString()
     }, true);
 
-    toast.success(\`已成功更新管理員「\${editForm.value.name}」的權限！\`);
+    toast.success(`已成功更新管理員「${editForm.value.name}」的權限！`);
     showEditModal.value = false;
     await loadUsers();
   } catch (err) {
@@ -486,7 +486,7 @@ async function sendPasswordResetLink() {
   resetting.value = true;
   try {
     await sendPasswordResetEmail(auth, selectedUser.value.email);
-    toast.success(\`密碼重設信件已成功寄送至 \${selectedUser.value.email}！\`);
+    toast.success(`密碼重設信件已成功寄送至 ${selectedUser.value.email}！`);
     showResetModal.value = false;
   } catch (err) {
     toast.error('發送重設信件失敗：' + err.message);
@@ -496,7 +496,7 @@ async function sendPasswordResetLink() {
 }
 
 async function handleDelete(id, email) {
-  if (!confirm(\`確定要刪除管理員「\${email}」的權限嗎？\`)) return;
+  if (!confirm(`確定要刪除管理員「${email}」的權限嗎？`)) return;
   try {
     await deleteDocById('adminUsers', id);
     toast.success('管理員權限已移除');
