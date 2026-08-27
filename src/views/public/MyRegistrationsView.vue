@@ -65,7 +65,7 @@
             <div class="text-xs text-muted flex flex-col gap-1">
               <div>🗓️ <strong>活動日期：</strong>{{ r.eventDate }} {{ r.eventStartTime }} ~ {{ r.eventEndTime }}</div>
               <div>📍 <strong>舉辦地點：</strong>{{ r.eventLocation }}</div>
-              <div>👤 <strong>報名人：</strong>{{ r.name || r.guestName }} | <strong>膳食：</strong>{{ r.mealType || '素食' }}</div>
+              <div>👤 <strong>報名人：</strong>{{ r.name || r.guestName }} | 👥 <strong>報名人數：</strong>{{ r.participantCount || 1 }} 位</div>
             </div>
           </div>
 

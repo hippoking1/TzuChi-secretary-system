@@ -92,18 +92,19 @@ export async function registerWithTransaction(registrationData) {
     }
     const event = eventSnap.data();
     
-    // 檢查已確認報名人數
+    // 檢查已確認報名人數與名額限制
+    const count = Math.max(1, Number(registrationData.participantCount) || 1);
     const currentConfirmed = event.currentConfirmedCount || 0;
     const maxParticipants = event.maxParticipants || 0;
     
     let status = '已確認';
-    const isFull = maxParticipants > 0 && currentConfirmed >= maxParticipants;
+    const isFull = maxParticipants > 0 && (currentConfirmed + count) > maxParticipants;
 
     if (isFull) {
       status = '候補中';
     } else {
       transaction.update(eventRef, {
-        currentConfirmedCount: currentConfirmed + 1,
+        currentConfirmedCount: currentConfirmed + count,
         updatedAt: serverTimestamp()
       });
     }
@@ -111,12 +112,13 @@ export async function registerWithTransaction(registrationData) {
     const regRef = doc(collection(db, 'registrations'));
     transaction.set(regRef, {
       ...registrationData,
+      participantCount: count,
       status,
       registeredAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
 
-    return { registrationId: regRef.id, status };
+    return { registrationId: regRef.id, status, count };
   });
 }
 
@@ -151,6 +153,7 @@ export async function cancelRegistrationWithPromotion(regId, eventId) {
     const regData = regSnap.data();
     const wasConfirmed = regData.status === '已確認';
     const actualEventId = eventId || regData.eventId;
+    const count = Math.max(1, Number(regData.participantCount) || 1);
 
     let eventSnap = null;
     let eventRef = null;
@@ -183,7 +186,7 @@ export async function cancelRegistrationWithPromotion(regId, eventId) {
       } else if (eventSnap && eventSnap.exists()) {
         const cur = eventSnap.data().currentConfirmedCount || 0;
         transaction.update(eventRef, {
-          currentConfirmedCount: Math.max(0, cur - 1),
+          currentConfirmedCount: Math.max(0, cur - count),
           updatedAt: serverTimestamp()
         });
       }

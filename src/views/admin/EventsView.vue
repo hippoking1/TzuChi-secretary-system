@@ -46,9 +46,12 @@
               </span>
             </td>
             <td>
-              <div class="flex gap-2">
+              <div class="flex gap-2 flex-wrap">
                 <router-link :to="'/admin/events/edit/' + evt.id" class="btn btn-sm btn-outline">編輯</router-link>
                 <router-link :to="'/admin/registrations?eventId=' + evt.id" class="btn btn-sm btn-outline-primary">名單</router-link>
+                <button class="btn btn-sm btn-outline-primary" title="匯出該活動依協力分頁之 Excel 名冊" @click="handleExportEventExcel(evt)">
+                  📊 匯出 Excel
+                </button>
                 <button class="btn btn-sm btn-outline" title="分享報名連結 / QR Code" @click="openShareModal(evt)">📤 分享</button>
                 <button class="btn btn-sm btn-outline" @click="handleDuplicate(evt.id)">複製</button>
                 <button class="btn btn-sm btn-danger" @click="handleDelete(evt.id)">刪除</button>
@@ -67,10 +70,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useEventsStore } from '@/stores/events';
+import { useOrgsStore } from '@/stores/orgs';
+import { getCollectionDocs } from '@/firebase/db';
+import { where } from 'firebase/firestore';
+import { exportEventRegistrationsToExcel } from '@/utils/excelExport';
 import { useToast } from '@/composables/useToast';
 import ShareModal from '@/components/shared/ShareModal.vue';
 
 const eventsStore = useEventsStore();
+const orgsStore = useOrgsStore();
 const toast = useToast();
 
 const search = ref('');
@@ -93,6 +101,16 @@ async function loadEvents() {
   await eventsStore.fetchAllEvents(statusFilter.value);
 }
 
+async function handleExportEventExcel(evt) {
+  try {
+    const regs = await getCollectionDocs('registrations', [where('eventId', '==', evt.id)]);
+    const res = exportEventRegistrationsToExcel(evt, regs, orgsStore.orgs);
+    toast.success(`「${evt.title}」Excel 匯出成功！共 ${res.totalHeadcount} 位報名成功成員，分 ${res.groupCount} 個協力工作頁。`);
+  } catch (err) {
+    toast.error(err.message || '匯出失敗');
+  }
+}
+
 async function handleDuplicate(id) {
   try {
     await eventsStore.duplicateEvent(id);
@@ -108,12 +126,14 @@ async function handleDelete(id) {
   try {
     await eventsStore.deleteEvent(id);
     toast.success('活動已刪除');
+    await loadEvents();
   } catch (err) {
     toast.error('刪除失敗：' + err.message);
   }
 }
 
-onMounted(() => {
-  loadEvents();
+onMounted(async () => {
+  await orgsStore.fetchOrgs();
+  await loadEvents();
 });
 </script>

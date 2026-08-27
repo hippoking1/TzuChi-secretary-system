@@ -73,14 +73,21 @@
           </select>
         </div>
 
-        <!-- 膳食選擇 -->
+        <!-- 報名人數 (預設 1 位) -->
         <div class="form-group">
-          <label class="form-label">用餐需求</label>
-          <select v-model="form.mealType" class="form-select">
-            <option value="素食">素食 (常規)</option>
-            <option value="早齋">早齋</option>
-            <option value="不用餐">不用餐</option>
-          </select>
+          <label class="form-label required font-bold">報名人數</label>
+          <div class="flex items-center gap-3">
+            <input 
+              v-model.number="form.participantCount" 
+              type="number" 
+              min="1" 
+              max="100" 
+              class="form-input text-lg font-bold" 
+              style="max-width: 140px;" 
+              required 
+            />
+            <span class="text-sm text-muted">位 (預設 1 位，若含同行志工/家人大德請輸入總人數)</span>
+          </div>
         </div>
 
         <!-- 特殊需求 -->
@@ -137,7 +144,7 @@ const form = ref({
   guestName: '',
   guestPhone: '',
   sessionId: '',
-  mealType: '素食',
+  participantCount: 1,
   note: ''
 });
 
@@ -161,6 +168,7 @@ async function handleSubmit() {
   submitting.value = true;
   try {
     const isVol = mode.value === 'volunteer';
+    const count = Math.max(1, Number(form.value.participantCount) || 1);
     const payload = {
       eventId: event.value.id,
       eventTitle: event.value.title,
@@ -173,12 +181,12 @@ async function handleSubmit() {
       orgId: isVol ? selectedMember.value?.orgId : '',
       orgPath: isVol ? selectedMemberOrgPath.value : '',
       sessionId: form.value.sessionId,
-      mealType: form.value.mealType,
+      participantCount: count,
       note: form.value.note
     };
 
     const res = await regStore.submitRegistration(payload);
-    toast.success(`報名成功！狀態：${res.status}`);
+    toast.success(`報名成功（共 ${count} 位）！狀態：${res.status}`);
     router.push('/my');
   } catch (err) {
     toast.error('報名失敗：' + err.message);

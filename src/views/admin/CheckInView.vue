@@ -20,21 +20,24 @@
           </select>
         </div>
 
-        <!-- 簽到即時統計看板 -->
+        <!-- 簽到即時統計看板 (分別顯示表單數與總人數) -->
         <div class="flex items-center justify-around bg-gray-50 border border-gray-200 rounded p-2 text-center">
           <div>
-            <div class="text-xs text-muted">應到名單</div>
-            <div class="text-lg font-bold text-gray-800">{{ confirmedRegistrations.length }} 人</div>
+            <div class="text-xs text-muted">應到總人數</div>
+            <div class="text-lg font-bold text-gray-800">{{ confirmedHeadcount }} <span class="text-xs font-normal">位</span></div>
+            <div class="text-[10px] text-gray-500">共 {{ confirmedRegistrations.length }} 份表單</div>
           </div>
           <div class="border-r border-gray-200 h-8"></div>
           <div>
             <div class="text-xs text-muted">已簽到</div>
-            <div class="text-lg font-bold text-success">{{ checkedCount }} 人</div>
+            <div class="text-lg font-bold text-success">{{ checkedHeadcount }} <span class="text-xs font-normal">位</span></div>
+            <div class="text-[10px] text-gray-500">{{ checkedCount }} 份完成</div>
           </div>
           <div class="border-r border-gray-200 h-8"></div>
           <div>
             <div class="text-xs text-muted">未簽到</div>
-            <div class="text-lg font-bold text-amber-600">{{ confirmedRegistrations.length - checkedCount }} 人</div>
+            <div class="text-lg font-bold text-amber-600">{{ confirmedHeadcount - checkedHeadcount }} <span class="text-xs font-normal">位</span></div>
+            <div class="text-[10px] text-gray-500">{{ confirmedRegistrations.length - checkedCount }} 份未到</div>
           </div>
         </div>
       </div>
@@ -58,7 +61,7 @@
             :class="statusFilter === 'all' ? 'btn-primary' : 'btn-outline'"
             @click="statusFilter = 'all'"
           >
-            全部 ({{ confirmedRegistrations.length }})
+            全部 ({{ confirmedHeadcount }} 位 / {{ confirmedRegistrations.length }} 份)
           </button>
           <button 
             type="button" 
@@ -66,7 +69,7 @@
             :class="statusFilter === 'unchecked' ? 'btn-primary' : 'btn-outline'"
             @click="statusFilter = 'unchecked'"
           >
-            未簽到 ({{ confirmedRegistrations.length - checkedCount }})
+            未簽到 ({{ confirmedHeadcount - checkedHeadcount }} 位)
           </button>
           <button 
             type="button" 
@@ -74,7 +77,7 @@
             :class="statusFilter === 'checked' ? 'btn-primary' : 'btn-outline'"
             @click="statusFilter = 'checked'"
           >
-            已簽到 ({{ checkedCount }})
+            已簽到 ({{ checkedHeadcount }} 位)
           </button>
         </div>
       </div>
@@ -100,14 +103,17 @@
             <span class="badge" :class="r.checkedIn ? 'badge-success' : 'badge-gray'">
               {{ r.checkedIn ? '已簽到' : '未簽到' }}
             </span>
-            <span v-if="r.orgDisplay" class="badge badge-primary text-xs">
+            <span class="badge badge-primary font-bold">
+              {{ r.participantCount || 1 }} 位
+            </span>
+            <span v-if="r.orgDisplay" class="badge badge-gray text-xs">
               {{ r.orgDisplay }}
             </span>
           </div>
           <p class="text-xs text-muted flex items-center gap-3 flex-wrap">
             <span v-if="getPhone(r)">📞 {{ getPhone(r) }}</span>
-            <span>🍱 {{ r.mealType || '素食' }}</span>
-            <span v-if="r.checkedIn && r.checkInTime" class="text-success">
+            <span v-if="r.note" class="text-gray-600">📝 {{ r.note }}</span>
+            <span v-if="r.checkedIn && r.checkInTime" class="text-success font-medium">
               🕒 {{ formatCheckInTime(r.checkInTime) }}
             </span>
           </p>
@@ -154,8 +160,18 @@ const confirmedRegistrations = computed(() => {
   });
 });
 
+const confirmedHeadcount = computed(() => {
+  return confirmedRegistrations.value.reduce((sum, r) => sum + (Number(r.participantCount) || 1), 0);
+});
+
 const checkedCount = computed(() => {
   return confirmedRegistrations.value.filter(r => r.checkedIn).length;
+});
+
+const checkedHeadcount = computed(() => {
+  return confirmedRegistrations.value
+    .filter(r => r.checkedIn)
+    .reduce((sum, r) => sum + (Number(r.participantCount) || 1), 0);
 });
 
 const filteredRegistrations = computed(() => {

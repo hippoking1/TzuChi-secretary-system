@@ -23,13 +23,13 @@
         </div>
       </router-link>
 
-      <!-- 卡片 2: 總報名人次 (環保綠) -->
+      <!-- 卡片 2: 總報名人數 (環保綠) -->
       <router-link to="/admin/registrations" class="stat-card card-hover stat-card-green">
         <div class="stat-icon-wrapper icon-green">👥</div>
         <div class="stat-content">
-          <div class="stat-title">總報名人次</div>
-          <div class="stat-value text-green">{{ stats.registrationsCount }}</div>
-          <div class="stat-hint">累計正取與候補人次</div>
+          <div class="stat-title">總報名人數</div>
+          <div class="stat-value text-green">{{ stats.registrationsCount }} <span class="text-xs font-normal">位</span></div>
+          <div class="stat-hint">共 {{ stats.registrationsFormsCount }} 份有效表單</div>
         </div>
       </router-link>
 
@@ -110,6 +110,7 @@ const loading = ref(false);
 const stats = ref({
   eventsCount: 0,
   registrationsCount: 0,
+  registrationsFormsCount: 0,
   membersCount: 0,
   dutiesCount: 0,
   lineBindingsCount: 0
@@ -126,9 +127,10 @@ async function loadStats() {
       getCollectionCount('lineBindings')
     ]);
     stats.value.eventsCount = events;
-    // 屏除報名後取消的人數，僅統計有效報名人次（正取與候補）
+    // 屏除報名後取消的人數，分別統計總人數與表單份數
     const validRegs = (allRegs || []).filter(r => r.status !== '已取消');
-    stats.value.registrationsCount = validRegs.length;
+    stats.value.registrationsFormsCount = validRegs.length;
+    stats.value.registrationsCount = validRegs.reduce((sum, r) => sum + (Number(r.participantCount) || 1), 0);
     stats.value.membersCount = members;
     stats.value.dutiesCount = duties;
     stats.value.lineBindingsCount = lines;
