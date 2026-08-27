@@ -40,8 +40,8 @@ const syncing = ref(false);
 
 async function exportEventsData() {
   const regs = await getCollectionDocs('registrations');
-  const headers = ['報名ID', '活動標題', '姓名', '電話', '膳食', '狀態', '簽到'];
-  const rows = regs.map(r => [r.id, r.eventTitle, r.name || r.guestName, r.phone || r.guestPhone, r.mealType, r.status, r.checkedIn ? '已簽到' : '未簽到']);
+  const headers = ['報名ID', '活動標題', '姓名', '電話', '報名人數', '狀態', '簽到'];
+  const rows = regs.map(r => [r.id, r.eventTitle, r.name || r.guestName, r.phone || r.guestPhone, r.participantCount || 1, r.status, r.checkedIn ? '已簽到' : '未簽到']);
   downloadCsv('慈濟活動報名總表.csv', headers, rows);
   toast.success('CSV 匯出成功');
 }

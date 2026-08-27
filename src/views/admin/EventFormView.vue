@@ -67,23 +67,12 @@
           <input v-model="form.registrationEnd" type="datetime-local" class="form-input" required />
         </div>
 
-        <!-- 名額與膳食設定 -->
+        <!-- 名額與資格設定 -->
         <div class="form-group">
           <label class="form-label">人數上限 (留空為不限)</label>
-          <input v-model.number="form.maxParticipants" type="number" class="form-input" min="1" placeholder="留空或輸入人數" />
+          <input v-model.number="form.maxParticipants" type="number" class="form-input" min="1" placeholder="留空或輸入人數上限" />
         </div>
 
-        <div class="form-group">
-          <label class="form-label">膳食提供選項</label>
-          <select v-model="form.mealOption" class="form-select">
-            <option value="提供午齋">提供午齋</option>
-            <option value="提供早午齋">提供早午齋</option>
-            <option value="提供便當">提供便當</option>
-            <option value="不提供膳食">不提供膳食</option>
-          </select>
-        </div>
-
-        <!-- 限制與聯絡人 -->
         <div class="form-group">
           <label class="form-label">報名資格限制</label>
           <select v-model="form.requireVolunteerCode" class="form-select">
@@ -92,7 +81,8 @@
           </select>
         </div>
 
-        <div class="form-group">
+        <!-- 聯絡人 -->
+        <div class="form-group" style="grid-column: span 2;">
           <label class="form-label">聯絡人與電話</label>
           <input v-model="form.contactName" type="text" class="form-input" placeholder="例如：林師兄 0912-345678" />
         </div>
@@ -140,8 +130,7 @@ const form = ref({
   eventEndTime: '12:00',
   registrationStart: nowDateTimeStr,
   registrationEnd: `${todayStr}T23:59`,
-  maxParticipants: 100,
-  mealOption: '提供午齋',
+  maxParticipants: null,
   requireVolunteerCode: false,
   contactName: '',
   description: ''
