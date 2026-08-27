@@ -162,9 +162,15 @@ async function handleDelete(id) {
   toast.success('已刪除');
 }
 
-onMounted(() => {
-  membersStore.fetchMembers();
-  orgsStore.fetchOrgs();
+onMounted(async () => {
+  await orgsStore.fetchOrgs();
+  await membersStore.fetchMembers();
+  // 檢測並自動同步活動報名時填寫的最新志工電話
+  const updatedCount = await membersStore.syncPhonesFromRegistrations();
+  if (updatedCount > 0) {
+    await membersStore.fetchMembers();
+    toast.info(`已自動為 ${updatedCount} 位志工同步活動報名時填寫的最新電話！`);
+  }
 });
 </script>
 

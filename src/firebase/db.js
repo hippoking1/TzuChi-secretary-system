@@ -82,15 +82,23 @@ export async function batchWriteItems(colName, items, operation = 'set') {
   }
 }
 
-// ---- 活動與報名 Transaction (防止名額超額) ----
+// ---- 活動與報名 Transaction (防止名額超額 & 同步更新志工電話) ----
 export async function registerWithTransaction(registrationData) {
   return await runTransaction(db, async (transaction) => {
+    // 1. Transaction Reads 階段 (所有讀取必須在任何寫入前完成)
     const eventRef = doc(db, 'events', registrationData.eventId);
     const eventSnap = await transaction.get(eventRef);
     if (!eventSnap.exists()) {
       throw new Error("活動不存在");
     }
     const event = eventSnap.data();
+
+    let memberRef = null;
+    let memberSnap = null;
+    if (registrationData.memberId) {
+      memberRef = doc(db, 'members', registrationData.memberId);
+      memberSnap = await transaction.get(memberRef);
+    }
     
     // 檢查已確認報名人數與名額限制
     const count = Math.max(1, Number(registrationData.participantCount) || 1);
@@ -100,6 +108,7 @@ export async function registerWithTransaction(registrationData) {
     let status = '已確認';
     const isFull = maxParticipants > 0 && (currentConfirmed + count) > maxParticipants;
 
+    // 2. Transaction Writes 階段
     if (isFull) {
       status = '候補中';
     } else {
@@ -117,6 +126,18 @@ export async function registerWithTransaction(registrationData) {
       registeredAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
+
+    // 若報名時填寫了電話，且志工原本未填電話或電話不同，自動同步更新志工名冊資料！
+    const submittedPhone = (registrationData.phone || registrationData.guestPhone || '').trim();
+    if (memberRef && memberSnap && memberSnap.exists() && submittedPhone) {
+      const currentMemberPhone = (memberSnap.data().phone || '').trim();
+      if (currentMemberPhone !== submittedPhone) {
+        transaction.update(memberRef, {
+          phone: submittedPhone,
+          updatedAt: serverTimestamp()
+        });
+      }
+    }
 
     return { registrationId: regRef.id, status, count };
   });

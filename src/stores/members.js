@@ -7,6 +7,54 @@ export const useMembersStore = defineStore('members', () => {
   const members = ref([]);
   const loading = ref(false);
 
+  async function syncPhonesFromRegistrations() {
+    try {
+      const [regs, allMembers] = await Promise.all([
+        getCollectionDocs('registrations'),
+        getCollectionDocs('members')
+      ]);
+      const memMap = {};
+      const memByName = {};
+      allMembers.forEach(m => {
+        memMap[m.id] = m;
+        if (!memByName[m.name]) memByName[m.name] = [];
+        memByName[m.name].push(m);
+      });
+
+      const updates = [];
+      regs.forEach(r => {
+        const ph = (r.phone || r.guestPhone || '').trim();
+        if (!ph) return;
+
+        if (r.memberId && memMap[r.memberId]) {
+          const m = memMap[r.memberId];
+          if ((m.phone || '').trim() !== ph) {
+            updates.push({ id: m.id, phone: ph });
+            m.phone = ph;
+          }
+        } else if (r.name && memByName[r.name]) {
+          memByName[r.name].forEach(m => {
+            if ((m.phone || '').trim() !== ph) {
+              updates.push({ id: m.id, phone: ph });
+              m.phone = ph;
+            }
+          });
+        }
+      });
+
+      if (updates.length > 0) {
+        console.log(`[MembersStore] 自動同步 ${updates.length} 位志工最新電話號碼...`);
+        for (const u of updates) {
+          await updateDocById('members', u.id, { phone: u.phone });
+        }
+      }
+      return updates.length;
+    } catch (e) {
+      console.warn("自動同步志工電話警告:", e);
+      return 0;
+    }
+  }
+
   async function fetchMembers(filters = {}) {
     loading.value = true;
     try {
@@ -65,6 +113,7 @@ export const useMembersStore = defineStore('members', () => {
     members,
     loading,
     fetchMembers,
+    syncPhonesFromRegistrations,
     saveMember,
     deleteMember,
     batchImportMembers
