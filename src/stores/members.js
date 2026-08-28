@@ -73,13 +73,21 @@ export const useMembersStore = defineStore('members', () => {
         list = list.filter(m => m.orgId === filters.orgId);
       }
 
+      if (filters.position) {
+        list = list.filter(m => {
+          const roles = m.cadreRoles || m.positions || [];
+          return roles.includes(filters.position);
+        });
+      }
+
       if (filters.search) {
         const keyword = filters.search.toLowerCase();
         list = list.filter(m => 
           (m.name || '').toLowerCase().includes(keyword) ||
           (m.phone || '').includes(keyword) ||
           (m.volunteerCode || '').includes(keyword) ||
-          (m.dharmaName || '').includes(keyword)
+          (m.dharmaName || '').includes(keyword) ||
+          (m.cadreRoles || m.positions || []).some(r => r.toLowerCase().includes(keyword))
         );
       }
       members.value = list;
@@ -91,6 +99,8 @@ export const useMembersStore = defineStore('members', () => {
 
   async function saveMember(memberData) {
     const cleanData = { ...memberData };
+    cleanData.cadreRoles = cleanData.cadreRoles || cleanData.positions || [];
+    cleanData.positions = cleanData.cadreRoles; // 雙向相容
     if (cleanData.phone) {
       const norm = normalizeAndValidatePhone(cleanData.phone);
       if (norm.valid) cleanData.phone = norm.formatted;

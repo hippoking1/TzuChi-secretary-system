@@ -52,6 +52,8 @@ export const useMeetingsStore = defineStore('meetings', () => {
       memberId: m.id,
       memberName: m.name,
       memberPhone: m.phone || '',
+      cadreRoles: m.cadreRoles || m.positions || [],
+      orgPath: m.orgPath || '',
       attendance: '未回覆',
       note: ''
     }));

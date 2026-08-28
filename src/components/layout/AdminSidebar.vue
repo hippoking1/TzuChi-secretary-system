@@ -68,6 +68,9 @@
         <router-link to="/admin/members" class="nav-item" active-class="active" @click="$emit('close')">
           <span>📒 志工名冊維護</span>
         </router-link>
+        <router-link to="/admin/positions" class="nav-item" active-class="active" @click="$emit('close')">
+          <span>🎖️ 幹部職稱架構</span>
+        </router-link>
         <router-link to="/admin/orgs" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🏛️ 組織階層架構</span>
         </router-link>

@@ -70,19 +70,59 @@
             </button>
           </div>
 
-          <!-- 加入志工區塊 (可依和氣/互愛/協力自由展開) -->
+          <!-- 加入志工區塊 (支援「依幹部職稱篩選」與「依組織架構挑選」雙模式) -->
           <div v-if="showAddMember" class="card mb-4 p-4 bg-gray-50 border border-gray-200">
-            <h4 class="font-bold text-sm mb-2 text-gray-800">1. 選擇組織架構 (和氣 / 互愛 / 協力)</h4>
-            <OrgCascader v-model="targetOrgId" @change="onTargetOrgChange" />
+            <!-- 模式切換 Tabs -->
+            <div class="tabs-nav justify-start mb-3">
+              <button 
+                type="button" 
+                class="tab-btn text-xs py-1.5 px-3" 
+                :class="{ active: filterMode === 'position' }" 
+                @click="filterMode = 'position'"
+              >
+                🎖️ 依幹部職稱篩選與邀請
+              </button>
+              <button 
+                type="button" 
+                class="tab-btn text-xs py-1.5 px-3" 
+                :class="{ active: filterMode === 'org' }" 
+                @click="filterMode = 'org'"
+              >
+                🏛️ 依組織架構挑選 (和氣 / 互愛 / 協力)
+              </button>
+            </div>
 
-            <div v-if="loadingOrgMembers" class="text-center p-3 text-muted text-xs">
+            <!-- 模式 1: 依幹部職稱篩選 -->
+            <div v-if="filterMode === 'position'">
+              <div class="form-group mb-2">
+                <label class="form-label font-bold text-xs">選擇幹部職稱 / 職務：</label>
+                <select v-model="selectedPosition" class="form-select" @change="onPositionChange">
+                  <option value="">-- 請選擇要邀請的幹部職稱 --</option>
+                  <option value="__ALL_CADRES__">🌟 所有已指派幹部職稱之人員 (不限職稱)</option>
+                  <option v-for="p in posStore.allPositionNames" :key="p" :value="p">
+                    {{ p }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 模式 2: 依組織架構篩選 -->
+            <div v-else>
+              <div class="form-group mb-2">
+                <label class="form-label font-bold text-xs">選擇組織架構：</label>
+                <OrgCascader v-model="targetOrgId" @change="onTargetOrgChange" />
+              </div>
+            </div>
+
+            <!-- 志工候選名單展示 -->
+            <div v-if="loadingMembers" class="text-center p-3 text-muted text-xs">
               載入志工名冊中...
             </div>
 
-            <div v-else-if="availableOrgMembers.length > 0" class="mt-3">
-              <div class="flex items-center justify-between mb-2">
+            <div v-else-if="availableMembers.length > 0" class="mt-3">
+              <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
                 <span class="text-xs font-bold text-gray-700">
-                  找到 {{ availableOrgMembers.length }} 位志工（已勾選 {{ selectedMemberIds.length }} 位）：
+                  找到 {{ availableMembers.length }} 位符合人員（已勾選 {{ selectedMemberIds.length }} 位）：
                 </span>
                 <div class="flex gap-2">
                   <button type="button" class="btn btn-xs btn-outline" @click="selectAllMembers">全選</button>
@@ -93,14 +133,23 @@
               <!-- 志工勾選網格 -->
               <div class="members-select-grid mb-3">
                 <label 
-                  v-for="m in availableOrgMembers" 
+                  v-for="m in availableMembers" 
                   :key="m.id" 
                   class="member-checkbox-card"
                   :class="{ selected: selectedMemberIds.includes(m.id) }"
                 >
                   <input type="checkbox" :value="m.id" v-model="selectedMemberIds" />
-                  <span class="font-bold text-sm">{{ m.name }}</span>
-                  <span v-if="m.dharmaName" class="text-xs text-muted">({{ m.dharmaName }})</span>
+                  <div class="flex flex-col">
+                    <div class="font-bold text-sm text-gray-900 flex items-center gap-1">
+                      <span>{{ m.name }}</span>
+                      <span v-if="m.dharmaName" class="text-xs text-muted">({{ m.dharmaName }})</span>
+                    </div>
+                    <div class="text-xs text-gray-500 flex flex-wrap gap-1 mt-0.5">
+                      <span v-for="r in (m.cadreRoles || m.positions || [])" :key="r" class="badge badge-info text-[10px] py-0 px-1">
+                        {{ r }}
+                      </span>
+                    </div>
+                  </div>
                 </label>
               </div>
 
@@ -111,13 +160,13 @@
                   :disabled="selectedMemberIds.length === 0"
                   @click="importSelectedMembers"
                 >
-                  ➕ 加入選取的 {{ selectedMemberIds.length }} 位志工
+                  ➕ 加入選取的 {{ selectedMemberIds.length }} 位人員至出席名單
                 </button>
               </div>
             </div>
 
-            <div v-else-if="targetOrgId" class="text-center p-3 text-muted text-xs">
-              此組織目前無建檔志工
+            <div v-else-if="selectedPosition || targetOrgId" class="text-center p-3 text-muted text-xs">
+              查無符合條件之未加入人員
             </div>
           </div>
 
@@ -128,6 +177,7 @@
                 <tr>
                   <th style="width: 60px;">序號</th>
                   <th>姓名</th>
+                  <th>幹部職稱 / 組織</th>
                   <th>聯絡電話</th>
                   <th>LINE 綁定</th>
                   <th style="width: 140px;">出席狀態</th>
@@ -136,11 +186,19 @@
               </thead>
               <tbody>
                 <tr v-if="meetingsStore.participants.length === 0">
-                  <td colspan="6" class="text-center text-muted p-6">目前出席名單尚無志工，請點擊上方按鈕加入</td>
+                  <td colspan="7" class="text-center text-muted p-6">目前出席名單尚無志工，請點擊上方按鈕加入</td>
                 </tr>
                 <tr v-for="(p, idx) in meetingsStore.participants" :key="p.id">
                   <td>{{ idx + 1 }}</td>
                   <td class="font-bold text-gray-900">{{ p.memberName }}</td>
+                  <td>
+                    <div v-if="(p.cadreRoles && p.cadreRoles.length) || (p.positions && p.positions.length)" class="flex flex-wrap gap-1">
+                      <span v-for="r in (p.cadreRoles || p.positions)" :key="r" class="badge badge-info text-xs">
+                        {{ r }}
+                      </span>
+                    </div>
+                    <span v-else class="text-xs text-muted">{{ p.orgPath || '志工' }}</span>
+                  </td>
                   <td>{{ p.memberPhone || '-' }}</td>
                   <td>
                     <span v-if="isMemberLineBound(p)" class="badge badge-success text-xs">
@@ -184,6 +242,7 @@ import { ref, onMounted } from 'vue';
 import { useMeetingsStore } from '@/stores/meetings';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
+import { usePositionsStore } from '@/stores/positions';
 import { getCollectionDocs } from '@/firebase/db';
 import OrgCascader from '@/components/ui/OrgCascader.vue';
 import { useToast } from '@/composables/useToast';
@@ -193,16 +252,20 @@ import { app } from '@/firebase/config';
 const meetingsStore = useMeetingsStore();
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
+const posStore = usePositionsStore();
 const toast = useToast();
 
 const showModal = ref(false);
 const showAddMember = ref(false);
+const filterMode = ref('position'); // 'position' | 'org'
 const currentMeetingId = ref('');
 const currentMeeting = ref(null);
+
 const targetOrgId = ref('');
-const availableOrgMembers = ref([]);
+const selectedPosition = ref('');
+const availableMembers = ref([]);
 const selectedMemberIds = ref([]);
-const loadingOrgMembers = ref(false);
+const loadingMembers = ref(false);
 const sendingLine = ref(false);
 const lineBoundSet = ref(new Set());
 
@@ -210,9 +273,11 @@ async function openParticipantsModal(id) {
   currentMeetingId.value = id;
   currentMeeting.value = await meetingsStore.fetchMeetingById(id);
   targetOrgId.value = '';
-  availableOrgMembers.value = [];
+  selectedPosition.value = '';
+  availableMembers.value = [];
   selectedMemberIds.value = [];
   showAddMember.value = false;
+  filterMode.value = 'position';
   
   // 載入 LINE 綁定資料供狀態比對
   await loadLineBindings();
@@ -233,28 +298,59 @@ function isMemberLineBound(p) {
   return lineBoundSet.value.has(p.memberId) || lineBoundSet.value.has(p.memberName);
 }
 
-async function onTargetOrgChange(orgId) {
-  if (!orgId) {
-    availableOrgMembers.value = [];
+async function onPositionChange() {
+  if (!selectedPosition.value) {
+    availableMembers.value = [];
     selectedMemberIds.value = [];
     return;
   }
-  loadingOrgMembers.value = true;
+  loadingMembers.value = true;
+  try {
+    const allMembers = await membersStore.fetchMembers();
+    const existingIds = new Set(meetingsStore.participants.map(p => p.memberId));
+
+    let matched = [];
+    if (selectedPosition.value === '__ALL_CADRES__') {
+      matched = allMembers.filter(m => {
+        const roles = m.cadreRoles || m.positions || [];
+        return roles.length > 0 && !existingIds.has(m.id);
+      });
+    } else {
+      matched = allMembers.filter(m => {
+        const roles = m.cadreRoles || m.positions || [];
+        return roles.includes(selectedPosition.value) && !existingIds.has(m.id);
+      });
+    }
+
+    availableMembers.value = matched;
+    selectedMemberIds.value = matched.map(m => m.id);
+  } finally {
+    loadingMembers.value = false;
+  }
+}
+
+async function onTargetOrgChange(orgId) {
+  if (!orgId) {
+    availableMembers.value = [];
+    selectedMemberIds.value = [];
+    return;
+  }
+  loadingMembers.value = true;
   try {
     const descendantIds = orgsStore.getDescendantOrgIds(orgId);
     const list = await membersStore.fetchMembers({ orgIds: descendantIds });
     
     // 過濾已在名單中的志工
     const existingIds = new Set(meetingsStore.participants.map(p => p.memberId));
-    availableOrgMembers.value = list.filter(m => !existingIds.has(m.id));
-    selectedMemberIds.value = availableOrgMembers.value.map(m => m.id);
+    availableMembers.value = list.filter(m => !existingIds.has(m.id));
+    selectedMemberIds.value = availableMembers.value.map(m => m.id);
   } finally {
-    loadingOrgMembers.value = false;
+    loadingMembers.value = false;
   }
 }
 
 function selectAllMembers() {
-  selectedMemberIds.value = availableOrgMembers.value.map(m => m.id);
+  selectedMemberIds.value = availableMembers.value.map(m => m.id);
 }
 
 function deselectAllMembers() {
@@ -263,12 +359,12 @@ function deselectAllMembers() {
 
 async function importSelectedMembers() {
   if (selectedMemberIds.value.length === 0) return;
-  const toAdd = availableOrgMembers.value.filter(m => selectedMemberIds.value.includes(m.id));
+  const toAdd = availableMembers.value.filter(m => selectedMemberIds.value.includes(m.id));
   await meetingsStore.addParticipants(currentMeetingId.value, toAdd);
-  toast.success(`已成功加入 ${toAdd.length} 位志工至會議名單！`);
+  toast.success(`已成功加入 ${toAdd.length} 位人員至會議名單！`);
   
   const existingIds = new Set(meetingsStore.participants.map(p => p.memberId));
-  availableOrgMembers.value = availableOrgMembers.value.filter(m => !existingIds.has(m.id));
+  availableMembers.value = availableMembers.value.filter(m => !existingIds.has(m.id));
   selectedMemberIds.value = [];
 }
 
@@ -321,7 +417,8 @@ async function handleDelete(id) {
 onMounted(async () => {
   await Promise.all([
     meetingsStore.fetchMeetings(),
-    orgsStore.fetchOrgs()
+    orgsStore.fetchOrgs(),
+    posStore.fetchPositions()
   ]);
 });
 </script>

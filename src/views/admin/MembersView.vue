@@ -1,19 +1,27 @@
 <template>
   <div class="admin-members">
-    <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold">志工名冊維護</h1>
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+      <div>
+        <h1 class="text-2xl font-bold">志工名冊維護</h1>
+        <p class="text-sm text-muted">維護志工名冊基本資料、組織歸屬與指派兼任之幹部職稱</p>
+      </div>
       <div class="flex gap-2">
         <button class="btn btn-outline-primary" @click="showImportModal = true">📥 批次匯入名冊</button>
         <button class="btn btn-primary" @click="openCreate">➕ 新增志工</button>
       </div>
     </div>
 
-    <div class="card mb-4 grid grid-cols-3 gap-4">
-      <input v-model="search" type="text" class="form-input" placeholder="搜尋志工姓名、電話、委員編號..." @input="handleSearch" />
+    <!-- 搜尋與職稱篩選列 -->
+    <div class="card mb-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <input v-model="search" type="text" class="form-input" placeholder="搜尋志工姓名、電話、編號、職務..." @input="handleSearch" />
       <select v-model="genderFilter" class="form-select" @change="handleSearch">
-        <option value="">全部眾別</option>
-        <option value="男">男眾</option>
-        <option value="女">女眾</option>
+        <option value="">全部眾別 (男眾 / 女眾)</option>
+        <option value="男">男眾 (師兄)</option>
+        <option value="女">女眾 (師姊)</option>
+      </select>
+      <select v-model="positionFilter" class="form-select" @change="handleSearch">
+        <option value="">全部幹部職稱 / 職務 (不限)</option>
+        <option v-for="p in posStore.allPositionNames" :key="p" :value="p">{{ p }}</option>
       </select>
     </div>
 
@@ -22,7 +30,8 @@
         <thead>
           <tr>
             <th>姓名</th>
-            <th>性別</th>
+            <th>幹部職稱 / 職務</th>
+            <th>眾別</th>
             <th>電話</th>
             <th>委員/慈誠編號</th>
             <th>所屬組織</th>
@@ -31,22 +40,141 @@
           </tr>
         </thead>
         <tbody>
+          <tr v-if="membersStore.members.length === 0">
+            <td colspan="8" class="text-center text-muted p-4">查無符合條件的志工資料</td>
+          </tr>
           <tr v-for="m in membersStore.members" :key="m.id">
-            <td class="font-bold">{{ m.name }}</td>
-            <td>{{ m.gender }}</td>
-            <td>{{ m.phone }}</td>
+            <td class="font-bold text-gray-900">{{ m.name }}</td>
+            <td>
+              <div v-if="(m.cadreRoles && m.cadreRoles.length) || (m.positions && m.positions.length)" class="flex flex-wrap gap-1">
+                <span 
+                  v-for="role in (m.cadreRoles || m.positions)" 
+                  :key="role" 
+                  class="badge text-xs"
+                  :class="role.includes('合心') ? 'badge-primary' : (role.includes('和氣') ? 'badge-info' : 'badge-gray')"
+                >
+                  {{ role }}
+                </span>
+              </div>
+              <span v-else class="text-xs text-muted">無</span>
+            </td>
+            <td>
+              <span class="badge" :class="m.gender === '男' ? 'badge-primary' : 'badge-secondary'">
+                {{ m.gender || '女' }}
+              </span>
+            </td>
+            <td>{{ m.phone || '-' }}</td>
             <td>{{ m.volunteerCode || '-' }}</td>
             <td>{{ orgsStore.getOrgPath(m.orgId) || '-' }}</td>
             <td>{{ m.dharmaName || '-' }}</td>
             <td>
               <div class="flex gap-2">
-                <button class="btn btn-sm btn-outline" @click="openEdit(m)">編輯</button>
+                <button class="btn btn-sm btn-outline-primary" @click="openEdit(m)">✏️ 編輯/指派職務</button>
                 <button class="btn btn-sm btn-danger" @click="handleDelete(m.id)">刪除</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- 志工資料 新增 / 編輯 Modal (含幹部職稱兼任指派) -->
+    <div v-if="showMemberModal" class="modal-backdrop" @click="showMemberModal = false">
+      <div class="modal-content" style="max-width: 650px;" @click.stop>
+        <div class="modal-header">
+          <h3 class="modal-title font-bold text-lg">
+            {{ isEditing ? '✏️ 編輯志工資料與職稱' : '➕ 新增志工' }}
+          </h3>
+          <button class="modal-close" @click="showMemberModal = false">×</button>
+        </div>
+        
+        <form @submit.prevent="handleSaveMember">
+          <div class="modal-body p-5 space-y-4" style="max-height: 72vh; overflow-y: auto;">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="form-group">
+                <label class="form-label required">志工姓名</label>
+                <input v-model="memberForm.name" type="text" class="form-input" placeholder="請輸入姓名" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label required">性別 / 眾別</label>
+                <select v-model="memberForm.gender" class="form-select" required>
+                  <option value="女">女眾 (師姊)</option>
+                  <option value="男">男眾 (師兄)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="form-group">
+                <label class="form-label">聯絡電話 (手機或家用電話)</label>
+                <input v-model="memberForm.phone" type="tel" class="form-input" placeholder="例如：0912345678 或 03-9123456" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">法號</label>
+                <input v-model="memberForm.dharmaName" type="text" class="form-input" placeholder="例如：慈明、誠正" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">委員 / 慈誠編號</label>
+              <input v-model="memberForm.volunteerCode" type="text" class="form-input" placeholder="請輸入編號" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">所屬組織架構 (和氣 / 互愛 / 協力)</label>
+              <OrgCascader v-model="memberForm.orgId" />
+            </div>
+
+            <!-- 擔任幹部職稱 / 職務 (可多選兼任) -->
+            <div class="form-group">
+              <div class="flex items-center justify-between mb-2">
+                <label class="form-label font-bold text-gray-800 m-0">
+                  🎖️ 擔任幹部職稱 / 職務 (可多選兼任)
+                </label>
+                <span class="text-xs text-primary font-bold">
+                  已選取 {{ (memberForm.cadreRoles || []).length }} 個職務
+                </span>
+              </div>
+              
+              <div class="p-3 bg-gray-50 border border-gray-200 rounded-lg max-h-52 overflow-y-auto space-y-3">
+                <div v-for="root in posStore.positionTree" :key="root.id" class="border-b border-gray-200 pb-2 last:border-b-0">
+                  <div class="text-xs font-bold text-gray-700 mb-1">
+                    📌 {{ root.name }} 系列：
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <label 
+                      class="position-pill" 
+                      :class="{ active: isRoleSelected(root.name) }"
+                      @click.prevent="toggleRole(root.name)"
+                    >
+                      <span v-if="isRoleSelected(root.name)">✓</span>
+                      <span>{{ root.name }}</span>
+                    </label>
+                    <label 
+                      v-for="sub in root.children" 
+                      :key="sub.id" 
+                      class="position-pill"
+                      :class="{ active: isRoleSelected(sub.name) }"
+                      @click.prevent="toggleRole(sub.name)"
+                    >
+                      <span v-if="isRoleSelected(sub.name)">✓</span>
+                      <span>{{ sub.name }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <p class="text-xs text-muted mt-1">點擊上方職稱標籤即可自由勾選或取消，一人可同時兼任多個合心/和氣幹事職務。</p>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" @click="showMemberModal = false">取消</button>
+            <button type="submit" class="btn btn-primary" :disabled="saving">
+              {{ saving ? '儲存中...' : (isEditing ? '確認儲存變更' : '確認新增志工') }}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <!-- 批次匯入 Modal (含即時預覽表格) -->
@@ -91,21 +219,57 @@
 import { ref, onMounted } from 'vue';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
+import { usePositionsStore } from '@/stores/positions';
+import OrgCascader from '@/components/ui/OrgCascader.vue';
 import { useToast } from '@/composables/useToast';
 
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
+const posStore = usePositionsStore();
 const toast = useToast();
 
 const search = ref('');
 const genderFilter = ref('');
+const positionFilter = ref('');
 const showImportModal = ref(false);
 const rawImportText = ref('');
 const parsedRows = ref([]);
 const importing = ref(false);
+const saving = ref(false);
+
+const showMemberModal = ref(false);
+const isEditing = ref(false);
+const memberForm = ref({
+  id: null,
+  name: '',
+  gender: '女',
+  phone: '',
+  volunteerCode: '',
+  dharmaName: '',
+  orgId: '',
+  cadreRoles: []
+});
+
+function isRoleSelected(roleName) {
+  return (memberForm.value.cadreRoles || []).includes(roleName);
+}
+
+function toggleRole(roleName) {
+  if (!memberForm.value.cadreRoles) memberForm.value.cadreRoles = [];
+  const idx = memberForm.value.cadreRoles.indexOf(roleName);
+  if (idx > -1) {
+    memberForm.value.cadreRoles.splice(idx, 1);
+  } else {
+    memberForm.value.cadreRoles.push(roleName);
+  }
+}
 
 async function handleSearch() {
-  await membersStore.fetchMembers({ search: search.value, gender: genderFilter.value });
+  await membersStore.fetchMembers({ 
+    search: search.value, 
+    gender: genderFilter.value,
+    position: positionFilter.value
+  });
 }
 
 function parseImportText() {
@@ -117,7 +281,8 @@ function parseImportText() {
       gender: parts[1] || '女',
       phone: parts[2] || '',
       volunteerCode: parts[3] || '',
-      dharmaName: parts[4] || ''
+      dharmaName: parts[4] || '',
+      cadreRoles: []
     };
   });
 }
@@ -137,23 +302,48 @@ async function submitBatchImport() {
   }
 }
 
-async function openCreate() {
-  const name = prompt('請輸入志工姓名：');
-  if (!name) return;
-  const phone = prompt('請輸入聯絡電話：') || '';
-  const gender = prompt('性別（男/女）：', '女') || '女';
-  await membersStore.saveMember({ name, phone, gender });
-  toast.success('志工建立成功');
-  await handleSearch();
+function openCreate() {
+  isEditing.value = false;
+  memberForm.value = {
+    id: null,
+    name: '',
+    gender: '女',
+    phone: '',
+    volunteerCode: '',
+    dharmaName: '',
+    orgId: '',
+    cadreRoles: []
+  };
+  showMemberModal.value = true;
 }
 
-async function openEdit(m) {
-  const name = prompt('修改志工姓名：', m.name);
-  if (!name) return;
-  const phone = prompt('修改聯絡電話：', m.phone) || '';
-  await membersStore.saveMember({ ...m, name, phone });
-  toast.success('志工更新成功');
-  await handleSearch();
+function openEdit(m) {
+  isEditing.value = true;
+  memberForm.value = {
+    id: m.id,
+    name: m.name || '',
+    gender: m.gender || '女',
+    phone: m.phone || '',
+    volunteerCode: m.volunteerCode || '',
+    dharmaName: m.dharmaName || '',
+    orgId: m.orgId || '',
+    cadreRoles: [...(m.cadreRoles || m.positions || [])]
+  };
+  showMemberModal.value = true;
+}
+
+async function handleSaveMember() {
+  saving.value = true;
+  try {
+    await membersStore.saveMember(memberForm.value);
+    toast.success(isEditing.value ? '志工資料與職稱更新成功！' : '志工新增成功！');
+    showMemberModal.value = false;
+    await handleSearch();
+  } catch (err) {
+    toast.error('儲存失敗：' + err.message);
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function handleDelete(id) {
@@ -163,8 +353,11 @@ async function handleDelete(id) {
 }
 
 onMounted(async () => {
-  await orgsStore.fetchOrgs();
-  await membersStore.fetchMembers();
+  await Promise.all([
+    orgsStore.fetchOrgs(),
+    posStore.fetchPositions(),
+    membersStore.fetchMembers()
+  ]);
   // 檢測並自動同步活動報名時填寫的最新志工電話
   const updatedCount = await membersStore.syncPhonesFromRegistrations();
   if (updatedCount > 0) {
@@ -179,9 +372,24 @@ onMounted(async () => {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 9990;
 }
-.modal-content { background: #ffffff; border-radius: var(--radius-lg); width: 100%; }
-.modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-200); display: flex; justify-content: space-between; }
+.modal-content { background: #ffffff; border-radius: var(--radius-lg); width: 100%; box-shadow: var(--shadow-lg); }
+.modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-200); display: flex; justify-content: space-between; align-items: center; }
 .modal-body { padding: 1.5rem; }
-.modal-footer { padding: 1rem 1.5rem; display: flex; justify-content: flex-end; gap: 0.5rem; background: var(--gray-50); }
+.modal-footer { padding: 1rem 1.5rem; display: flex; justify-content: flex-end; gap: 0.5rem; background: var(--gray-50); border-top: 1px solid var(--gray-200); }
 .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+
+.position-pill {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.35rem 0.75rem; border-radius: 9999px;
+  background: #ffffff; border: 1px solid var(--gray-300);
+  font-size: 0.75rem; color: var(--gray-700); cursor: pointer;
+  transition: all 0.15s ease-in-out; user-select: none;
+}
+.position-pill:hover {
+  border-color: var(--primary-400); background: #f0fdf4;
+}
+.position-pill.active {
+  background: var(--primary-600); border-color: var(--primary-600); color: #ffffff; font-weight: 600;
+}
 </style>
+

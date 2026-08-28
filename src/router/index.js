@@ -23,6 +23,7 @@ import DutyFormView from '@/views/admin/DutyFormView.vue';
 import MembersView from '@/views/admin/MembersView.vue';
 import OrgsView from '@/views/admin/OrgsView.vue';
 import LineBindingView from '@/views/admin/LineBindingView.vue';
+import PositionsView from '@/views/admin/PositionsView.vue';
 import ExportView from '@/views/admin/ExportView.vue';
 import AdminUsersView from '@/views/admin/AdminUsersView.vue';
 
@@ -60,6 +61,7 @@ const routes = [
       
       // 組織與志工管理模組
       { path: 'members', name: 'admin-members', component: MembersView, meta: { permission: 'members' } },
+      { path: 'positions', name: 'admin-positions', component: PositionsView, meta: { permission: 'members' } },
       { path: 'orgs', name: 'admin-orgs', component: OrgsView, meta: { permission: 'members' } },
       { path: 'line-bindings', name: 'admin-line-bindings', component: LineBindingView, meta: { permission: 'members' } },
       
