@@ -29,7 +29,10 @@
             <td>{{ m.location }}</td>
             <td>{{ m.organizerName || '召集幹部' }}</td>
             <td>
-              <div class="flex gap-2">
+              <div class="flex gap-2 flex-wrap">
+                <router-link :to="'/admin/meetings/edit/' + m.id" class="btn btn-sm btn-outline">
+                  ✏️ 編輯
+                </router-link>
                 <button class="btn btn-sm btn-outline-primary" @click="openParticipantsModal(m.id)">
                   👥 出席名單與推播
                 </button>
