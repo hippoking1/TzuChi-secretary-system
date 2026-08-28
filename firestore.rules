@@ -56,10 +56,15 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
     }
 
-    // 組織架構：公開讀取，管理員維護
+    // 組織架構與幹部職稱：公開讀取，管理員維護
     match /organizations/{orgId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isConvener();
+    }
+
+    match /positions/{positionId} {
+      allow read: if true;
+      allow write: if isConvener();
     }
 
     // 會議列表：召集人可讀寫自己或所有會議
