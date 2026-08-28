@@ -45,7 +45,7 @@
     </div>
 
     <!-- 報名人數與表單份數統計指標看板 -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
       <div class="card p-3 bg-blue-50 border border-blue-200">
         <div class="text-xs text-muted">有效正取總人數 (報名成功)</div>
         <div class="text-xl font-bold text-primary mt-1">
@@ -62,12 +62,20 @@
         <div class="text-xs text-gray-500 mt-1">共 {{ stats.waitlistForms }} 份候補表單</div>
       </div>
 
+      <div class="card p-3 bg-emerald-50 border border-emerald-200">
+        <div class="text-xs text-muted">LINE 官方帳號綁定</div>
+        <div class="text-xl font-bold text-emerald-700 mt-1">
+          {{ stats.lineBoundForms }} / {{ stats.confirmedForms }} <span class="text-sm font-normal text-gray-600">份</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">已可接收行前推播提醒</div>
+      </div>
+
       <div class="card p-3 bg-gray-50 border border-gray-200">
         <div class="text-xs text-muted">已簽到人數 / 應到人數</div>
         <div class="text-xl font-bold text-success mt-1">
           {{ stats.checkedHeadcount }} / {{ stats.confirmedHeadcount }} <span class="text-sm font-normal text-gray-600">位</span>
         </div>
-        <div class="text-xs text-gray-500 mt-1">共 {{ stats.checkedForms }} 份表單已完成現場點名</div>
+        <div class="text-xs text-gray-500 mt-1">共 {{ stats.checkedForms }} 份完成現場點名</div>
       </div>
     </div>
 
@@ -80,6 +88,7 @@
             <th>組織架構 / 協力</th>
             <th>電話</th>
             <th>身分別</th>
+            <th>LINE 綁定</th>
             <th>報名人數</th>
             <th>報名狀態</th>
             <th>簽到狀態</th>
@@ -88,7 +97,7 @@
         </thead>
         <tbody>
           <tr v-if="filteredList.length === 0">
-            <td colspan="9" class="text-center text-muted p-4">暫無報名資料</td>
+            <td colspan="10" class="text-center text-muted p-4">暫無報名資料</td>
           </tr>
           <tr v-for="(r, idx) in filteredList" :key="r.id">
             <td>{{ idx + 1 }}</td>
@@ -103,6 +112,15 @@
             <td>
               <span class="badge" :class="r.memberId ? (r.identityType === '培訓' ? 'badge-warning' : (r.identityType === '見習' ? 'badge-primary' : 'badge-info')) : 'badge-gray'">
                 {{ r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般會眾') }}
+              </span>
+            </td>
+            <td>
+              <span v-if="isLineBound(r)" class="badge badge-success text-xs inline-flex items-center gap-1 font-medium" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background-color:#10b981;"></span>
+                已綁定
+              </span>
+              <span v-else class="badge badge-gray text-xs inline-flex items-center gap-1" style="background-color: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb;">
+                未綁定
               </span>
             </td>
             <td class="font-bold text-primary">
@@ -135,6 +153,7 @@ import { useRoute } from 'vue-router';
 import { useEventsStore } from '@/stores/events';
 import { useRegistrationsStore } from '@/stores/registrations';
 import { useOrgsStore } from '@/stores/orgs';
+import { getCollectionDocs } from '@/firebase/db';
 import { useExport } from '@/composables/useExport';
 import { exportEventRegistrationsToExcel } from '@/utils/excelExport';
 import { useToast } from '@/composables/useToast';
@@ -149,22 +168,47 @@ const { downloadCsv } = useExport();
 const toast = useToast();
 
 const events = ref([]);
+const lineBindings = ref([]);
 const selectedEventId = ref('');
 const statusFilter = ref('全部');
 const sendingLine = ref(false);
+
+// LINE 綁定查找索引 Map
+const bindingMap = computed(() => {
+  const map = {};
+  (lineBindings.value || []).forEach(b => {
+    if (b.lineUserId) {
+      if (b.memberId) map[b.memberId] = b;
+      if (b.memberName) map[b.memberName] = b;
+      const cleanPh = (b.memberPhone || b.phone || '').replace(/\D/g, '');
+      if (cleanPh) map[cleanPh] = b;
+    }
+  });
+  return map;
+});
+
+function isLineBound(r) {
+  if (r.lineUserId) return true;
+  if (r.memberId && bindingMap.value[r.memberId]) return true;
+  const cleanPh = (r.phone || r.guestPhone || '').replace(/\D/g, '');
+  if (cleanPh && bindingMap.value[cleanPh]) return true;
+  if (r.name && bindingMap.value[r.name.trim()]) return true;
+  return false;
+}
 
 const filteredList = computed(() => {
   if (statusFilter.value === '全部') return regStore.registrations;
   return regStore.registrations.filter(r => r.status === statusFilter.value);
 });
 
-// 分別統計表單份數與含人數總計之總人數
+// 分別統計表單份數、LINE 綁定數與含人數總計之總人數
 const stats = computed(() => {
   const all = regStore.registrations || [];
   const confirmed = all.filter(r => r.status === '已確認' || !r.status);
   const waitlist = all.filter(r => r.status === '候補中');
   const cancelled = all.filter(r => r.status === '已取消');
   const checked = confirmed.filter(r => r.checkedIn);
+  const lineBound = confirmed.filter(r => isLineBound(r));
 
   return {
     totalForms: all.length,
@@ -180,13 +224,26 @@ const stats = computed(() => {
     cancelledHeadcount: cancelled.reduce((s, r) => s + (Number(r.participantCount) || 1), 0),
 
     checkedForms: checked.length,
-    checkedHeadcount: checked.reduce((s, r) => s + (Number(r.participantCount) || 1), 0)
+    checkedHeadcount: checked.reduce((s, r) => s + (Number(r.participantCount) || 1), 0),
+
+    lineBoundForms: lineBound.length
   };
 });
 
 async function loadRegistrations() {
   if (!selectedEventId.value) return;
-  await regStore.fetchEventRegistrations(selectedEventId.value);
+  await Promise.all([
+    regStore.fetchEventRegistrations(selectedEventId.value),
+    fetchLineBindings()
+  ]);
+}
+
+async function fetchLineBindings() {
+  try {
+    lineBindings.value = await getCollectionDocs('lineBindings');
+  } catch (err) {
+    console.warn("載入 LINE 綁定清單警告:", err);
+  }
 }
 
 async function handleCheckIn(id) {
@@ -229,7 +286,7 @@ function handleExportExcel() {
   }
 
   try {
-    const res = exportEventRegistrationsToExcel(currentEvt, regStore.registrations, orgsStore.orgs);
+    const res = exportEventRegistrationsToExcel(currentEvt, regStore.registrations, orgsStore.orgs, lineBindings.value);
     toast.success(`Excel 匯出成功！共 ${res.totalHeadcount} 位報名成功成員，已分 ${res.groupCount} 個協力工作頁。`);
   } catch (err) {
     toast.error(err.message || '匯出失敗');
@@ -239,13 +296,14 @@ function handleExportExcel() {
 function handleExportCsv() {
   const currentEvt = events.value.find(e => e.id === selectedEventId.value);
   const title = currentEvt?.title || '活動報名名單';
-  const headers = ['序號', '姓名', '組織架構/協力', '聯絡電話', '身份', '報名人數', '報名狀態', '簽到狀態', '備註'];
+  const headers = ['序號', '姓名', '組織架構/協力', '聯絡電話', '身份', 'LINE 綁定', '報名人數', '報名狀態', '簽到狀態', '備註'];
   const rows = filteredList.value.map((r, i) => [
     i + 1,
     r.name || r.guestName,
     r.orgPath || r.orgDisplay || '',
     r.phone || r.guestPhone,
     r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般民眾'),
+    isLineBound(r) ? '已綁定' : '未綁定',
     r.participantCount || 1,
     r.status || '已確認',
     r.checkedIn ? '已簽到' : '未簽到',
@@ -256,6 +314,7 @@ function handleExportCsv() {
 
 onMounted(async () => {
   await orgsStore.fetchOrgs();
+  await fetchLineBindings();
   events.value = await eventsStore.fetchAllEvents();
   if (events.value.length > 0) {
     selectedEventId.value = route.query.eventId || events.value[0].id;

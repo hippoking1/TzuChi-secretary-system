@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
  * @param {Array} registrations 該活動全部報名紀錄
  * @param {Array} orgs 全部組織架構 (可選)
  */
-export function exportEventRegistrationsToExcel(event, registrations = [], orgs = []) {
+export function exportEventRegistrationsToExcel(event, registrations = [], orgs = [], lineBindings = []) {
   const eventTitle = event?.title || '慈濟活動';
   const eventDate = event?.eventDate || '';
   
@@ -23,6 +23,26 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
   // 組織 ID -> 組織物件 Map
   const orgMap = {};
   (orgs || []).forEach(o => { orgMap[o.id] = o; });
+
+  // LINE 綁定查找索引
+  const bindingMap = {};
+  (lineBindings || []).forEach(b => {
+    if (b.lineUserId) {
+      if (b.memberId) bindingMap[b.memberId] = true;
+      if (b.memberName) bindingMap[b.memberName] = true;
+      const cleanPh = (b.memberPhone || b.phone || '').replace(/\D/g, '');
+      if (cleanPh) bindingMap[cleanPh] = true;
+    }
+  });
+
+  function isBound(r) {
+    if (r.lineUserId) return true;
+    if (r.memberId && bindingMap[r.memberId]) return true;
+    const cleanPh = (r.phone || r.guestPhone || '').replace(/\D/g, '');
+    if (cleanPh && bindingMap[cleanPh]) return true;
+    if (r.name && bindingMap[r.name.trim()]) return true;
+    return false;
+  }
 
   // 輔助函式：提取志工所屬的「協力」名稱
   function getXieLiName(r) {
@@ -64,11 +84,12 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
   const wb = XLSX.utils.book_new();
 
   // 欄位定義
-  const headers = ['序號', '姓名', '身分', '組織架構 (和氣 / 互愛 / 協力)', '聯絡電話', '報名人數', '備註說明', '報名時間'];
+  const headers = ['序號', '姓名', '身分', 'LINE 綁定', '組織架構 (和氣 / 互愛 / 協力)', '聯絡電話', '報名人數', '備註說明', '報名時間'];
   const colWidths = [
     { wch: 6 },  // 序號
     { wch: 14 }, // 姓名
     { wch: 12 }, // 身分
+    { wch: 12 }, // LINE 綁定
     { wch: 32 }, // 組織架構
     { wch: 16 }, // 聯絡電話
     { wch: 10 }, // 報名人數
@@ -81,6 +102,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
     idx + 1,
     r.name || r.guestName || '志工',
     r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般會眾'),
+    isBound(r) ? '已綁定' : '未綁定',
     r.orgPath || r.orgDisplay || (r.memberId ? '慈濟組織' : '一般大德'),
     r.phone || r.guestPhone || '',
     Number(r.participantCount) || 1,
@@ -89,7 +111,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
   ]);
 
   const totalHeadcountAll = confirmedList.reduce((sum, r) => sum + (Number(r.participantCount) || 1), 0);
-  allRows.push(['總計', `共 ${confirmedList.length} 筆表單`, '', '', '', totalHeadcountAll, '', '']);
+  allRows.push(['總計', `共 ${confirmedList.length} 筆表單`, '', '', '', '', totalHeadcountAll, '', '']);
 
   const wsAll = XLSX.utils.aoa_to_sheet([headers, ...allRows]);
   wsAll['!cols'] = colWidths;
@@ -112,10 +134,11 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
 
   groupNames.forEach(xieliName => {
     const list = groups[xieliName];
-    const sheetHeaders = ['序號', '姓名', '身分', '組織歸屬', '聯絡電話', '報名人數', '備註說明', '報名時間'];
+    const sheetHeaders = ['序號', '姓名', '身分', 'LINE 綁定', '組織歸屬', '聯絡電話', '報名人數', '備註說明', '報名時間'];
     const sheetWidths = [
       { wch: 6 },
       { wch: 14 },
+      { wch: 12 },
       { wch: 12 },
       { wch: 30 },
       { wch: 16 },
@@ -128,6 +151,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
       idx + 1,
       r.name || r.guestName || '志工',
       r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般會眾'),
+      isBound(r) ? '已綁定' : '未綁定',
       r.orgPath || r.orgDisplay || xieliName,
       r.phone || r.guestPhone || '',
       Number(r.participantCount) || 1,
@@ -136,7 +160,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
     ]);
 
     const subTotalHeadcount = list.reduce((sum, r) => sum + (Number(r.participantCount) || 1), 0);
-    rows.push(['合計', `共 ${list.length} 筆`, '', '', '', subTotalHeadcount, '', '']);
+    rows.push(['合計', `共 ${list.length} 筆`, '', '', '', '', subTotalHeadcount, '', '']);
 
     const ws = XLSX.utils.aoa_to_sheet([sheetHeaders, ...rows]);
     ws['!cols'] = sheetWidths;
