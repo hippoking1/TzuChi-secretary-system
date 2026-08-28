@@ -1,4 +1,4 @@
-﻿import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 
 /**
  * 將指定活動之報名成功（已確認）名冊依「各協力」建立獨立工作頁並匯出為 Excel (.xlsx) 檔案
@@ -80,7 +80,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
   const allRows = confirmedList.map((r, idx) => [
     idx + 1,
     r.name || r.guestName || '志工',
-    r.memberId ? '慈濟志工' : '一般會眾',
+    r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般會眾'),
     r.orgPath || r.orgDisplay || (r.memberId ? '慈濟組織' : '一般大德'),
     r.phone || r.guestPhone || '',
     Number(r.participantCount) || 1,
@@ -112,10 +112,11 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
 
   groupNames.forEach(xieliName => {
     const list = groups[xieliName];
-    const sheetHeaders = ['序號', '姓名', '組織歸屬', '聯絡電話', '報名人數', '備註說明', '報名時間'];
+    const sheetHeaders = ['序號', '姓名', '身分', '組織歸屬', '聯絡電話', '報名人數', '備註說明', '報名時間'];
     const sheetWidths = [
       { wch: 6 },
       { wch: 14 },
+      { wch: 12 },
       { wch: 30 },
       { wch: 16 },
       { wch: 10 },
@@ -126,6 +127,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
     const rows = list.map((r, idx) => [
       idx + 1,
       r.name || r.guestName || '志工',
+      r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般會眾'),
       r.orgPath || r.orgDisplay || xieliName,
       r.phone || r.guestPhone || '',
       Number(r.participantCount) || 1,
@@ -134,7 +136,7 @@ export function exportEventRegistrationsToExcel(event, registrations = [], orgs 
     ]);
 
     const subTotalHeadcount = list.reduce((sum, r) => sum + (Number(r.participantCount) || 1), 0);
-    rows.push(['合計', `共 ${list.length} 筆`, '', '', subTotalHeadcount, '', '']);
+    rows.push(['合計', `共 ${list.length} 筆`, '', '', '', subTotalHeadcount, '', '']);
 
     const ws = XLSX.utils.aoa_to_sheet([sheetHeaders, ...rows]);
     ws['!cols'] = sheetWidths;

@@ -106,6 +106,9 @@
             <span class="badge badge-primary font-bold">
               {{ r.participantCount || 1 }} 位
             </span>
+            <span v-if="r.identityType || r.volunteerRole" class="badge badge-info text-xs">
+              {{ r.identityType || r.volunteerRole }}
+            </span>
             <span v-if="r.orgDisplay" class="badge badge-gray text-xs">
               {{ r.orgDisplay }}
             </span>

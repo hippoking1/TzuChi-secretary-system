@@ -35,11 +35,22 @@
             </p>
           </div>
 
+          <!-- 志工身份別 (慈誠/委員、培訓、見習) -->
+          <div class="form-group">
+            <label class="form-label required font-bold">3. 志工身份別</label>
+            <select v-model="form.volunteerRole" class="form-select" required>
+              <option value="慈誠/委員">慈誠/委員</option>
+              <option value="培訓">培訓</option>
+              <option value="見習">見習</option>
+            </select>
+          </div>
+
           <div v-if="selectedMember" class="card bg-blue-50 p-3 mb-4 border border-blue-200">
             <div class="text-xs text-primary font-bold">✓ 志工身份確認：</div>
             <div class="text-sm text-gray-800 mt-1">
               <strong>{{ selectedMember.name }}</strong>
               <span v-if="selectedMember.dharmaName" class="ml-1">（法號：{{ selectedMember.dharmaName }}）</span>
+              <span class="badge badge-info ml-2 text-xs">{{ form.volunteerRole }}</span>
               <span class="text-muted ml-2">所屬：{{ selectedMemberOrgPath }}</span>
             </div>
           </div>
@@ -183,6 +194,7 @@ const selectedMemberOrgPath = computed(() => {
 
 const form = ref({
   phone: '',
+  volunteerRole: '慈誠/委員',
   guestName: '',
   guestPhone: '',
   sessionId: '',
@@ -219,6 +231,8 @@ async function handleSubmit() {
       memberId: isVol ? selectedMember.value?.id : null,
       name: isVol ? selectedMember.value?.name : form.value.guestName,
       phone: isVol ? (form.value.phone || selectedMember.value?.phone || '') : form.value.guestPhone,
+      volunteerRole: isVol ? form.value.volunteerRole : '',
+      identityType: isVol ? (form.value.volunteerRole || '慈誠/委員') : '一般會眾',
       guestName: form.value.guestName,
       guestPhone: form.value.guestPhone,
       orgId: isVol ? selectedMember.value?.orgId : '',

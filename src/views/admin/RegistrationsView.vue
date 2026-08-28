@@ -101,8 +101,8 @@
             </td>
             <td>{{ r.phone || r.guestPhone || '-' }}</td>
             <td>
-              <span class="badge" :class="r.memberId ? 'badge-info' : 'badge-gray'">
-                {{ r.memberId ? '慈濟志工' : '一般會眾' }}
+              <span class="badge" :class="r.memberId ? (r.identityType === '培訓' ? 'badge-warning' : (r.identityType === '見習' ? 'badge-primary' : 'badge-info')) : 'badge-gray'">
+                {{ r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般會眾') }}
               </span>
             </td>
             <td class="font-bold text-primary">
@@ -245,7 +245,7 @@ function handleExportCsv() {
     r.name || r.guestName,
     r.orgPath || r.orgDisplay || '',
     r.phone || r.guestPhone,
-    r.memberId ? '慈濟志工' : '一般民眾',
+    r.identityType || r.volunteerRole || (r.memberId ? '慈誠/委員' : '一般民眾'),
     r.participantCount || 1,
     r.status || '已確認',
     r.checkedIn ? '已簽到' : '未簽到',
