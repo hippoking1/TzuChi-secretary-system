@@ -136,12 +136,15 @@
                 </span>
               </div>
               
-              <div class="p-3 bg-gray-50 border border-gray-200 rounded-lg max-h-52 overflow-y-auto space-y-3">
-                <div v-for="root in posStore.positionTree" :key="root.id" class="border-b border-gray-200 pb-2 last:border-b-0">
-                  <div class="text-xs font-bold text-gray-700 mb-1">
-                    📌 {{ root.name }} 系列：
+              <div class="p-3 bg-gray-50 border border-gray-200 rounded-lg max-h-64 overflow-y-auto space-y-3">
+                <div v-for="root in posStore.positionTree" :key="root.id" class="border-b border-gray-200 pb-3 last:border-b-0 space-y-2">
+                  <div class="text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                    <span class="badge badge-primary text-[10px]">{{ root.level || '合心' }}</span>
+                    <span>📌 {{ root.name }} 系列架構：</span>
                   </div>
-                  <div class="flex flex-wrap gap-2">
+                  
+                  <!-- 第一層職稱 -->
+                  <div class="flex flex-wrap gap-2 pl-2">
                     <label 
                       class="position-pill" 
                       :class="{ active: isRoleSelected(root.name) }"
@@ -150,20 +153,57 @@
                       <span v-if="isRoleSelected(root.name)">✓</span>
                       <span>{{ root.name }}</span>
                     </label>
-                    <label 
-                      v-for="sub in root.children" 
-                      :key="sub.id" 
-                      class="position-pill"
-                      :class="{ active: isRoleSelected(sub.name) }"
-                      @click.prevent="toggleRole(sub.name)"
-                    >
-                      <span v-if="isRoleSelected(sub.name)">✓</span>
-                      <span>{{ sub.name }}</span>
-                    </label>
+                  </div>
+
+                  <!-- 第二層職稱 (例如：各功能組幹事、和氣組長/隊長) -->
+                  <div v-if="root.children?.length" class="pl-3 border-l-2 border-primary-200 space-y-2 mt-1">
+                    <div v-for="sub in root.children" :key="sub.id" class="space-y-1.5">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="badge badge-info text-[10px]">{{ sub.level || '和氣' }}</span>
+                        <label 
+                          class="position-pill" 
+                          :class="{ active: isRoleSelected(sub.name) }"
+                          @click.prevent="toggleRole(sub.name)"
+                        >
+                          <span v-if="isRoleSelected(sub.name)">✓</span>
+                          <span>{{ sub.name }}</span>
+                        </label>
+                      </div>
+
+                      <!-- 第三層職稱 (例如：互愛一組長、互愛二組長、互愛隊長等) -->
+                      <div v-if="sub.children?.length" class="flex flex-wrap gap-2 pl-4 py-1.5 bg-white/70 rounded border border-gray-100">
+                        <template v-for="subsub in sub.children" :key="subsub.id">
+                          <label 
+                            class="position-pill" 
+                            :class="{ active: isRoleSelected(subsub.name) }"
+                            @click.prevent="toggleRole(subsub.name)"
+                          >
+                            <span v-if="isRoleSelected(subsub.name)">✓</span>
+                            <span class="text-xs text-secondary-700 font-medium">[{{ subsub.level || '互愛' }}]</span>
+                            <span>{{ subsub.name }}</span>
+                          </label>
+
+                          <!-- 第四層職稱 (例如：協力) -->
+                          <div v-if="subsub.children?.length" class="w-full flex flex-wrap gap-2 pl-4 pt-1">
+                            <label 
+                              v-for="sub4 in subsub.children" 
+                              :key="sub4.id" 
+                              class="position-pill"
+                              :class="{ active: isRoleSelected(sub4.name) }"
+                              @click.prevent="toggleRole(sub4.name)"
+                            >
+                              <span v-if="isRoleSelected(sub4.name)">✓</span>
+                              <span class="text-xs text-gray-500 font-medium">[{{ sub4.level || '協力' }}]</span>
+                              <span>{{ sub4.name }}</span>
+                            </label>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-              <p class="text-xs text-muted mt-1">點擊上方職稱標籤即可自由勾選或取消，一人可同時兼任多個合心/和氣幹事職務。</p>
+              <p class="text-xs text-muted mt-1">點擊上方職稱標籤即可自由勾選或取消，一人可同時兼任多個幹部職務。</p>
             </div>
           </div>
 
@@ -302,7 +342,8 @@ async function submitBatchImport() {
   }
 }
 
-function openCreate() {
+async function openCreate() {
+  await posStore.fetchPositions();
   isEditing.value = false;
   memberForm.value = {
     id: null,
@@ -317,7 +358,8 @@ function openCreate() {
   showMemberModal.value = true;
 }
 
-function openEdit(m) {
+async function openEdit(m) {
+  await posStore.fetchPositions();
   isEditing.value = true;
   memberForm.value = {
     id: m.id,
