@@ -27,6 +27,52 @@ export const useRegistrationsStore = defineStore('registrations', () => {
   async function submitRegistration(regData) {
     loading.value = true;
     try {
+      // 1. 嚴格重複報名防呆檢查 (排除已取消紀錄)
+      const eventRegs = await getCollectionDocs('registrations', [
+        where('eventId', '==', regData.eventId)
+      ]);
+      
+      const activeRegs = eventRegs.filter(r => r.status !== '已取消');
+      let duplicate = null;
+
+      if (regData.memberId) {
+        duplicate = activeRegs.find(r => r.memberId === regData.memberId);
+      }
+      
+      if (!duplicate && regData.name) {
+        const targetName = (regData.name || '').trim();
+        if (regData.mode === 'volunteer') {
+          // 志工比對姓名與組織
+          duplicate = activeRegs.find(r => {
+            const rName = (r.name || r.guestName || '').trim();
+            if (rName !== targetName) return false;
+            if (regData.orgId && r.orgId) return r.orgId === regData.orgId;
+            if (regData.orgPath && r.orgPath) return r.orgPath === regData.orgPath;
+            return true;
+          });
+        } else {
+          // 會眾比對姓名與電話
+          const targetPhone = (regData.phone || regData.guestPhone || '').trim();
+          duplicate = activeRegs.find(r => {
+            const rName = (r.name || r.guestName || '').trim();
+            const rPhone = (r.phone || r.guestPhone || '').trim();
+            if (rName !== targetName) return false;
+            if (targetPhone && rPhone) return targetPhone === rPhone;
+            return false;
+          });
+        }
+      }
+
+      if (duplicate) {
+        const name = duplicate.name || duplicate.guestName;
+        const st = duplicate.status || '已確認';
+        const count = duplicate.participantCount || 1;
+        const err = new Error(`志工/大德「${name}」已報名過此活動（狀態：${st}，共 ${count} 位），請勿重複報名！`);
+        err.isDuplicate = true;
+        err.duplicateRecord = duplicate;
+        throw err;
+      }
+
       return await registerWithTransaction(regData);
     } finally {
       loading.value = false;

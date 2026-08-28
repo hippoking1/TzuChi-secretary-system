@@ -101,6 +101,47 @@
         </button>
       </form>
     </div>
+
+    <!-- 重複報名警示視窗 (Modal) -->
+    <div v-if="duplicateWarning" class="modal-backdrop" @click="duplicateWarning = null">
+      <div class="modal-content duplicate-modal-dialog" @click.stop>
+        <div class="modal-header bg-amber-50 border-b border-amber-200">
+          <h3 class="modal-title text-amber-800 flex items-center gap-2">
+            <span>⚠️</span> <span>重複報名警示</span>
+          </h3>
+          <button class="modal-close" @click="duplicateWarning = null">×</button>
+        </div>
+        
+        <div class="modal-body p-5">
+          <div class="text-base text-gray-900 font-bold mb-3">
+            志工 / 大德「{{ duplicateWarning.name }}」已報名過此活動！
+          </div>
+          
+          <div class="bg-gray-50 border border-gray-200 rounded p-3 text-sm text-gray-700 space-y-2 mb-4">
+            <div>📌 <strong>活動名稱：</strong>{{ event?.title }}</div>
+            <div>👤 <strong>報名人：</strong>{{ duplicateWarning.name }}</div>
+            <div>📋 <strong>目前報名狀態：</strong>
+              <span class="badge" :class="duplicateWarning.status === '已確認' ? 'badge-success' : 'badge-warning'">
+                {{ duplicateWarning.status }}
+              </span>
+            </div>
+            <div>👥 <strong>已報名人數：</strong>{{ duplicateWarning.participantCount || 1 }} 位</div>
+          </div>
+          
+          <p class="text-sm text-red-600 font-semibold">
+            為避免名額重複佔用，系統已拒絕重複送出報名表單。
+          </p>
+          <p class="text-xs text-muted mt-2">
+            若需確認報名資料或取消既有報名，請點擊下方按鈕前往「報名查詢」。
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="duplicateWarning = null">返回修改</button>
+          <router-link to="/my" class="btn btn-primary">前往「報名查詢」</router-link>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -125,6 +166,7 @@ const toast = useToast();
 const event = ref(null);
 const mode = ref('volunteer');
 const submitting = ref(false);
+const duplicateWarning = ref(null);
 
 const selectedOrgId = ref('');
 const selectedMemberId = ref('');
@@ -166,6 +208,7 @@ function onMemberChange() {
 
 async function handleSubmit() {
   submitting.value = true;
+  duplicateWarning.value = null;
   try {
     const isVol = mode.value === 'volunteer';
     const count = Math.max(1, Number(form.value.participantCount) || 1);
@@ -189,7 +232,16 @@ async function handleSubmit() {
     toast.success(`報名成功（共 ${count} 位）！狀態：${res.status}`);
     router.push('/my');
   } catch (err) {
-    toast.error('報名失敗：' + err.message);
+    if (err.isDuplicate && err.duplicateRecord) {
+      duplicateWarning.value = {
+        name: err.duplicateRecord.name || err.duplicateRecord.guestName,
+        status: err.duplicateRecord.status || '已確認',
+        participantCount: err.duplicateRecord.participantCount || 1,
+        registeredAt: err.duplicateRecord.registeredAt || err.duplicateRecord.createdAt
+      };
+    } else {
+      toast.error('報名失敗：' + err.message);
+    }
   } finally {
     submitting.value = false;
   }
@@ -210,4 +262,19 @@ onMounted(async () => {
 .border-blue-200 { border-color: #bfdbfe; }
 .ml-1 { margin-left: 0.25rem; }
 .ml-2 { margin-left: 0.5rem; }
+
+.modal-backdrop {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 9990;
+}
+.duplicate-modal-dialog {
+  background: #ffffff; border-radius: var(--radius-lg); width: 90%; max-width: 500px; box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.modal-header {
+  padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center;
+}
+.modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+.modal-footer {
+  padding: 1rem 1.5rem; border-top: 1px solid var(--gray-200); background: var(--gray-50); display: flex; justify-content: flex-end; gap: 0.5rem;
+}
 </style>
