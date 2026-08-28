@@ -115,3 +115,62 @@ exports.sendEventRemindersScheduled = onSchedule({
     }
   }
 });
+
+// 3. 每日 09:00 自動推播隔日【會議出席提醒】
+exports.sendMeetingRemindersScheduled = onSchedule({
+  schedule: 'every day 09:00',
+  timeZone: 'Asia/Taipei',
+  secrets: [LINE_CHANNEL_ACCESS_TOKEN]
+}, async () => {
+  const db = admin.firestore();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().substring(0, 10);
+
+  const meetingsSnap = await db.collection('meetings').where('meetingDate', '==', tomorrowStr).get();
+  if (meetingsSnap.empty) return;
+
+  const bindingsSnap = await db.collection('lineBindings').get();
+  const bindingByMemberId = {};
+  const bindingByMemberName = {};
+
+  bindingsSnap.docs.forEach(doc => {
+    const b = doc.data();
+    if (b.lineUserId) {
+      if (b.memberId) bindingByMemberId[b.memberId] = b.lineUserId;
+      if (b.memberName) bindingByMemberName[b.memberName] = b.lineUserId;
+    }
+  });
+
+  const client = new line.messagingApi.MessagingApiClient({
+    channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value() || ''
+  });
+
+  for (const meetingDoc of meetingsSnap.docs) {
+    const meeting = meetingDoc.data();
+    const participantsSnap = await db.collection(`meetings/${meetingDoc.id}/participants`).get();
+    if (participantsSnap.empty) continue;
+
+    for (const pDoc of participantsSnap.docs) {
+      const p = pDoc.data();
+      const lineUserId = bindingByMemberId[p.memberId] || bindingByMemberName[p.memberName];
+
+      if (lineUserId) {
+        const msgText = `【明日會議溫馨提醒】\n${p.memberName} 師兄/師姊 阿彌陀佛！\n您明天 (${tomorrowStr}) 有排定出席以下會議，請撥冗準時出席：\n• 會議主題：${meeting.title || '組隊會議'}\n• 開會時間：${meeting.startTime || ''}${meeting.endTime ? ' ~ ' + meeting.endTime : ''}\n• 開會地點：${meeting.location || '待定'}\n• 備註說明：${meeting.description || '無'}\n\n感恩您的護持與付出！🌸`;
+
+        try {
+          await client.pushMessage({
+            to: lineUserId,
+            messages: [{ type: 'text', text: msgText }]
+          });
+          await pDoc.ref.update({
+            remindedAt: admin.firestore.FieldValue.serverTimestamp(),
+            remindStatus: '已推播'
+          });
+        } catch (err) {
+          console.error(`定時會議提醒發送失敗 (${p.memberName}):`, err);
+        }
+      }
+    }
+  }
+});

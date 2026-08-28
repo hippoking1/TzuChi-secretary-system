@@ -22,12 +22,13 @@
         <ul class="text-xs text-muted mb-3 pl-4 list-disc space-y-1">
           <li><strong>每日 08:00</strong>：自動向隔日有排定<strong>道場值班</strong>之志工發出溫馨值班提醒。</li>
           <li><strong>每日 08:30</strong>：自動向隔日有報名<strong>志業活動</strong>之成員發出活動行前提醒。</li>
-          <li><strong>隨時</strong>：幹部發佈組隊會議時，可一鍵推播開會通知。</li>
+          <li><strong>每日 09:00</strong>：自動向隔日有各項<strong>組隊會議</strong>之參與人員發出會議行前提醒。</li>
+          <li><strong>隨時</strong>：幹部發佈組隊會議時，可一鍵推播即時開會通知。</li>
         </ul>
         <div class="flex gap-2 flex-wrap">
           <span class="badge badge-success">✓ 彰化機房 asia-east1</span>
           <span class="badge badge-info">✓ HMAC-SHA256 簽名驗證</span>
-          <span class="badge badge-warning">✓ 每日定時雙排程</span>
+          <span class="badge badge-warning">✓ 每日定時三排程 (08:00 / 08:30 / 09:00)</span>
         </div>
       </div>
 
@@ -48,6 +49,13 @@
             @click="testEventRemindersBatch"
           >
             📢 即刻推播【明日活動提醒】
+          </button>
+          <button 
+            class="btn btn-sm btn-info" 
+            :disabled="testing"
+            @click="testMeetingRemindersBatch"
+          >
+            📅 即刻推播【明日會議提醒】
           </button>
           <button 
             class="btn btn-sm btn-outline-primary" 
@@ -129,6 +137,7 @@ const functions = getFunctions(app, 'asia-east1');
 const sendTestLine = httpsCallable(functions, 'sendTestLineMessage');
 const sendDutyRemindersForDate = httpsCallable(functions, 'sendDutyRemindersForDate');
 const sendEventRemindersForDate = httpsCallable(functions, 'sendEventRemindersForDate');
+const sendMeetingRemindersForDate = httpsCallable(functions, 'sendMeetingRemindersForDate');
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -160,6 +169,18 @@ async function testEventRemindersBatch() {
   try {
     const res = await sendEventRemindersForDate({});
     toast.success(res.data.message || '活動提醒推播完成！');
+  } catch (err) {
+    toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
+  } finally {
+    testing.value = false;
+  }
+}
+
+async function testMeetingRemindersBatch() {
+  testing.value = true;
+  try {
+    const res = await sendMeetingRemindersForDate({});
+    toast.success(res.data.message || '會議提醒推播完成！');
   } catch (err) {
     toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
   } finally {
