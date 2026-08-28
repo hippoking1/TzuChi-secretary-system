@@ -5,6 +5,7 @@ import {
   registerWithTransaction, cancelRegistrationWithPromotion
 } from '@/firebase/db';
 import { where, orderBy } from 'firebase/firestore';
+import { normalizeAndValidatePhone } from '@/utils/phoneUtils';
 
 export const useRegistrationsStore = defineStore('registrations', () => {
   const registrations = ref([]);
@@ -17,7 +18,19 @@ export const useRegistrationsStore = defineStore('registrations', () => {
       const data = await getCollectionDocs('registrations', [
         where('eventId', '==', eventId)
       ]);
-      registrations.value = data.sort((a, b) => (a.registeredAt?.seconds || 0) - (b.registeredAt?.seconds || 0));
+      // 自動正規化既有紀錄中包含破折號或遺漏開頭0的電話
+      const cleanData = data.map(r => {
+        const rawPh = r.phone || r.guestPhone || '';
+        if (rawPh) {
+          const norm = normalizeAndValidatePhone(rawPh);
+          if (norm.valid && norm.formatted !== rawPh) {
+            updateDocById('registrations', r.id, { phone: norm.formatted }).catch(() => {});
+            return { ...r, phone: norm.formatted };
+          }
+        }
+        return r;
+      });
+      registrations.value = cleanData.sort((a, b) => (a.registeredAt?.seconds || 0) - (b.registeredAt?.seconds || 0));
       return registrations.value;
     } finally {
       loading.value = false;
@@ -51,13 +64,13 @@ export const useRegistrationsStore = defineStore('registrations', () => {
             return true;
           });
         } else {
-          // 會眾比對姓名與電話
-          const targetPhone = (regData.phone || regData.guestPhone || '').trim();
+          // 會眾比對姓名與電話（清除符號比對純數字）
+          const targetPhoneDigits = (regData.phone || regData.guestPhone || '').replace(/\D/g, '');
           duplicate = activeRegs.find(r => {
             const rName = (r.name || r.guestName || '').trim();
-            const rPhone = (r.phone || r.guestPhone || '').trim();
+            const rPhoneDigits = (r.phone || r.guestPhone || '').replace(/\D/g, '');
             if (rName !== targetName) return false;
-            if (targetPhone && rPhone) return targetPhone === rPhone;
+            if (targetPhoneDigits && rPhoneDigits) return targetPhoneDigits === rPhoneDigits;
             return false;
           });
         }

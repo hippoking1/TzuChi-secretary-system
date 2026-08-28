@@ -56,8 +56,17 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label">聯絡電話 (選填)</label>
-            <input v-model="form.phone" type="tel" class="form-input" placeholder="可填寫手機號碼以便接收重要異動通知" />
+            <label class="form-label">聯絡電話 (選填：手機或家用電話)</label>
+            <input 
+              v-model="form.phone" 
+              type="tel" 
+              class="form-input" 
+              :class="{ 'border-danger': phoneError }"
+              placeholder="例如：0912345678 或 03-9123456" 
+              @blur="onPhoneBlur"
+            />
+            <p v-if="phoneError && mode === 'volunteer'" class="text-xs text-red-600 mt-1 font-medium whitespace-pre-line">{{ phoneError }}</p>
+            <p v-else class="text-xs text-muted mt-1">支援行動電話 (09開頭) 或家用電話 (含區碼，如 03-9123456 將自動格式化為 (03)9123456)</p>
           </div>
         </div>
 
@@ -68,8 +77,18 @@
             <input v-model="form.guestName" type="text" class="form-input" placeholder="請輸入姓名" required />
           </div>
           <div class="form-group">
-            <label class="form-label required">聯絡電話</label>
-            <input v-model="form.guestPhone" type="tel" class="form-input" placeholder="例如：0912345678" required />
+            <label class="form-label required">聯絡電話 (手機或家用電話)</label>
+            <input 
+              v-model="form.guestPhone" 
+              type="tel" 
+              class="form-input" 
+              :class="{ 'border-danger': phoneError }"
+              placeholder="例如：0912345678 或 03-9123456" 
+              required 
+              @blur="onPhoneBlur"
+            />
+            <p v-if="phoneError && mode === 'guest'" class="text-xs text-red-600 mt-1 font-medium whitespace-pre-line">{{ phoneError }}</p>
+            <p v-else class="text-xs text-muted mt-1">支援行動電話 (09開頭) 或家用電話 (含區碼，如 03-9123456 將自動格式化為 (03)9123456)</p>
           </div>
         </div>
 
@@ -164,6 +183,7 @@ import { useRegistrationsStore } from '@/stores/registrations';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import OrgCascader from '@/components/ui/OrgCascader.vue';
+import { normalizeAndValidatePhone } from '@/utils/phoneUtils';
 import { useToast } from '@/composables/useToast';
 
 const route = useRoute();
@@ -178,6 +198,7 @@ const event = ref(null);
 const mode = ref('volunteer');
 const submitting = ref(false);
 const duplicateWarning = ref(null);
+const phoneError = ref('');
 
 const selectedOrgId = ref('');
 const selectedMemberId = ref('');
@@ -215,14 +236,48 @@ async function onOrgChange(orgId) {
 function onMemberChange() {
   if (selectedMember.value && selectedMember.value.phone) {
     form.value.phone = selectedMember.value.phone;
+    onPhoneBlur();
+  }
+}
+
+function onPhoneBlur() {
+  const rawPhone = mode.value === 'volunteer' ? form.value.phone : form.value.guestPhone;
+  if (!rawPhone || !rawPhone.trim()) {
+    phoneError.value = '';
+    return;
+  }
+  const res = normalizeAndValidatePhone(rawPhone, { required: mode.value === 'guest' });
+  if (!res.valid) {
+    phoneError.value = res.error;
+  } else {
+    phoneError.value = '';
+    if (mode.value === 'volunteer') {
+      form.value.phone = res.formatted;
+    } else {
+      form.value.guestPhone = res.formatted;
+    }
   }
 }
 
 async function handleSubmit() {
   submitting.value = true;
   duplicateWarning.value = null;
+  phoneError.value = '';
+
+  const isVol = mode.value === 'volunteer';
+  const rawPhone = isVol ? form.value.phone : form.value.guestPhone;
+
+  // 檢核與正規化電話格式 (行動電話或家用電話)
+  const phoneCheck = normalizeAndValidatePhone(rawPhone, { required: !isVol });
+  if (!phoneCheck.valid) {
+    phoneError.value = phoneCheck.error;
+    alert('【電話格式錯誤】\n\n' + phoneCheck.error);
+    submitting.value = false;
+    return;
+  }
+  const cleanPhone = phoneCheck.formatted;
+
   try {
-    const isVol = mode.value === 'volunteer';
     const count = Math.max(1, Number(form.value.participantCount) || 1);
     const payload = {
       eventId: event.value.id,
@@ -230,11 +285,11 @@ async function handleSubmit() {
       mode: mode.value,
       memberId: isVol ? selectedMember.value?.id : null,
       name: isVol ? selectedMember.value?.name : form.value.guestName,
-      phone: isVol ? (form.value.phone || selectedMember.value?.phone || '') : form.value.guestPhone,
+      phone: cleanPhone,
       volunteerRole: isVol ? form.value.volunteerRole : '',
       identityType: isVol ? (form.value.volunteerRole || '慈誠/委員') : '一般會眾',
       guestName: form.value.guestName,
-      guestPhone: form.value.guestPhone,
+      guestPhone: isVol ? '' : cleanPhone,
       orgId: isVol ? selectedMember.value?.orgId : '',
       orgPath: isVol ? selectedMemberOrgPath.value : '',
       sessionId: form.value.sessionId,

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getCollectionDocs, createDoc, updateDocById, deleteDocById, batchWriteItems } from '@/firebase/db';
 import { where } from 'firebase/firestore';
+import { normalizeAndValidatePhone } from '@/utils/phoneUtils';
 
 export const useMembersStore = defineStore('members', () => {
   const members = ref([]);
@@ -23,8 +24,10 @@ export const useMembersStore = defineStore('members', () => {
 
       const updates = [];
       regs.forEach(r => {
-        const ph = (r.phone || r.guestPhone || '').trim();
-        if (!ph) return;
+        const rawPh = (r.phone || r.guestPhone || '').trim();
+        if (!rawPh) return;
+        const norm = normalizeAndValidatePhone(rawPh);
+        const ph = norm.valid ? norm.formatted : rawPh;
 
         if (r.memberId && memMap[r.memberId]) {
           const m = memMap[r.memberId];
@@ -87,10 +90,15 @@ export const useMembersStore = defineStore('members', () => {
   }
 
   async function saveMember(memberData) {
-    if (memberData.id) {
-      await updateDocById('members', memberData.id, memberData);
+    const cleanData = { ...memberData };
+    if (cleanData.phone) {
+      const norm = normalizeAndValidatePhone(cleanData.phone);
+      if (norm.valid) cleanData.phone = norm.formatted;
+    }
+    if (cleanData.id) {
+      await updateDocById('members', cleanData.id, cleanData);
     } else {
-      await createDoc('members', memberData);
+      await createDoc('members', cleanData);
     }
   }
 
@@ -102,7 +110,14 @@ export const useMembersStore = defineStore('members', () => {
   async function batchImportMembers(rows) {
     loading.value = true;
     try {
-      await batchWriteItems('members', rows);
+      const cleanRows = (rows || []).map(r => {
+        if (r.phone) {
+          const norm = normalizeAndValidatePhone(r.phone);
+          if (norm.valid) return { ...r, phone: norm.formatted };
+        }
+        return r;
+      });
+      await batchWriteItems('members', cleanRows);
       await fetchMembers();
     } finally {
       loading.value = false;
