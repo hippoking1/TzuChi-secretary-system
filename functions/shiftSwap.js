@@ -41,17 +41,31 @@ function getTaiwanTodayStr() {
 }
 
 /**
+ * 健壯取得 LINE 綁定資料
+ */
+async function getBindingByUserId(db, userId) {
+  const docSnap = await db.collection('lineBindings').doc(userId).get();
+  if (docSnap.exists) {
+    return { id: docSnap.id, ...docSnap.data() };
+  }
+  const qSnap = await db.collection('lineBindings').where('lineUserId', '==', userId).limit(1).get();
+  if (!qSnap.empty) {
+    return { id: qSnap.docs[0].id, ...qSnap.docs[0].data() };
+  }
+  return null;
+}
+
+/**
  * 1. 發起【單向轉班】申請
  */
 async function createTransferRequest(requesterUserId, dutyId, targetNameInput, targetOrgInput = '') {
   const db = admin.firestore();
 
   // (1) 檢查發起者 LINE 綁定
-  const bindingSnap = await db.collection('lineBindings').doc(requesterUserId).get();
-  if (!bindingSnap.exists) {
+  const requesterBinding = await getBindingByUserId(db, requesterUserId);
+  if (!requesterBinding) {
     return { success: false, message: '您尚未綁定志工身分，請先輸入「姓名 組織」進行綁定。' };
   }
-  const requesterBinding = bindingSnap.data();
 
   // (2) 檢查班次席位
   const dutySnap = await db.collection('dutyShifts').doc(dutyId).get();
@@ -206,11 +220,10 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
   const db = admin.firestore();
 
   // (1) 發起者檢核
-  const bindingSnap = await db.collection('lineBindings').doc(requesterUserId).get();
-  if (!bindingSnap.exists) {
+  const requesterBinding = await getBindingByUserId(db, requesterUserId);
+  if (!requesterBinding) {
     return { success: false, message: '您尚未綁定志工身分，請先進行綁定。' };
   }
-  const requesterBinding = bindingSnap.data();
 
   // (2) 發起者班次
   const reqDutySnap = await db.collection('dutyShifts').doc(requesterDutyId).get();

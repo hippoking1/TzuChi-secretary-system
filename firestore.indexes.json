@@ -18,6 +18,22 @@
       ]
     },
     {
+      "collectionGroup": "dutyShifts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberId", "order": "ASCENDING" },
+        { "fieldPath": "dutyDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dutyShifts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberName", "order": "ASCENDING" },
+        { "fieldPath": "dutyDate", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "members",
       "queryScope": "COLLECTION",
       "fields": [
