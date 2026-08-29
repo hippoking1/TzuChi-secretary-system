@@ -1,26 +1,24 @@
 <template>
   <div class="admin-duty-form">
     <!-- 頂部浮動固定控制與篩選面板 -->
-    <div class="sticky-duty-controls">
-      <!-- 頂部操作列 (標題、進度、儲存按鈕) -->
-      <div class="flex items-center justify-between p-3.5 bg-white border-b rounded-t-xl flex-wrap gap-3">
+    <div class="sticky-control-panel">
+      <!-- 頂部導航與標題 -->
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-4 bg-white/95 px-4 py-3 rounded-lg border border-gray-200 shadow-sm">
         <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-xl font-bold m-0 text-gray-900">📝 編輯月度值班表</h1>
-            <span class="badge badge-primary text-xs font-bold">
-              已排班：{{ assignedTotalCount }} / {{ matrixList.length }} 席
+          <h1 class="text-2xl font-bold m-0 flex items-center gap-2">📝 編輯月度值班表</h1>
+          <p class="text-sm text-muted m-0 mt-1">
+            已排班進度：<strong class="text-primary">{{ assignedTotalCount }} / {{ matrixList.length }} 席</strong>
+            <span v-if="conflictList.length > 0" class="text-danger font-bold ml-2">
+              ⚠️ 發現 {{ conflictList.length }} 處跨場地/時段排班衝突！
             </span>
-            <span v-if="conflictList.length > 0" class="badge badge-danger text-xs font-bold animate-pulse">
-              ⚠️ {{ conflictList.length }} 處排班衝突！
-            </span>
-          </div>
+          </p>
         </div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <router-link to="/admin/duty-schedule" class="btn btn-sm btn-outline">
-            ← 返回月曆
+        <div class="flex items-center gap-3 flex-wrap">
+          <router-link to="/admin/duty-schedule" class="btn btn-outline">
+            ← 返回值班月曆
           </router-link>
           <button 
-            class="btn btn-sm btn-primary" 
+            class="btn btn-primary" 
             :class="{ 'btn-danger': conflictList.length > 0 }"
             :disabled="saving" 
             @click="handleSave"
@@ -30,49 +28,49 @@
         </div>
       </div>
 
-      <!-- 衝突警告 Banner (若有衝突時顯示) -->
-      <div v-if="conflictList.length > 0" class="conflict-banner p-3 border-b">
-        <div class="flex items-start gap-2 text-xs">
-          <span class="text-base">⚠️</span>
+      <!-- 衝突警告 Banner -->
+      <div v-if="conflictList.length > 0" class="card conflict-banner mb-3 p-3">
+        <div class="flex items-start gap-3">
+          <span class="text-2xl">⚠️</span>
           <div class="flex-1">
-            <strong class="text-danger">檢測到重複排班衝突（不可同一人在同日排在不同場地）：</strong>
-            <span v-for="(c, idx) in conflictList" :key="idx" class="ml-2 inline-block">
-              [{{ c.dateStr }}: {{ c.memberName }} 在 {{ c.otherLocation }} 重複]
-            </span>
+            <h4 class="font-bold text-danger mb-1 text-sm">檢測到重複排班衝突（不可同一人在同日排在不同場地）：</h4>
+            <ul class="text-xs text-gray-700 pl-4 list-disc space-y-0.5">
+              <li v-for="(c, idx) in conflictList" :key="idx">
+                <strong>{{ c.dateStr }}</strong>：志工「<strong class="text-primary">{{ c.memberName }}</strong>」已在【<strong>{{ c.otherLocation }}</strong> - {{ c.otherShiftLabel }}】排班，不可重複排入當前場地！
+              </li>
+            </ul>
           </div>
         </div>
       </div>
 
-      <!-- 場地月份與快速篩選控制卡片 -->
-      <div class="p-3 bg-white rounded-b-xl">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end mb-2.5">
+      <!-- 1. 場地與月份選擇控制卡片 -->
+      <div class="card mb-4 p-4 bg-white/95 shadow-md">
+        <div class="duty-control-row">
           <div class="form-group mb-0">
-            <label class="form-label font-bold text-xs mb-1">1. 選擇場地：</label>
-            <select v-model="selectedLocation" class="form-select form-select-sm" @change="initMatrix">
+            <label class="form-label font-bold">1. 選擇場地：</label>
+            <select v-model="selectedLocation" class="form-select" @change="initMatrix">
               <option value="宜蘭園區">宜蘭園區</option>
               <option value="東港聯絡處">東港聯絡處</option>
             </select>
           </div>
 
           <div class="form-group mb-0">
-            <label class="form-label font-bold text-xs mb-1">2. 選擇月份：</label>
-            <input v-model="selectedMonth" type="month" class="form-input form-input-sm" @change="initMatrix" />
+            <label class="form-label font-bold">2. 選擇月份：</label>
+            <input v-model="selectedMonth" type="month" class="form-input" @change="initMatrix" />
           </div>
 
-          <div>
-            <button class="btn btn-secondary btn-sm btn-block" :disabled="loading" @click="initMatrix">
+          <div class="form-group mb-0">
+            <button class="btn btn-secondary btn-block" :disabled="loading" @click="initMatrix">
               {{ loading ? '載入中...' : '🔄 重新整理 / 載入排班表' }}
             </button>
           </div>
         </div>
 
-        <!-- 快速過濾志工列 (組織 + 搜尋) -->
-        <div class="flex items-center justify-between border-t pt-2.5 flex-wrap gap-2">
+        <!-- 快速過濾列 -->
+        <div class="flex items-center justify-between border-t mt-4 pt-3 flex-wrap gap-3">
           <div class="flex items-center gap-2 flex-wrap flex-1">
-            <span class="text-xs font-bold text-primary flex items-center gap-1 whitespace-nowrap">
-              🔍 快速過濾志工：
-            </span>
-            <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 260px;">
+            <span class="text-xs font-bold text-gray-700 whitespace-nowrap">🔍 快速過濾志工：</span>
+            <select v-model="filterOrgId" class="form-select form-select-sm" style="max-width: 280px;">
               <option value="">-- 全部組織架構 (不限) --</option>
               <option v-for="opt in formattedOrgOptions" :key="opt.id" :value="opt.id">
                 {{ opt.label }}
@@ -84,17 +82,11 @@
               type="text" 
               class="form-input form-input-sm" 
               placeholder="搜尋姓名/電話/法號..." 
-              style="max-width: 170px;"
+              style="max-width: 180px;"
             />
             <button v-if="filterOrgId || searchKeyword" class="btn btn-xs btn-outline" @click="clearFilters">
               重設篩選
             </button>
-          </div>
-
-          <div class="text-xs text-muted">
-            <span v-if="filterOrgId || searchKeyword" class="text-primary font-bold">
-              ✓ 已套用過濾條件
-            </span>
           </div>
         </div>
       </div>
@@ -450,20 +442,27 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.sticky-duty-controls {
+.sticky-control-panel {
   position: sticky;
-  top: 60px; /* 緊貼在 AppHeader (sticky 約 58px) 下方 */
+  top: 60px; /* 緊貼在 AppHeader 下方 */
   z-index: 100;
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--gray-200);
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.1), 0 2px 6px -1px rgba(0, 0, 0, 0.05);
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 @media (max-width: 992px) {
-  .sticky-duty-controls {
+  .sticky-control-panel {
     top: 50px;
+  }
+}
+
+.duty-control-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: flex-end;
+}
+@media (max-width: 768px) {
+  .duty-control-row {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -514,8 +513,4 @@ onMounted(async () => {
 .btn-xs { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
 .ml-2 { margin-left: 0.5rem; }
 .whitespace-nowrap { white-space: nowrap; }
-@media (max-width: 992px) {
-  .grid-cols-3 { grid-template-columns: 1fr; }
-  .grid-cols-2 { grid-template-columns: 1fr; }
-}
 </style>
