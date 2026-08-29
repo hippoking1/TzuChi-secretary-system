@@ -24,10 +24,16 @@ async function main() {
   const client = new line.messagingApi.MessagingApiClient({
     channelAccessToken: token
   });
-  const blobClient = new line.messagingApi.MessagingApiBlobClient({
-    channelAccessToken: token
-  });
 
+  const defaultImgPath = path.join(__dirname, 'assets', 'richmenu.png');
+  const imgPath = process.argv[3] || defaultImgPath;
+
+  if (!fs.existsSync(imgPath)) {
+    console.error(`❌ 找不到 Rich Menu 圖片: ${imgPath}`);
+    process.exit(1);
+  }
+
+  console.log('1. 建立 Rich Menu 架構...');
   const richMenuObject = {
     size: {
       width: 2500,
@@ -79,27 +85,36 @@ async function main() {
     ]
   };
 
-  console.log('1. 建立 Rich Menu 架構...');
   const createRes = await client.createRichMenu(richMenuObject);
   const richMenuId = createRes.richMenuId;
   console.log(`✓ Rich Menu 建立成功，ID: ${richMenuId}`);
 
-  // 若有提供圖片路徑
-  const imgPath = process.argv[3];
-  if (imgPath && fs.existsSync(imgPath)) {
-    console.log(`2. 上傳 Rich Menu 圖片 (${imgPath})...`);
-    const imgBuffer = fs.readFileSync(imgPath);
-    await blobClient.setRichMenuImage(richMenuId, imgBuffer);
-    console.log('✓ 圖片上傳完成');
-  } else {
-    console.log('ℹ️ 未提供圖片路徑或圖片不存在，建立完成後可至 LINE Official Account Manager 後台或透過 API 上傳 2500x843 圖片。');
+  console.log(`2. 上傳 Rich Menu 圖片 (${imgPath})...`);
+  const imgBuffer = fs.readFileSync(imgPath);
+
+  // 直接透過 LINE API 規範上傳圖片
+  const uploadRes = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'image/png'
+    },
+    body: imgBuffer
+  });
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    throw new Error(`上傳圖片失敗 (${uploadRes.status}): ${errText}`);
   }
+  console.log('✓ 圖片上傳完成');
 
   console.log('3. 將此 Rich Menu 設為全體使用者預設選單...');
   await client.setDefaultRichMenu(richMenuId);
-  console.log('🎉 設定完成！所有使用者現在打開 LINE Bot 聊天室皆可看到底部選單按鈕。');
+  console.log(`🎉 設定完成！Rich Menu (${richMenuId}) 已成功設為預設選單。`);
+  console.log('所有志工現在開啟 LINE 聊天室，底部都會常駐顯示功能按鈕！');
 }
 
 main().catch(err => {
   console.error('執行失敗:', err);
 });
+
