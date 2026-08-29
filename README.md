@@ -1,4 +1,4 @@
-﻿# 慈濟小祕書系統 2.0 (Tzu Chi Secretary System)
+# 慈濟小祕書系統 2.0 (Tzu Chi Secretary System)
 
 本系統為專為慈濟志工與組隊幹部打造的現代化全方位作業平台，涵蓋**活動報名與名冊分頁匯出、現場簽到點名、會議出席管理、道場值班排程、LINE 官方帳號定時推播、組織與志工名冊維護、細粒度 RBAC 權限管理**及 **Google Sheets 雙向備份中心**。
 
@@ -50,11 +50,32 @@
 * **雙道場排班矩陣**：支援宜蘭園區與東港聯絡處排班矩陣管理。
 * **眾別智能過濾**：自動依男眾/女眾別過濾志工名單，快速完成每月輪值排班。
 * **每日 08:00 LINE 值班推播提醒**：Cloud Scheduler 每日定時向當日值班志工發送提醒推播。
-* **個人值班查詢**：前台提供志工輸入姓名或手機快速查詢自己未來的排班日期與場次。
+* **個人值班查詢**：前台與 LINE Bot 提供志工快速查詢自己未來排定的日期與場次。
 
 ---
 
-### 5. 📒 組織架構與志工名冊維護
+### 5. 🔄 志工 LINE 自助調班與雙向換班系統 (全新上線 ✨)
+* **雙模式自助調班**：
+  * **單向轉班 (委託代班)**：志工有事無法出勤時，可直接在 LINE 點選班次並輸入指定代班人發起轉班。
+  * **雙向換班 (互換班次)**：雙方志工協商後，可在 LINE 點選各自欲互換的日期班次發起換班請求。
+* **多層次業務防呆檢核**：
+  * **時效截止防呆**：規定必須在「值班日前一天 **20:00 (UTC+8)**」前完成確認；換班自動取兩班次較早者的前一日 20:00 為期限。
+  * **性別限制檢核**：嚴格限制男眾班僅能由男眾志工接替、女眾班僅由女眾志工接替。
+  * **排班衝突檢核**：自動檢查接班志工在該日是否已有同場地或跨場地的排班衝突。
+  * **LINE 綁定與重複防呆**：確認接班人已綁定 LINE 以確保收到卡片通知，同一席位不可重複發起待確認申請。
+* **雙方確認即時生效 (Transaction 原子交易)**：
+  * 對方在 LINE 點選「✅ 同意代班 / 同意換班」後，系統透過 Firestore Transaction 瞬間完成排班席位更新，確保隔日 08:00 正確推播給最新值班志工。
+* **逾期自動清理排程**：
+  * 每日 **20:30 (Asia/Taipei)** 由 Cloud Scheduler 自動掃描過期申請，標記失效並推播通知雙方。
+* **後台調班紀錄與管理員撤銷機制**：
+  * 後台提供「🔄 志工調班紀錄查詢」(`/admin/shift-swap-log`) 介面，支援狀態、類型與關鍵字篩選。
+  * 管理員享有最高權限，可於後台一鍵「↩️ 撤銷調班」並自動回復原排班席位。
+* **常駐圖文選單 (Rich Menu)**：
+  * 採用溫馨慈濟人文綠與大地色系設計，聊天室底部常駐【綁定身分】、【值班查詢】、【調班換班】快捷按鈕。
+
+---
+
+### 6. 📒 組織架構與志工名冊維護
 * **三層組織架構**：維護「和氣 ➔ 互愛 ➔ 協力」樹狀層級，支援無限延伸。
 * **志工名冊管理**：支援個別建檔與 **Excel / CSV 批次複製貼上快速匯入**。
 * **雙向電話號碼自動同步**：
@@ -64,7 +85,7 @@
 
 ---
 
-### 6. 🛡️ 細粒度 RBAC 權限管理系統 (5 大功能模組自由授權)
+### 7. 🛡️ 細粒度 RBAC 權限管理系統 (5 大功能模組自由授權)
 * **多角色支援**：超級管理員 (`super_admin`)、一般管理員 (`admin`)、會議召集人 (`convener`)。
 * **超級管理員自由指派權限**：
   * 超級管理員可自由指派其他管理員之 5 大功能模組權限：
@@ -80,7 +101,7 @@
 
 ---
 
-### 7. 📊 報表與 Google Sheets 備份中心
+### 8. 📊 報表與 Google Sheets 備份中心
 * **多格式名冊匯出**：
   * 各活動專屬依協力分頁 Excel 試算表 (`.xlsx`)。
   * 活動報名總表 CSV。
@@ -89,7 +110,7 @@
 
 ---
 
-### 8. 📱 極致行動體驗與無感快取更新 (Anti-Cache Update)
+### 9. 📱 極致行動體驗與無感快取更新 (Anti-Cache Update)
 * **手機完整後台操作**：
   * 手機瀏覽後台具備完整功能（非精簡版），配備側滑抽屜選單、橫向滑動快捷標籤與卡片化自適應表格。
 * **自動無感版本更新**：
@@ -109,10 +130,10 @@
 | **樣式系統** | 慈濟品牌 CSS 規範 + Tailwind CSS 實用類 | 琉璃藍、環保綠、智慧紫、莊嚴金 |
 | **離線支援** | Vite PWA (Workbox) + IndexedDB | 離線點名與無感自動更新 |
 | **試算表處理** | SheetJS (`xlsx`) | 瀏覽器端多工作頁 Excel 試算表生成與匯出 |
-| **雲端資料庫** | Google Cloud Firestore | NoSQL 雲端資料庫，支援 Transaction 防超額 |
-| **雲端函式** | Firebase Cloud Functions v2 (Node.js 22) | LINE Webhook、定時排程推播與 Sheets 備份 |
-| **定時排程** | Google Cloud Scheduler | 每日 08:00 值班提醒 / 08:30 活動前一天提醒 |
-| **通訊服務** | LINE Messaging API (`@line/bot-sdk`) | Push / Multicast 訊息推播與 HMAC 簽名驗證 |
+| **雲端資料庫** | Google Cloud Firestore | NoSQL 雲端資料庫，支援 Transaction 防超額與調班原子更新 |
+| **雲端函式** | Firebase Cloud Functions v2 (Node.js 22) | LINE Webhook、調班原子交易、定時排程推播與 Sheets 備份 |
+| **定時排程** | Google Cloud Scheduler | 每日 08:00 值班提醒 / 08:30 活動提醒 / 20:30 調班過期清理 |
+| **通訊服務** | LINE Messaging API (`@line/bot-sdk`) | Push / Multicast / Flex Message 互動與圖文選單 Rich Menu |
 | **版本控制** | Git + GitHub Actions | 代碼推送自動建置並發佈至 GitHub Pages |
 
 ---
@@ -124,9 +145,12 @@ tzuchi-secretary-system/
 ├── .github/workflows/
 │   └── deploy.yml              # GitHub Actions 自動建置與 Pages 部署工作流
 ├── functions/                  # Firebase Cloud Functions 後端
-│   ├── index.js                # Functions 進入點 (含 sendEventRemindersForDate 等 Callable)
-│   ├── lineWebhook.js          # LINE Webhook (含 HMAC-SHA256 簽名驗證)
-│   ├── scheduledTasks.js       # Cloud Scheduler 定時推播 (每日 08:00 值班 / 08:30 活動提醒)
+│   ├── assets/                 # Rich Menu 高解析度圖文選單圖片
+│   ├── index.js                # Functions 進入點 (含 revertDutySwap 等 Callable)
+│   ├── lineWebhook.js          # LINE Webhook (含 HMAC-SHA256 驗證、狀態機與指令)
+│   ├── shiftSwap.js            # 志工自助調班核心業務邏輯、檢核與 Flex 產生器
+│   ├── setupRichMenu.js        # LINE 圖文選單一鍵建立與預設設定腳本
+│   ├── scheduledTasks.js       # Cloud Scheduler 定時任務 (08:00值班 / 08:30活動 / 20:30調班逾期)
 │   ├── googleSheetsBackup.js   # Google Sheets 雙向備份同步
 │   └── package.json
 ├── src/
@@ -139,17 +163,17 @@ tzuchi-secretary-system/
 │   │   ├── config.js           # Firebase App, Auth, Firestore 初始化 (含離線快取)
 │   │   ├── auth.js             # 登入、註冊、密碼重設
 │   │   └── db.js               # Firestore CRUD、Transaction 報名遞補與電話同步
-│   ├── router/                 # 路由定義與 RBAC 權限攔截守衛
+│   ├── router/                 # 路由定義與 RBAC 權限攔截守衛 (含 /admin/shift-swap-log)
 │   ├── stores/                 # Pinia Stores (auth, events, registrations, members, orgs, duty, meetings)
 │   ├── styles/                 # 全域樣式與色彩變數
 │   ├── utils/
 │   │   └── excelExport.js      # 多工作頁 (依協力分頁) Excel 匯出核心邏輯
 │   ├── views/
 │   │   ├── public/             # 前台頁面 (活動列表、詳情、報名、個人報名查詢、值班查詢、LINE綁定)
-│   │   └── admin/              # 後台頁面 (儀表板、活動、名單、簽到、值班、會議、志工、組織、權限、匯出)
+│   │   └── admin/              # 後台頁面 (儀表板、活動、名單、簽到、值班、調班紀錄、會議、志工、組織、權限、匯出)
 │   ├── App.vue
 │   └── main.js                 # PWA Service Worker 更新監聽與 App 掛載
-├── firestore.rules             # Cloud Firestore 安全性規則 (嚴格 RBAC 與防竄改)
+├── firestore.rules             # Cloud Firestore 安全性規則 (嚴格 RBAC、shiftSwapRequests 規則)
 ├── firestore.indexes.json      # Firestore 複合查詢索引
 ├── vite.config.js              # Vite 建置配置、PWA Workbox 快取規則
 └── README.md
@@ -250,6 +274,11 @@ firebase deploy --only firestore
    firebase deploy --only functions
    ```
 4. 將產生的 `lineWebhook` URL（例如 `https://asia-east1-tzuchi-secretary-system.cloudfunctions.net/lineWebhook`）填入 LINE Developers 的 Webhook URL 並開啟「Use Webhook」。
+5. **啟用常駐圖文選單 (Rich Menu)**：
+   ```bash
+   cd functions
+   node setupRichMenu.js 你的_LINE_CHANNEL_ACCESS_TOKEN
+   ```
 
 ---
 
@@ -269,10 +298,11 @@ firebase deploy --only firestore
 ## 🔒 系統維護與安全規範
 
 * **XSS 防護**：所有前台 Markdown 說明文字皆經過 `DOMPurify` 嚴格過濾清洗。
-* **防搶票超賣**：報名寫入與取消遞補一律透過 Firestore runTransaction 交易鎖定。
+* **防搶票超賣與調班同步**：報名遞補與調班生效一律透過 Firestore runTransaction 交易鎖定。
 * **LINE Webhook 資安**：採用 HMAC-SHA256 簽名驗證，防止非 LINE 伺服器的偽冒請求。
 * **快取自動失效**：Service Worker 配置 NetworkFirst 與即時生命週期監聽，保證使用者每次皆取得最新版本。
 
 ---
 
 *慈濟小祕書系統開發團隊 敬製*
+
