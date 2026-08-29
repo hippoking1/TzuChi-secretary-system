@@ -90,6 +90,17 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    // 調班換班申請與暫存 Session
+    match /shiftSwapRequests/{swapId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    match /swapSessions/{sessionId} {
+      allow read, write: if true;
+    }
+
     // 操作日誌與系統設定
     match /logs/{logId} {
       allow read: if isSuperAdmin();

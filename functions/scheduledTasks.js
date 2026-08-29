@@ -174,3 +174,57 @@ exports.sendMeetingRemindersScheduled = onSchedule({
     }
   }
 });
+
+// 4. 每日 20:30 自動掃描並標註逾期之【調班換班申請】
+const { expireStaleSwaps } = require('./shiftSwap');
+
+exports.expireStaleSwapRequestsScheduled = onSchedule({
+  schedule: 'every day 20:30',
+  timeZone: 'Asia/Taipei',
+  secrets: [LINE_CHANNEL_ACCESS_TOKEN]
+}, async () => {
+  const expiredList = await expireStaleSwaps();
+  if (!expiredList || expiredList.length === 0) return;
+
+  const client = new line.messagingApi.MessagingApiClient({
+    channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value() || ''
+  });
+
+  for (const swap of expiredList) {
+    const isTransfer = swap.swapType === 'transfer';
+    const desc = isTransfer
+      ? `【${swap.requesterDutyDate} ${swap.requesterShiftLabel}】代班申請`
+      : `【${swap.requesterDutyDate} 與 ${swap.targetDutyDate}】換班申請`;
+
+    // 通知發起者
+    if (swap.requesterLineUserId) {
+      try {
+        await client.pushMessage({
+          to: swap.requesterLineUserId,
+          messages: [{
+            type: 'text',
+            text: `⚠️【調班申請逾期失效】\n您向 ${swap.targetName} 發起的 ${desc}，因已超過確認截止期限 (${swap.deadlineStr || '前一日 20:00'}) 未獲回應，系統已自動將該申請作廢失效。若仍需調班請重新協調發起。`
+          }]
+        });
+      } catch (err) {
+        console.error('Failed to notify requester of expired swap:', err);
+      }
+    }
+
+    // 通知對方
+    if (swap.targetLineUserId) {
+      try {
+        await client.pushMessage({
+          to: swap.targetLineUserId,
+          messages: [{
+            type: 'text',
+            text: `⚠️【調班申請逾期失效】\n由 ${swap.requesterName} 向您發起的 ${desc} 已超過截止期限，該調班請求已自動失效。`
+          }]
+        });
+      } catch (err) {
+        console.error('Failed to notify target of expired swap:', err);
+      }
+    }
+  }
+});
+
