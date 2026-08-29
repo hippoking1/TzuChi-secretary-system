@@ -43,7 +43,7 @@
     </div>
 
     <!-- 主要內容區 -->
-    <main class="admin-main flex-1 p-4 md:p-6 w-full overflow-x-hidden">
+    <main class="admin-main flex-1 p-4 md:p-6 w-full" style="overflow-x: clip;">
       <router-view />
     </main>
   </div>
