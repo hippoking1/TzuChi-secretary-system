@@ -25,10 +25,18 @@
           <li><strong>每日 09:00</strong>：自動向隔日有各項<strong>組隊會議</strong>之參與人員發出會議行前提醒。</li>
           <li><strong>隨時</strong>：幹部發佈組隊會議時，可一鍵推播即時開會通知。</li>
         </ul>
-        <div class="flex gap-2 flex-wrap">
+        <div class="flex gap-2 flex-wrap mb-3">
           <span class="badge badge-success">✓ 彰化機房 asia-east1</span>
           <span class="badge badge-info">✓ HMAC-SHA256 簽名驗證</span>
           <span class="badge badge-warning">✓ 每日定時三排程 (08:00 / 08:30 / 09:00)</span>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded p-2.5 text-xs text-blue-900">
+          <strong class="font-bold">⚙️ LINE 官方帳號管理後台關鍵設定：</strong>
+          <ul class="list-disc pl-4 mt-1 space-y-0.5">
+            <li><strong>回應模式</strong>：請設定為「<strong>聊天機器人 (Bot)</strong>」並「<strong>開啟 Webhook</strong>」。</li>
+            <li><strong>自動回應訊息</strong>：請務必切換為「<strong>停用 (關閉)</strong>」，避免 LINE 官方跳出預設「無法個別回覆...」罐頭干擾訊息。</li>
+            <li><strong>Webhook 網址</strong>：<code>https://asia-east1-tzuchi-secretary-system.cloudfunctions.net/lineWebhook</code></li>
+          </ul>
         </div>
       </div>
 
