@@ -609,7 +609,7 @@ async function expireStaleSwaps() {
 function buildSwapConfirmFlexMessage(swap) {
   const isTransfer = swap.swapType === 'transfer';
   const title = isTransfer ? '📋 志工轉班確認請求' : '🔄 志工雙向換班請求';
-  const themeColor = isTransfer ? '#2563eb' : '#d97706';
+  const themeColor = isTransfer ? '#1b5e20' : '#854d0e';
 
   const contents = [
     {
@@ -617,7 +617,7 @@ function buildSwapConfirmFlexMessage(swap) {
       text: `${swap.requesterName} 師兄/師姊 向您發起${isTransfer ? '轉班（代班）' : '換班'}請求：`,
       wrap: true,
       size: 'sm',
-      color: '#333333'
+      color: '#27272a'
     },
     { type: 'separator', margin: 'md' }
   ];
@@ -629,7 +629,7 @@ function buildSwapConfirmFlexMessage(swap) {
       margin: 'md',
       spacing: 'xs',
       contents: [
-        { type: 'text', text: '【轉出班次（請您代班）】', weight: 'bold', size: 'xs', color: themeColor },
+        { type: 'text', text: '【轉出班次（請您代班）】', weight: 'bold', size: 'xs', color: '#15803d' },
         { type: 'text', text: `📍 道場：${swap.requesterLocation}`, size: 'sm' },
         { type: 'text', text: `📅 日期：${swap.requesterDutyDate}`, size: 'sm', weight: 'bold' },
         { type: 'text', text: `⏰ 班次：${swap.requesterShiftLabel} (${swap.requesterTimeRange})`, size: 'sm' }
@@ -643,9 +643,9 @@ function buildSwapConfirmFlexMessage(swap) {
         margin: 'md',
         spacing: 'xs',
         contents: [
-          { type: 'text', text: '【您將接手的班次】', weight: 'bold', size: 'xs', color: '#16a34a' },
+          { type: 'text', text: '【您將接手的班次】', weight: 'bold', size: 'xs', color: '#15803d' },
           { type: 'text', text: `📍 ${swap.requesterLocation} (${swap.requesterDutyDate})`, size: 'sm', weight: 'bold' },
-          { type: 'text', text: `⏰ ${swap.requesterShiftLabel} ${swap.requesterTimeRange}`, size: 'xs', color: '#666666' }
+          { type: 'text', text: `⏰ ${swap.requesterShiftLabel} ${swap.requesterTimeRange}`, size: 'xs', color: '#52525b' }
         ]
       },
       {
@@ -654,9 +654,9 @@ function buildSwapConfirmFlexMessage(swap) {
         margin: 'md',
         spacing: 'xs',
         contents: [
-          { type: 'text', text: '【您讓給對方的班次】', weight: 'bold', size: 'xs', color: '#ea580c' },
+          { type: 'text', text: '【您讓給對方的班次】', weight: 'bold', size: 'xs', color: '#c2410c' },
           { type: 'text', text: `📍 ${swap.targetLocation} (${swap.targetDutyDate})`, size: 'sm', weight: 'bold' },
-          { type: 'text', text: `⏰ ${swap.targetShiftLabel} ${swap.targetTimeRange}`, size: 'xs', color: '#666666' }
+          { type: 'text', text: `⏰ ${swap.targetShiftLabel} ${swap.targetTimeRange}`, size: 'xs', color: '#52525b' }
         ]
       }
     );
@@ -747,18 +747,18 @@ function buildDutySelectionFlexMessage(duties, memberName) {
         type: 'box',
         layout: 'vertical',
         contents: [
-          { type: 'text', text: `🗓️ ${duty.dutyDate}`, weight: 'bold', size: 'md', color: '#1e3a8a' },
-          { type: 'text', text: `${duty.location} · ${duty.shiftLabel}`, size: 'xs', color: '#475569' }
+          { type: 'text', text: `🗓️ ${duty.dutyDate}`, weight: 'bold', size: 'md', color: '#166534' },
+          { type: 'text', text: `${duty.location} · ${duty.shiftLabel}`, size: 'xs', color: '#4b5563' }
         ],
-        backgroundColor: '#eff6ff'
+        backgroundColor: '#f0fdf4'
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          { type: 'text', text: `• 時段：${timeStr}`, size: 'xs', color: '#334155' },
-          { type: 'text', text: `• 性別限制：${duty.genderType || '不限'}眾`, size: 'xs', color: '#64748b' },
+          { type: 'text', text: `• 時段：${timeStr}`, size: 'xs', color: '#374151' },
+          { type: 'text', text: `• 性別限制：${duty.genderType || '不限'}眾`, size: 'xs', color: '#6b7280' },
           { type: 'text', text: `• 截止期限：${deadlineStr}`, size: 'xs', color: '#dc2626' }
         ]
       },
@@ -776,7 +776,7 @@ function buildDutySelectionFlexMessage(duties, memberName) {
               displayText: `我要為 ${duty.dutyDate} ${duty.shiftLabel} 申請轉班`
             },
             style: 'primary',
-            color: '#2563eb',
+            color: '#15803d',
             height: 'sm'
           },
           {
@@ -800,13 +800,13 @@ function buildDutySelectionFlexMessage(duties, memberName) {
     altText: `【值班調班】請選擇您要調整的班次`,
     contents: {
       type: 'carousel',
-      bubbles: bubbles
+      contents: bubbles
     }
   };
 }
 
 /**
- * 歡迎加入與功能總覽 Flex Message
+ * 歡迎加入與功能總覽 Flex Message (溫馨慈濟人文風)
  */
 function buildWelcomeFlexMessage() {
   return {
@@ -818,10 +818,10 @@ function buildWelcomeFlexMessage() {
         type: 'box',
         layout: 'vertical',
         contents: [
-          { type: 'text', text: '🌸 慈濟小祕書', weight: 'bold', size: 'lg', color: '#1e3a8a' },
-          { type: 'text', text: '道場值班 · 活動 · 會議 智慧推播', size: 'xs', color: '#64748b' }
+          { type: 'text', text: '🌸 慈濟小祕書', weight: 'bold', size: 'lg', color: '#166534' },
+          { type: 'text', text: '道場值班 · 活動 · 會議 智慧推播', size: 'xs', color: '#4b5563' }
         ],
-        backgroundColor: '#f1f5f9'
+        backgroundColor: '#f0fdf4'
       },
       body: {
         type: 'box',
@@ -833,21 +833,21 @@ function buildWelcomeFlexMessage() {
             text: '阿彌陀佛！歡迎加入慈濟小祕書。請先完成志工身分綁定，即可享有完整推播與調班服務：',
             wrap: true,
             size: 'sm',
-            color: '#334155'
+            color: '#374151'
           },
           {
             type: 'box',
             layout: 'vertical',
             spacing: 'xs',
-            backgroundColor: '#f8fafc',
+            backgroundColor: '#fbf8f3',
             paddingAll: 'md',
             cornerRadius: 'md',
             contents: [
-              { type: 'text', text: '🔔 每日定時推播提醒：', weight: 'bold', size: 'xs', color: '#0f172a' },
-              { type: 'text', text: '• 08:00 明日道場值班提醒', size: 'xs', color: '#475569' },
-              { type: 'text', text: '• 08:30 明日活動行前提醒', size: 'xs', color: '#475569' },
-              { type: 'text', text: '• 09:00 明日會議出席提醒', size: 'xs', color: '#475569' },
-              { type: 'text', text: '• 🔄 自助調班 / 換班推播確認', size: 'xs', color: '#2563eb' }
+              { type: 'text', text: '🔔 每日定時推播提醒：', weight: 'bold', size: 'xs', color: '#166534' },
+              { type: 'text', text: '• 08:00 明日道場值班提醒', size: 'xs', color: '#4b5563' },
+              { type: 'text', text: '• 08:30 明日活動行前提醒', size: 'xs', color: '#4b5563' },
+              { type: 'text', text: '• 09:00 明日會議出席提醒', size: 'xs', color: '#4b5563' },
+              { type: 'text', text: '• 🔄 自助調班 / 雙向換班推播確認', size: 'xs', color: '#15803d' }
             ]
           }
         ]
@@ -865,7 +865,7 @@ function buildWelcomeFlexMessage() {
               text: '綁定'
             },
             style: 'primary',
-            color: '#2563eb',
+            color: '#166534',
             height: 'sm'
           },
           {
@@ -910,6 +910,7 @@ function buildWelcomeFlexMessage() {
     }
   };
 }
+
 
 module.exports = {
   SHIFT_TIMES,
