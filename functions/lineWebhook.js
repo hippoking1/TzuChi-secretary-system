@@ -480,6 +480,16 @@ exports.lineWebhook = onRequest({
           const sessionAge = Date.now() - (session.createdAt || 0);
 
           if (sessionAge < 10 * 60 * 1000) {
+            // 使用者主動取消
+            if (text === '取消' || text === '放棄' || text === '退出' || text === '返回') {
+              await db.collection('swapSessions').doc(userId).delete();
+              await client.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: '已取消本次調班作業。若有需要，隨時點擊底部「調班換班」即可重新發起！🌸' }]
+              });
+              continue;
+            }
+
             // (1) 等待輸入代班人姓名 (轉班)
             if (session.step === 'awaiting_transfer_target') {
               const { targetName, targetOrg } = parseTransferInput(text);
@@ -489,16 +499,17 @@ exports.lineWebhook = onRequest({
                   replyToken,
                   messages: [{
                     type: 'text',
-                    text: '⚠️ 請輸入有效的志工姓名（例如：李麗珠 或 李麗珠 互愛一）：'
+                    text: '⚠️ 請輸入有效的志工姓名（例如：李麗珠 或 李麗珠 互愛一）：\n（或輸入「取消」結束）'
                   }]
                 });
                 continue;
               }
 
               const result = await createTransferRequest(userId, session.dutyId, targetName, targetOrg);
-              await db.collection('swapSessions').doc(userId).delete();
 
               if (result.success) {
+                // 成功才清除 Session
+                await db.collection('swapSessions').doc(userId).delete();
                 await client.replyMessage({
                   replyToken,
                   messages: [{ type: 'text', text: result.message }]
@@ -513,9 +524,13 @@ exports.lineWebhook = onRequest({
                   console.error('Failed to push transfer request to target:', pushErr);
                 }
               } else {
+                // 失敗時保留 Session，讓志工可再次輸入
                 await client.replyMessage({
                   replyToken,
-                  messages: [{ type: 'text', text: result.message }]
+                  messages: [{
+                    type: 'text',
+                    text: `${result.message}\n\n💡 請重新輸入欲委託代班的志工姓名，或輸入「取消」結束調班。`
+                  }]
                 });
               }
               continue;
@@ -530,16 +545,17 @@ exports.lineWebhook = onRequest({
                   replyToken,
                   messages: [{
                     type: 'text',
-                    text: '⚠️ 格式不完整。請同時提供【對方姓名】與【對方值班日期】\n\n💡 格式範例：\n• 李麗珠 2026-11-08\n• 李麗珠 11/8\n• 李麗珠 2026/11/08'
+                    text: '⚠️ 格式不完整。請同時提供【對方姓名】與【對方值班日期】\n\n💡 格式範例：\n• 黃志煌 2026-10-24\n• 李麗珠 11/8\n\n（或輸入「取消」結束換班作業）'
                   }]
                 });
                 continue;
               }
 
               const result = await createExchangeRequest(userId, session.dutyId, targetName, targetDutyDate, targetOrg);
-              await db.collection('swapSessions').doc(userId).delete();
 
               if (result.success) {
+                // 成功才清除 Session
+                await db.collection('swapSessions').doc(userId).delete();
                 await client.replyMessage({
                   replyToken,
                   messages: [{ type: 'text', text: result.message }]
@@ -554,9 +570,13 @@ exports.lineWebhook = onRequest({
                   console.error('Failed to push exchange request to target:', pushErr);
                 }
               } else {
+                // 失敗時保留 Session，讓志工可直接再次輸入正確資料
                 await client.replyMessage({
                   replyToken,
-                  messages: [{ type: 'text', text: result.message }]
+                  messages: [{
+                    type: 'text',
+                    text: `${result.message}\n\n💡 請確認後重新輸入【對方志工姓名】與【正確值班日期】，或輸入「取消」結束換班。`
+                  }]
                 });
               }
               continue;
@@ -626,10 +646,36 @@ exports.lineWebhook = onRequest({
           continue;
         }
 
+        // ── 防呆檢查：若文字包含日期格式，不可誤判為身分綁定 ──
+        const hasDatePattern = /(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}|\d{1,2}[-/.月]\d{1,2})/.test(text);
+        if (hasDatePattern) {
+          await client.replyMessage({
+            replyToken,
+            messages: [{
+              type: 'text',
+              text: '💡 您輸入了包含日期的訊息。\n若要申請調班或換班，請先點擊底部【調班換班】按鈕，或輸入「調班」選擇要調整的班次！🌸'
+            }]
+          });
+          continue;
+        }
+
         // ── 指令 I：志工核身與綁定 (姓名 組織 / 姓名 / 純電話) ──
         const parts = text.split(/[\s\t　,，、/+\-]+/).map(p => p.trim()).filter(Boolean);
         const nameInput = parts[0] || text;
         const orgInput = parts[1] || '';
+
+        // 排除常見關鍵字或非人名
+        const nonNameKeywords = ['取消', '沒有', '不用', '不是', '謝謝', '感恩', '你好', '哈囉', '早安', '午安', '晚安'];
+        if (nonNameKeywords.includes(nameInput)) {
+          await client.replyMessage({
+            replyToken,
+            messages: [{
+              type: 'text',
+              text: '阿彌陀佛！隨時點選下方功能選單即可使用小祕書各項服務。感恩您的護持！🌸'
+            }]
+          });
+          continue;
+        }
 
         let membersSnap = await db.collection('members').where('name', '==', nameInput).get();
 
