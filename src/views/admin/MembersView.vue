@@ -489,11 +489,16 @@ async function handleSaveMember() {
 }
 
 async function handleDelete(m) {
-  const memberName = m.name || '此志工';
+  const memberName = m?.name || '此志工';
+  const docId = m?.id;
+  if (!docId) {
+    toast.error('無法識別該志工之資料庫 ID，請重新整理頁面後再試。');
+    return;
+  }
   if (!confirm(`確定要刪除志工「${memberName}」的資料嗎？刪除後無法復原。`)) return;
   
   try {
-    await membersStore.deleteMember(m.id);
+    await membersStore.deleteMember(docId);
     toast.success(`已成功刪除志工「${memberName}」`);
     await handleSearch();
   } catch (err) {

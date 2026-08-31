@@ -105,14 +105,20 @@ export const useMembersStore = defineStore('members', () => {
       const norm = normalizeAndValidatePhone(cleanData.phone);
       if (norm.valid) cleanData.phone = norm.formatted;
     }
-    if (cleanData.id) {
-      await updateDocById('members', cleanData.id, cleanData);
+    const memberId = cleanData.id;
+    delete cleanData.id;
+
+    if (memberId) {
+      await updateDocById('members', memberId, cleanData);
     } else {
       await createDoc('members', cleanData);
     }
   }
 
   async function deleteMember(id) {
+    if (!id) {
+      throw new Error('未指定欲刪除志工的 ID');
+    }
     await deleteDocById('members', id);
     members.value = members.value.filter(m => m.id !== id);
   }

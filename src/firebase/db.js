@@ -10,7 +10,13 @@ import {
 export async function getCollectionDocs(colName, queryConstraints = []) {
   const q = query(collection(db, colName), ...queryConstraints);
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snapshot.docs.map(d => {
+    const data = d.data() || {};
+    return {
+      ...data,
+      id: d.id // 確保 Firestore Document ID 具有最高優先權，避免被 data.id = null 覆蓋
+    };
+  });
 }
 
 export async function getCollectionCount(colName, queryConstraints = []) {
@@ -25,14 +31,19 @@ export async function getCollectionCount(colName, queryConstraints = []) {
 }
 
 export async function getDocById(colName, id) {
+  if (!id || typeof id !== 'string') return null;
   const docRef = doc(db, colName, id);
   const snap = await getDoc(docRef);
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  return snap.exists() ? { ...snap.data(), id: snap.id } : null;
 }
 
 export async function createDoc(colName, data) {
+  const cleanData = { ...data };
+  if ('id' in cleanData && (cleanData.id === null || cleanData.id === undefined)) {
+    delete cleanData.id;
+  }
   const docRef = await addDoc(collection(db, colName), {
-    ...data,
+    ...cleanData,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
@@ -40,9 +51,14 @@ export async function createDoc(colName, data) {
 }
 
 export async function setDocById(colName, id, data, merge = true) {
+  if (!id || typeof id !== 'string') {
+    throw new Error(`setDocById 失敗：無效的文件 ID (${id})`);
+  }
+  const cleanData = { ...data };
+  delete cleanData.id;
   const docRef = doc(db, colName, id);
   await setDoc(docRef, {
-    ...data,
+    ...cleanData,
     updatedAt: serverTimestamp()
   }, { merge });
   return id;
@@ -51,14 +67,22 @@ export async function setDocById(colName, id, data, merge = true) {
 export const setDocWithId = setDocById;
 
 export async function updateDocById(colName, id, data) {
+  if (!id || typeof id !== 'string') {
+    throw new Error(`updateDocById 失敗：無效的文件 ID (${id})`);
+  }
+  const cleanData = { ...data };
+  delete cleanData.id;
   const docRef = doc(db, colName, id);
   await updateDoc(docRef, {
-    ...data,
+    ...cleanData,
     updatedAt: serverTimestamp()
   });
 }
 
 export async function deleteDocById(colName, id) {
+  if (!id || typeof id !== 'string') {
+    throw new Error(`刪除失敗：無效的文件 ID (${id})`);
+  }
   const docRef = doc(db, colName, id);
   await deleteDoc(docRef);
 }
