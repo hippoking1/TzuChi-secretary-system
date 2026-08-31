@@ -281,25 +281,20 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
   const targetLineBinding = targetLineSnap.docs[0].data();
 
   // (6) 查詢對方在 targetDutyDate 的班次
-  const targetDutySnap = await db.collection('dutyShifts')
+  const targetDutiesSnap = await db.collection('dutyShifts')
     .where('dutyDate', '==', targetDutyDate)
-    .where('memberId', '==', targetMemberId)
     .get();
 
   let targetDuty = null;
   let targetDutyDocId = null;
-  if (!targetDutySnap.empty) {
-    targetDutyDocId = targetDutySnap.docs[0].id;
-    targetDuty = targetDutySnap.docs[0].data();
-  } else {
-    const targetDutyByNameSnap = await db.collection('dutyShifts')
-      .where('dutyDate', '==', targetDutyDate)
-      .where('memberName', '==', targetMember.name)
-      .get();
-    if (!targetDutyByNameSnap.empty) {
-      targetDutyDocId = targetDutyByNameSnap.docs[0].id;
-      targetDuty = targetDutyByNameSnap.docs[0].data();
-    }
+  const foundTargetDoc = targetDutiesSnap.docs.find(d => {
+    const dt = d.data();
+    return (dt.memberId && dt.memberId === targetMemberId) || (dt.memberName && dt.memberName === targetMember.name);
+  });
+
+  if (foundTargetDoc) {
+    targetDutyDocId = foundTargetDoc.id;
+    targetDuty = foundTargetDoc.data();
   }
 
   if (!targetDuty) {
@@ -324,22 +319,28 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
   }
 
   // (8) 衝突檢查
-  const reqConflictSnap = await db.collection('dutyShifts')
+  const reqDateDutiesSnap = await db.collection('dutyShifts')
     .where('dutyDate', '==', targetDutyDate)
-    .where('memberId', '==', requesterBinding.memberId)
     .get();
-  if (!reqConflictSnap.empty) {
+  const hasReqConflict = reqDateDutiesSnap.docs.some(d => {
+    const dt = d.data();
+    return (dt.memberId && dt.memberId === requesterBinding.memberId) || (dt.memberName && dt.memberName === requesterBinding.memberName);
+  });
+  if (hasReqConflict) {
     return {
       success: false,
       message: `⚠️ 排班衝突：您於 ${targetDutyDate} 已有其他排班，無法換入該日班次。`
     };
   }
 
-  const targetConflictSnap = await db.collection('dutyShifts')
+  const targetDateDutiesSnap = await db.collection('dutyShifts')
     .where('dutyDate', '==', reqDuty.dutyDate)
-    .where('memberId', '==', targetMemberId)
     .get();
-  if (!targetConflictSnap.empty) {
+  const hasTargetConflict = targetDateDutiesSnap.docs.some(d => {
+    const dt = d.data();
+    return (dt.memberId && dt.memberId === targetMemberId) || (dt.memberName && dt.memberName === targetMember.name);
+  });
+  if (hasTargetConflict) {
     return {
       success: false,
       message: `⚠️ 排班衝突：${targetMember.name} 於 ${reqDuty.dutyDate} 已有其他排班，無法換入該日班次。`

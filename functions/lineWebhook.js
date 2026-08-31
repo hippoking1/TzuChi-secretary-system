@@ -50,6 +50,58 @@ async function getDutiesForUser(db, binding, todayStr) {
   return myDuties.sort((a, b) => (a.dutyDate + (a.shiftStart || '')).localeCompare(b.dutyDate + (b.shiftStart || '')));
 }
 
+/**
+ * 健壯解析換班輸入（支援跨行、多種日期格式如 YYYY-MM-DD, YYYY/M/D, M/D, YYYY年M月D日）
+ */
+function parseExchangeInput(rawText) {
+  if (!rawText) return { targetName: '', targetDutyDate: '', targetOrg: '' };
+  const text = rawText.trim();
+
+  let matchedDate = '';
+  // 1. 完整年月日格式 (2026-11-08, 2026-11-8, 2026/11/8, 2026.11.8, 2026年11月8日)
+  const fullYearDateMatch = text.match(/(\d{4})[./\-\s年](\d{1,2})[./\-\s月](\d{1,2})[日號]?/);
+  if (fullYearDateMatch) {
+    const y = fullYearDateMatch[1];
+    const m = fullYearDateMatch[2].padStart(2, '0');
+    const d = fullYearDateMatch[3].padStart(2, '0');
+    matchedDate = `${y}-${m}-${d}`;
+  } else {
+    // 2. 無年份格式 (11/8, 11-8, 11月8日) - 自動補上當前年份
+    const monthDayMatch = text.match(/(?:^|[^\d])(\d{1,2})[./\-\s月](\d{1,2})[日號]?(?:[^\d]|$)/);
+    if (monthDayMatch) {
+      const currentYear = new Date().getFullYear();
+      const m = monthDayMatch[1].padStart(2, '0');
+      const d = monthDayMatch[2].padStart(2, '0');
+      matchedDate = `${currentYear}-${m}-${d}`;
+    }
+  }
+
+  // 將日期部分自字串中移除，剩下的即為姓名與組織
+  let cleanText = text;
+  if (fullYearDateMatch) {
+    cleanText = cleanText.replace(fullYearDateMatch[0], ' ');
+  } else {
+    cleanText = cleanText.replace(/(?:^|[^\d])(\d{1,2})[./\-\s月](\d{1,2})[日號]?(?:[^\d]|$)/, ' ');
+  }
+
+  const remainingParts = cleanText.split(/[\s\t\r\n　,，、]+/).map(p => p.trim()).filter(Boolean);
+  const targetName = remainingParts[0] || '';
+  const targetOrg = remainingParts[1] || '';
+
+  return { targetName, targetDutyDate: matchedDate, targetOrg };
+}
+
+/**
+ * 健壯解析轉班輸入
+ */
+function parseTransferInput(rawText) {
+  if (!rawText) return { targetName: '', targetOrg: '' };
+  const parts = rawText.split(/[\s\t\r\n　,，、]+/).map(p => p.trim()).filter(Boolean);
+  const targetName = parts[0] || '';
+  const targetOrg = parts[1] || '';
+  return { targetName, targetOrg };
+}
+
 exports.lineWebhook = onRequest({
   cors: true,
   secrets: [LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN]
@@ -197,7 +249,7 @@ exports.lineWebhook = onRequest({
             replyToken,
             messages: [{
               type: 'text',
-              text: '📝 請輸入您想委託代班的【志工姓名】\n（例如：李小華，或 李小華 互愛一）：'
+              text: '📝 請輸入您想委託代班的【志工姓名】\n（例如：李麗珠，或 李麗珠 互愛一）：'
             }]
           });
           continue;
@@ -217,7 +269,7 @@ exports.lineWebhook = onRequest({
             replyToken,
             messages: [{
               type: 'text',
-              text: '📝 請輸入【對方志工姓名】與【對方值班日期】\n（格式範例：李小華 2026-09-03）：'
+              text: '📝 請輸入【對方志工姓名】與【對方值班日期】\n（格式範例：李麗珠 2026-11-08，或 李麗珠 11/8）：'
             }]
           });
           continue;
@@ -281,7 +333,7 @@ exports.lineWebhook = onRequest({
               if (myDuties.length > 6) {
                 msg += `... 還有 ${myDuties.length - 6} 班\n`;
               }
-              msg += '\n💡 輸入「調班」可發起轉班或換班申請。\n感恩您的護持與付出！🌸';
+              msg += '\n💡 點擊底部「調班換班」或輸入「調班」可發起轉班或換班申請。\n感恩您的護持與付出！🌸';
             }
 
             await client.replyMessage({
@@ -293,7 +345,7 @@ exports.lineWebhook = onRequest({
         }
 
         // ── 指令 C：調班 / 換班 (發起調班) ──
-        if (text === '調班' || text === '換班' || text === '我要調班' || text === '我要換班') {
+        if (text === '調班' || text === '換班' || text === '我要調班' || text === '我要換班' || text === '調班換班') {
           const binding = await getBindingByUserId(db, userId);
           if (!binding) {
             await client.replyMessage({
@@ -429,9 +481,18 @@ exports.lineWebhook = onRequest({
           if (sessionAge < 10 * 60 * 1000) {
             // (1) 等待輸入代班人姓名 (轉班)
             if (session.step === 'awaiting_transfer_target') {
-              const parts = text.split(/[\s\t　,，、/+\-]+/).map(p => p.trim()).filter(Boolean);
-              const targetName = parts[0];
-              const targetOrg = parts[1] || '';
+              const { targetName, targetOrg } = parseTransferInput(text);
+
+              if (!targetName) {
+                await client.replyMessage({
+                  replyToken,
+                  messages: [{
+                    type: 'text',
+                    text: '⚠️ 請輸入有效的志工姓名（例如：李麗珠 或 李麗珠 互愛一）：'
+                  }]
+                });
+                continue;
+              }
 
               const result = await createTransferRequest(userId, session.dutyId, targetName, targetOrg);
               await db.collection('swapSessions').doc(userId).delete();
@@ -461,27 +522,14 @@ exports.lineWebhook = onRequest({
 
             // (2) 等待輸入對方姓名與日期 (換班)
             if (session.step === 'awaiting_exchange_target') {
-              const parts = text.split(/[\s\t　,，、/+\-]+/).map(p => p.trim()).filter(Boolean);
-              let targetName = '';
-              let targetDutyDate = '';
-              let targetOrg = '';
-
-              parts.forEach(p => {
-                if (/^\d{4}-\d{2}-\d{2}$/.test(p)) {
-                  targetDutyDate = p;
-                } else if (!targetName) {
-                  targetName = p;
-                } else {
-                  targetOrg = p;
-                }
-              });
+              const { targetName, targetDutyDate, targetOrg } = parseExchangeInput(text);
 
               if (!targetName || !targetDutyDate) {
                 await client.replyMessage({
                   replyToken,
                   messages: [{
                     type: 'text',
-                    text: '⚠️ 格式不完整。請同時提供【對方姓名】與【對方值班日期 (YYYY-MM-DD)】\n範例：李小華 2026-09-03'
+                    text: '⚠️ 格式不完整。請同時提供【對方姓名】與【對方值班日期】\n\n💡 格式範例：\n• 李麗珠 2026-11-08\n• 李麗珠 11/8\n• 李麗珠 2026/11/08'
                   }]
                 });
                 continue;
@@ -518,7 +566,7 @@ exports.lineWebhook = onRequest({
         }
 
         // ── 指令 H：快速轉班指令（例如：轉班 2026-09-01 李小華） ──
-        if (text.startsWith('轉班 ') || text.startsWith('轉班　')) {
+        if (text.startsWith('轉班 ') || text.startsWith('轉班　') || text.startsWith('轉班\n')) {
           const binding = await getBindingByUserId(db, userId);
           if (!binding) {
             await client.replyMessage({
@@ -528,16 +576,15 @@ exports.lineWebhook = onRequest({
             continue;
           }
 
-          const args = text.replace(/^轉班[\s　]+/, '').split(/[\s\t　,，、/+\-]+/).filter(Boolean);
-          const dateArg = args.find(a => /^\d{4}-\d{2}-\d{2}$/.test(a));
-          const nameArg = args.find(a => !/^\d{4}-\d{2}-\d{2}$/.test(a));
+          const rawArg = text.replace(/^轉班[\s　\n]+/, '');
+          const { targetName: nameArg, targetDutyDate: dateArg } = parseExchangeInput(rawArg);
 
           if (!dateArg || !nameArg) {
             await client.replyMessage({
               replyToken,
               messages: [{
                 type: 'text',
-                text: '⚠️ 格式錯誤。快速轉班格式為：\n轉班 [值班日期] [接班志工姓名]\n範例：轉班 2026-09-01 李小華'
+                text: '⚠️ 格式錯誤。快速轉班格式為：\n轉班 [值班日期] [接班志工姓名]\n範例：轉班 2026-11-08 李麗珠'
               }]
             });
             continue;

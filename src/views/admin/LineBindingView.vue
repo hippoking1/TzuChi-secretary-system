@@ -77,61 +77,100 @@
     </div>
 
     <!-- 綁定清單 Table -->
-    <div class="card table-responsive">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>序號</th>
-            <th>志工姓名</th>
-            <th>聯絡電話</th>
-            <th>LINE 顯示名稱</th>
-            <th>綁定時間</th>
-            <th>即時功能測試</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="bindings.length === 0">
-            <td colspan="7" class="text-center text-muted p-6">目前尚無志工綁定 LINE 帳號</td>
-          </tr>
-          <tr v-for="(b, idx) in bindings" :key="b.id">
-            <td>{{ idx + 1 }}</td>
-            <td class="font-bold text-primary">{{ b.memberName }}</td>
-            <td>{{ b.memberPhone || '-' }}</td>
-            <td>{{ b.lineDisplayName || '慈濟志工' }}</td>
-            <td>{{ formatDate(b.bindingTime) }}</td>
-            <td>
-              <div class="flex gap-2">
-                <button 
-                  class="btn btn-sm btn-secondary" 
-                  :disabled="testing"
-                  @click="testDutyReminderSingle(b)"
-                  title="向此志工發送值班提醒測試訊息"
-                >
-                  🔔 值班提醒
-                </button>
-                <button 
-                  class="btn btn-sm btn-outline-primary" 
-                  :disabled="testing"
-                  @click="testMeetingNoticeSingle(b)"
-                  title="向此志工發送會議通知測試訊息"
-                >
-                  📢 開會通知
-                </button>
-              </div>
-            </td>
-            <td>
-              <button class="btn btn-sm btn-danger" @click="handleUnbind(b.id)">解除綁定</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="card">
+      <div class="flex items-center justify-between p-4 border-b border-gray-100 flex-wrap gap-3">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-sm">志工綁定名冊</span>
+          <span class="badge badge-info">{{ filteredBindings.length }} 人</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            class="form-control form-control-sm text-sm" 
+            placeholder="🔍 搜尋姓名、電話..."
+            style="width: 200px;"
+          />
+          <button 
+            class="btn btn-sm btn-outline-secondary flex items-center gap-1"
+            @click="toggleSortOrder"
+            :title="sortOrder === 'desc' ? '目前為新到舊排序，點擊切換為舊到新' : '目前為舊到新排序，點擊切換為新到舊'"
+          >
+            <span>📅 綁定時間</span>
+            <span>{{ sortOrder === 'desc' ? '⬇️ (最新在前)' : '⬆️ (最舊在前)' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>序號</th>
+              <th>志工姓名</th>
+              <th>聯絡電話</th>
+              <th>LINE 顯示名稱</th>
+              <th 
+                class="cursor-pointer select-none hover:text-primary transition-colors" 
+                @click="toggleSortOrder"
+                title="點擊切換排序方向"
+              >
+                <div class="flex items-center gap-1">
+                  <span>綁定時間</span>
+                  <span class="text-xs text-primary">{{ sortOrder === 'desc' ? '▼ 新→舊' : '▲ 舊→新' }}</span>
+                </div>
+              </th>
+              <th>即時功能測試</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="filteredBindings.length === 0">
+              <td colspan="7" class="text-center text-muted p-6">
+                {{ searchQuery ? '查無符合搜尋條件的志工' : '目前尚無志工綁定 LINE 帳號' }}
+              </td>
+            </tr>
+            <tr v-for="(b, idx) in filteredBindings" :key="b.id">
+              <td>{{ idx + 1 }}</td>
+              <td class="font-bold text-primary">{{ b.memberName }}</td>
+              <td>{{ b.memberPhone || '-' }}</td>
+              <td>{{ b.lineDisplayName || '慈濟志工' }}</td>
+              <td>
+                <span class="text-sm font-mono">{{ formatDate(b.bindingTime || b.updatedAt || b.migratedAt || b.createdAt) }}</span>
+              </td>
+              <td>
+                <div class="flex gap-2">
+                  <button 
+                    class="btn btn-sm btn-secondary" 
+                    :disabled="testing"
+                    @click="testDutyReminderSingle(b)"
+                    title="向此志工發送值班提醒測試訊息"
+                  >
+                    🔔 值班提醒
+                  </button>
+                  <button 
+                    class="btn btn-sm btn-outline-primary" 
+                    :disabled="testing"
+                    @click="testMeetingNoticeSingle(b)"
+                    title="向此志工發送會議通知測試訊息"
+                  >
+                    📢 開會通知
+                  </button>
+                </div>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-danger" @click="handleUnbind(b.id)">解除綁定</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { getCollectionDocs, deleteDocById } from '@/firebase/db';
 import { useToast } from '@/composables/useToast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -140,6 +179,8 @@ import { app } from '@/firebase/config';
 const toast = useToast();
 const bindings = ref([]);
 const testing = ref(false);
+const searchQuery = ref('');
+const sortOrder = ref('desc'); // 'desc': 最新在前, 'asc': 最舊在前
 
 const functions = getFunctions(app, 'asia-east1');
 const sendTestLine = httpsCallable(functions, 'sendTestLineMessage');
@@ -147,12 +188,63 @@ const sendDutyRemindersForDate = httpsCallable(functions, 'sendDutyRemindersForD
 const sendEventRemindersForDate = httpsCallable(functions, 'sendEventRemindersForDate');
 const sendMeetingRemindersForDate = httpsCallable(functions, 'sendMeetingRemindersForDate');
 
-function formatDate(dateStr) {
-  if (!dateStr) return '-';
+function getBindingTimeValue(b) {
+  const val = b.bindingTime || b.updatedAt || b.migratedAt || b.createdAt;
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (val.toDate && typeof val.toDate === 'function') {
+    return val.toDate().getTime();
+  }
+  if (val.seconds) {
+    return val.seconds * 1000 + (val.nanoseconds || 0) / 1000000;
+  }
+  const parsed = new Date(val).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+const filteredBindings = computed(() => {
+  let list = [...bindings.value];
+
+  // 搜尋過濾
+  const query = searchQuery.value.trim().toLowerCase();
+  if (query) {
+    list = list.filter(b => 
+      (b.memberName && b.memberName.toLowerCase().includes(query)) ||
+      (b.memberPhone && b.memberPhone.includes(query)) ||
+      (b.lineDisplayName && b.lineDisplayName.toLowerCase().includes(query)) ||
+      (b.orgInput && b.orgInput.toLowerCase().includes(query))
+    );
+  }
+
+  // 依綁定時間排序
+  list.sort((a, b) => {
+    const tA = getBindingTimeValue(a);
+    const tB = getBindingTimeValue(b);
+    return sortOrder.value === 'desc' ? tB - tA : tA - tB;
+  });
+
+  return list;
+});
+
+function toggleSortOrder() {
+  sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc';
+}
+
+function formatDate(val) {
+  if (!val) return '-';
   try {
-    return new Date(dateStr).toLocaleString('zh-TW', { hour12: false });
+    let d = null;
+    if (val.toDate && typeof val.toDate === 'function') {
+      d = val.toDate();
+    } else if (val.seconds) {
+      d = new Date(val.seconds * 1000);
+    } else {
+      d = new Date(val);
+    }
+    if (isNaN(d.getTime())) return String(val);
+    return d.toLocaleString('zh-TW', { hour12: false });
   } catch {
-    return dateStr;
+    return String(val);
   }
 }
 
