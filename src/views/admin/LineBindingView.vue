@@ -66,6 +66,13 @@
             📅 即刻推播【明日會議提醒】
           </button>
           <button 
+            class="btn btn-sm btn-warning font-bold" 
+            :disabled="testing || bindings.length === 0"
+            @click="testSwapSingle(bindings[0])"
+          >
+            🔄 即刻推播【換班卡片測試】
+          </button>
+          <button 
             class="btn btn-sm btn-outline-primary" 
             :disabled="testing || bindings.length === 0"
             @click="testDirectPush(bindings[0])"
@@ -139,14 +146,14 @@
                 <span class="text-sm font-mono">{{ formatDate(b.bindingTime || b.updatedAt || b.migratedAt || b.createdAt) }}</span>
               </td>
               <td>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
                   <button 
                     class="btn btn-sm btn-secondary" 
                     :disabled="testing"
                     @click="testDutyReminderSingle(b)"
                     title="向此志工發送值班提醒測試訊息"
                   >
-                    🔔 值班提醒
+                    🔔 值班
                   </button>
                   <button 
                     class="btn btn-sm btn-outline-primary" 
@@ -154,7 +161,15 @@
                     @click="testMeetingNoticeSingle(b)"
                     title="向此志工發送會議通知測試訊息"
                   >
-                    📢 開會通知
+                    📢 會議
+                  </button>
+                  <button 
+                    class="btn btn-sm btn-outline-warning font-bold" 
+                    :disabled="testing"
+                    @click="testSwapSingle(b)"
+                    title="向此志工發送換班確認 Flex 卡片進行互動測試"
+                  >
+                    🔄 換班測試
                   </button>
                 </div>
               </td>
@@ -332,6 +347,24 @@ async function testMeetingNoticeSingle(b) {
       type: 'meeting'
     });
     toast.success(`已發送【開會通知測試】給 ${b.memberName}！`);
+  } catch (err) {
+    toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
+  } finally {
+    testing.value = false;
+  }
+}
+
+async function testSwapSingle(b) {
+  if (!b) return;
+  testing.value = true;
+  try {
+    const res = await sendTestLine({
+      lineUserId: b.lineUserId,
+      memberName: b.memberName,
+      memberId: b.memberId || b.id,
+      type: 'swap'
+    });
+    toast.success(res.data.message || `已發送【換班卡片測試】給 ${b.memberName}！`);
   } catch (err) {
     toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
   } finally {

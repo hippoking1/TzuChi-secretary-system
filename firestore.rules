@@ -49,11 +49,11 @@ service cloud.firestore {
       allow delete: if isConvener();
     }
 
-    // 志工名單：前台核身比對需讀取，報名時允許同步更新電話，管理員完全維護
+    // 志工名單：前台核身比對需讀取，報名時允許同步更新電話，登入管理員完全維護
     match /members/{memberId} {
       allow read: if true;
       allow update: if true; // 允許報名或資料比對時自動同步電話
-      allow create, delete: if isAdmin();
+      allow create, delete: if request.auth != null;
     }
 
     // 組織架構與幹部職稱：公開讀取，管理員維護

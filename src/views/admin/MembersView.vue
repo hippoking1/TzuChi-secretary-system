@@ -11,9 +11,15 @@
       </div>
     </div>
 
-    <!-- 搜尋與職稱篩選列 -->
-    <div class="card mb-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <input v-model="search" type="text" class="form-input" placeholder="搜尋志工姓名、電話、編號、職務..." @input="handleSearch" />
+    <!-- 搜尋與篩選列 (4 欄式) -->
+    <div class="card mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <input v-model="search" type="text" class="form-input" placeholder="🔍 搜尋志工姓名、電話、職務..." @input="handleSearch" />
+      <select v-model="orgFilter" class="form-select" @change="handleSearch">
+        <option value="">🏛️ 全部組織架構 (不限)</option>
+        <option v-for="org in flattenedOrgs" :key="org.id" :value="org.id">
+          {{ org.indentText }}{{ org.name }} ({{ org.level }})
+        </option>
+      </select>
       <select v-model="genderFilter" class="form-select" @change="handleSearch">
         <option value="">全部眾別 (男眾 / 女眾)</option>
         <option value="男">男眾 (師兄)</option>
@@ -26,24 +32,52 @@
     </div>
 
     <div class="card table-responsive">
+      <div class="flex items-center justify-between p-3 border-b border-gray-100 flex-wrap gap-2 text-xs text-muted">
+        <div>
+          <span>共 <strong>{{ sortedMembers.length }}</strong> 位志工</span>
+          <span v-if="orgFilter" class="ml-2 badge badge-info">已篩選組織</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span>排序方式：</span>
+          <button 
+            class="btn btn-xs" 
+            :class="sortMode === 'org' ? 'btn-primary' : 'btn-outline-secondary'"
+            @click="sortMode = 'org'"
+          >
+            🏛️ 依組織 (和氣/互愛/協力)
+          </button>
+          <button 
+            class="btn btn-xs" 
+            :class="sortMode === 'name' ? 'btn-primary' : 'btn-outline-secondary'"
+            @click="sortMode = 'name'"
+          >
+            🔤 依姓名筆劃
+          </button>
+        </div>
+      </div>
+
       <table class="table">
         <thead>
           <tr>
-            <th>姓名</th>
+            <th class="cursor-pointer hover:text-primary select-none" @click="sortMode = 'name'" title="點擊依姓名排序">
+              姓名 <span v-if="sortMode === 'name'">▼</span>
+            </th>
             <th>幹部職稱 / 職務</th>
             <th>眾別</th>
             <th>電話</th>
             <th>委員/慈誠編號</th>
-            <th>所屬組織</th>
+            <th class="cursor-pointer hover:text-primary select-none" @click="sortMode = 'org'" title="點擊依組織階層排序">
+              所屬組織 (和氣 / 互愛 / 協力) <span v-if="sortMode === 'org'">▼</span>
+            </th>
             <th>法號</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="membersStore.members.length === 0">
+          <tr v-if="sortedMembers.length === 0">
             <td colspan="8" class="text-center text-muted p-4">查無符合條件的志工資料</td>
           </tr>
-          <tr v-for="m in membersStore.members" :key="m.id">
+          <tr v-for="m in sortedMembers" :key="m.id">
             <td class="font-bold text-gray-900">{{ m.name }}</td>
             <td>
               <div v-if="(m.cadreRoles && m.cadreRoles.length) || (m.positions && m.positions.length)" class="flex flex-wrap gap-1">
@@ -65,12 +99,17 @@
             </td>
             <td>{{ m.phone || '-' }}</td>
             <td>{{ m.volunteerCode || '-' }}</td>
-            <td>{{ orgsStore.getOrgPath(m.orgId) || '-' }}</td>
+            <td>
+              <span v-if="orgsStore.getOrgPath(m.orgId)" class="font-medium text-gray-700">
+                {{ orgsStore.getOrgPath(m.orgId) }}
+              </span>
+              <span v-else class="text-muted">-</span>
+            </td>
             <td>{{ m.dharmaName || '-' }}</td>
             <td>
               <div class="flex gap-2">
                 <button class="btn btn-sm btn-outline-primary" @click="openEdit(m)">✏️ 編輯/指派職務</button>
-                <button class="btn btn-sm btn-danger" @click="handleDelete(m.id)">刪除</button>
+                <button class="btn btn-sm btn-danger" @click="handleDelete(m)">刪除</button>
               </div>
             </td>
           </tr>
@@ -256,7 +295,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { usePositionsStore } from '@/stores/positions';
@@ -269,8 +308,10 @@ const posStore = usePositionsStore();
 const toast = useToast();
 
 const search = ref('');
+const orgFilter = ref('');
 const genderFilter = ref('');
 const positionFilter = ref('');
+const sortMode = ref('org'); // 'org': 依和氣/互愛/協力, 'name': 依姓名
 const showImportModal = ref(false);
 const rawImportText = ref('');
 const parsedRows = ref([]);
@@ -290,6 +331,58 @@ const memberForm = ref({
   cadreRoles: []
 });
 
+/**
+ * 展平組織樹，提供下拉選單使用（含層級階梯縮排）
+ */
+const flattenedOrgs = computed(() => {
+  const result = [];
+  function traverse(nodes, depth = 0) {
+    (nodes || []).forEach(node => {
+      const indent = '　'.repeat(depth) + (depth > 0 ? '└ ' : '');
+      result.push({
+        id: node.id,
+        name: node.name,
+        level: node.level || '組織',
+        indentText: indent
+      });
+      if (node.children && node.children.length > 0) {
+        traverse(node.children, depth + 1);
+      }
+    });
+  }
+  traverse(orgsStore.orgTree);
+  return result;
+});
+
+/**
+ * 依照組織階層 (和氣/互愛/協力) 或姓名進行智慧排序
+ */
+const sortedMembers = computed(() => {
+  const list = [...membersStore.members];
+
+  if (sortMode.value === 'org') {
+    list.sort((a, b) => {
+      const pathA = orgsStore.getOrgPath(a.orgId);
+      const pathB = orgsStore.getOrgPath(b.orgId);
+
+      // 有組織的排在前面，無組織排在後面
+      if (!pathA && pathB) return 1;
+      if (pathA && !pathB) return -1;
+      if (!pathA && !pathB) return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
+
+      const orgCompare = pathA.localeCompare(pathB, 'zh-Hant', { numeric: true });
+      if (orgCompare !== 0) return orgCompare;
+
+      // 組織相同時，依姓名排序
+      return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
+    });
+  } else if (sortMode.value === 'name') {
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant'));
+  }
+
+  return list;
+});
+
 function isRoleSelected(roleName) {
   return (memberForm.value.cadreRoles || []).includes(roleName);
 }
@@ -305,10 +398,16 @@ function toggleRole(roleName) {
 }
 
 async function handleSearch() {
+  let orgIds = [];
+  if (orgFilter.value) {
+    orgIds = orgsStore.getDescendantOrgIds(orgFilter.value);
+  }
+
   await membersStore.fetchMembers({ 
     search: search.value, 
     gender: genderFilter.value,
-    position: positionFilter.value
+    position: positionFilter.value,
+    orgIds: orgIds.length > 0 ? orgIds : undefined
   });
 }
 
@@ -335,6 +434,7 @@ async function submitBatchImport() {
     showImportModal.value = false;
     rawImportText.value = '';
     parsedRows.value = [];
+    await handleSearch();
   } catch (err) {
     toast.error('匯入失敗：' + err.message);
   } finally {
@@ -352,7 +452,7 @@ async function openCreate() {
     phone: '',
     volunteerCode: '',
     dharmaName: '',
-    orgId: '',
+    orgId: orgFilter.value || '',
     cadreRoles: []
   };
   showMemberModal.value = true;
@@ -388,10 +488,18 @@ async function handleSaveMember() {
   }
 }
 
-async function handleDelete(id) {
-  if (!confirm('確定要刪除此志工資料嗎？')) return;
-  await membersStore.deleteMember(id);
-  toast.success('已刪除');
+async function handleDelete(m) {
+  const memberName = m.name || '此志工';
+  if (!confirm(`確定要刪除志工「${memberName}」的資料嗎？刪除後無法復原。`)) return;
+  
+  try {
+    await membersStore.deleteMember(m.id);
+    toast.success(`已成功刪除志工「${memberName}」`);
+    await handleSearch();
+  } catch (err) {
+    console.error('Delete member error:', err);
+    toast.error('刪除失敗：' + (err.message || '請確認權限'));
+  }
 }
 
 onMounted(async () => {
