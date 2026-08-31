@@ -5,6 +5,8 @@ const line = require('@line/bot-sdk');
 const { LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN } = require('./secrets');
 const {
   getTaiwanTodayStr,
+  normalizeName,
+  checkPersonMatch,
   createTransferRequest,
   createExchangeRequest,
   confirmSwap,
@@ -30,7 +32,7 @@ async function getBindingByUserId(db, userId) {
 }
 
 /**
- * 健壯取得志工未來的排班清單（免依賴複合索引，直接記憶體精準比對 memberId 與 memberName）
+ * 健壯取得志工未來的排班清單（免依賴複合索引，支援姓名、異體字與法號模糊比對）
  */
 async function getDutiesForUser(db, binding, todayStr) {
   const dutiesSnap = await db.collection('dutyShifts')
@@ -40,9 +42,8 @@ async function getDutiesForUser(db, binding, todayStr) {
   const myDuties = [];
   dutiesSnap.forEach(d => {
     const dt = { id: d.id, ...d.data() };
-    const matchId = binding.memberId && dt.memberId === binding.memberId;
-    const matchName = binding.memberName && dt.memberName === binding.memberName;
-    if (matchId || matchName) {
+    const isMatch = checkPersonMatch(dt.memberId, dt.memberName, binding.memberId, binding.memberName, binding.dharmaName);
+    if (isMatch) {
       myDuties.push(dt);
     }
   });

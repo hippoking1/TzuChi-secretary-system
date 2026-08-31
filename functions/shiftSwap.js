@@ -6,6 +6,88 @@ const SHIFT_TIMES = {
 };
 
 /**
+ * 健壯純淨化姓名（去除前後空白、全形空白、括號內法號備註、常見異體字）
+ */
+function normalizeName(name) {
+  if (!name) return '';
+  return name.toString().trim()
+    .replace(/[\s\t\r\n　]/g, '')
+    .replace(/[（(].*?[）)]/g, '') // 例如：林彣玲 (慮倩) -> 林彣玲
+    .replace(/彣/g, '文') // 異體字相容
+    .toLowerCase();
+}
+
+/**
+ * 健壯比對排班人員與志工身分
+ */
+function checkPersonMatch(dutyMemberId, dutyMemberName, bindingMemberId, bindingMemberName, bindingDharmaName = '', memberDharmaName = '') {
+  // 1. ID 精確比對
+  if (dutyMemberId && bindingMemberId && String(dutyMemberId) === String(bindingMemberId)) {
+    return true;
+  }
+
+  // 2. 純淨化姓名比對
+  const normDuty = normalizeName(dutyMemberName);
+  const normBinding = normalizeName(bindingMemberName);
+  if (normDuty && normBinding) {
+    if (normDuty === normBinding) return true;
+    if (normDuty.includes(normBinding) || normBinding.includes(normDuty)) return true;
+  }
+
+  // 3. 法號比對
+  const dharmaList = [bindingDharmaName, memberDharmaName].filter(Boolean).map(normalizeName);
+  for (const d of dharmaList) {
+    if (d && (normDuty === d || normDuty.includes(d) || (dutyMemberName && dutyMemberName.includes(d)))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 健壯搜尋志工名冊中的志工（相容異體字、純姓名、法號、模糊比對）
+ */
+async function findMemberByNameOrDharma(db, searchName, orgHint = '') {
+  if (!searchName) return null;
+  const cleanSearch = searchName.trim();
+  const normSearch = normalizeName(cleanSearch);
+
+  // 1. 精確搜尋
+  let snap = await db.collection('members').where('name', '==', cleanSearch).get();
+  if (!snap.empty) {
+    if (snap.docs.length === 1 || !orgHint) {
+      return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
+    const matched = snap.docs.find(d => {
+      const data = d.data();
+      return (data.orgName && data.orgName.includes(orgHint)) || (data.phone && data.phone.includes(orgHint));
+    });
+    if (matched) return { id: matched.id, ...matched.data() };
+    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  }
+
+  // 2. 全量記憶體比對 (支援異體字與法號)
+  const allMembersSnap = await db.collection('members').get();
+  let candidate = null;
+
+  for (const doc of allMembersSnap.docs) {
+    const data = doc.data();
+    const memNorm = normalizeName(data.name);
+    const dharmaNorm = normalizeName(data.dharmaName);
+
+    if (memNorm === normSearch || dharmaNorm === normSearch || memNorm.includes(normSearch) || (normSearch && dharmaNorm && normSearch.includes(dharmaNorm))) {
+      candidate = { id: doc.id, ...data };
+      if (orgHint && ((data.orgName && data.orgName.includes(orgHint)) || (data.phone && data.phone.includes(orgHint)))) {
+        return candidate;
+      }
+    }
+  }
+
+  return candidate;
+}
+
+/**
  * 計算班次截止期限（值班日前一天台灣時間 20:00，即 UTC 12:00）
  * @param {string} dutyDateStr - "YYYY-MM-DD"
  * @returns {{ deadline: Date, deadlineStr: string, prevDateStr: string }}
@@ -74,9 +156,15 @@ async function createTransferRequest(requesterUserId, dutyId, targetNameInput, t
   }
   const duty = dutySnap.data();
 
-  // 驗證是否為自己的班
-  const isMine = (duty.memberId && duty.memberId === requesterBinding.memberId) ||
-                 (duty.memberName && duty.memberName === requesterBinding.memberName);
+  // 驗證是否為自己的班（使用極度健壯的姓名與法號模糊比對）
+  const isMine = checkPersonMatch(
+    duty.memberId,
+    duty.memberName,
+    requesterBinding.memberId,
+    requesterBinding.memberName,
+    requesterBinding.dharmaName
+  );
+
   if (!isMine) {
     return { success: false, message: `您並非【${duty.dutyDate} ${duty.location} ${duty.shiftLabel}】的排班志工。` };
   }
@@ -92,28 +180,17 @@ async function createTransferRequest(requesterUserId, dutyId, targetNameInput, t
   }
 
   // (4) 查詢目標接班志工 (members)
-  const targetCleanName = targetNameInput.trim();
-  let membersSnap = await db.collection('members').where('name', '==', targetCleanName).get();
-  if (membersSnap.empty) {
+  const targetMember = await findMemberByNameOrDharma(db, targetNameInput, targetOrgInput);
+  if (!targetMember) {
     return {
       success: false,
-      message: `⚠️ 志工名冊中查無姓名為「${targetCleanName}」的志工，請確認姓名是否正確。`
+      message: `⚠️ 志工名冊中查無姓名為「${targetNameInput.trim()}」的志工，請確認姓名是否正確。`
     };
   }
-
-  let targetMemberDoc = membersSnap.docs[0];
-  if (membersSnap.docs.length > 1 && targetOrgInput) {
-    const matched = membersSnap.docs.find(d => {
-      const data = d.data();
-      return (data.orgName && data.orgName.includes(targetOrgInput)) || (data.phone && data.phone.includes(targetOrgInput));
-    });
-    if (matched) targetMemberDoc = matched;
-  }
-  const targetMember = targetMemberDoc.data();
-  const targetMemberId = targetMemberDoc.id;
+  const targetMemberId = targetMember.id;
 
   // 不能轉給自己
-  if (targetMemberId === requesterBinding.memberId || targetMember.name === requesterBinding.memberName) {
+  if (targetMemberId === requesterBinding.memberId || normalizeName(targetMember.name) === normalizeName(requesterBinding.memberName)) {
     return { success: false, message: '無法將班次轉給自己。' };
   }
 
@@ -131,6 +208,18 @@ async function createTransferRequest(requesterUserId, dutyId, targetNameInput, t
     targetLineSnap = await db.collection('lineBindings').where('memberName', '==', targetMember.name).get();
   }
   if (targetLineSnap.empty) {
+    // 嘗試模糊比對
+    const allBindingsSnap = await db.collection('lineBindings').get();
+    const matchedBindingDoc = allBindingsSnap.docs.find(d => {
+      const dt = d.data();
+      return checkPersonMatch(null, dt.memberName, targetMemberId, targetMember.name, targetMember.dharmaName);
+    });
+    if (matchedBindingDoc) {
+      targetLineSnap = { empty: false, docs: [matchedBindingDoc] };
+    }
+  }
+
+  if (targetLineSnap.empty) {
     return {
       success: false,
       message: `⚠️ ${targetMember.name} 師兄/師姊 尚未將 LINE 帳號綁定系統，無法接收調班確認通知。請先請對方在 LINE 官方帳號完成綁定。`
@@ -139,16 +228,19 @@ async function createTransferRequest(requesterUserId, dutyId, targetNameInput, t
   const targetLineBinding = targetLineSnap.docs[0].data();
 
   // (7) 檢查目標志工在該日是否已有排班衝突（同日同場地或跨場地）
-  const targetConflictSnap = await db.collection('dutyShifts')
+  const targetDutiesSnap = await db.collection('dutyShifts')
     .where('dutyDate', '==', duty.dutyDate)
-    .where('memberId', '==', targetMemberId)
     .get();
 
-  if (!targetConflictSnap.empty) {
-    const conflictDuty = targetConflictSnap.docs[0].data();
+  const hasConflict = targetDutiesSnap.docs.some(d => {
+    const dt = d.data();
+    return checkPersonMatch(dt.memberId, dt.memberName, targetMemberId, targetMember.name, targetMember.dharmaName);
+  });
+
+  if (hasConflict) {
     return {
       success: false,
-      message: `⚠️ 排班衝突：${targetMember.name} 師兄/師姊 於 ${duty.dutyDate} 已排有「${conflictDuty.location} ${conflictDuty.shiftLabel}」，無法再接此班次。`
+      message: `⚠️ 排班衝突：${targetMember.name} 師兄/師姊 於 ${duty.dutyDate} 已有其他排班，無法再接此班次。`
     };
   }
 
@@ -232,30 +324,27 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
   }
   const reqDuty = reqDutySnap.data();
 
-  const isMine = (reqDuty.memberId && reqDuty.memberId === requesterBinding.memberId) ||
-                 (reqDuty.memberName && reqDuty.memberName === requesterBinding.memberName);
+  // 驗證是否為自己的班（極度健壯的比對邏輯）
+  const isMine = checkPersonMatch(
+    reqDuty.memberId,
+    reqDuty.memberName,
+    requesterBinding.memberId,
+    requesterBinding.memberName,
+    requesterBinding.dharmaName
+  );
+
   if (!isMine) {
     return { success: false, message: `您並非【${reqDuty.dutyDate} ${reqDuty.location} ${reqDuty.shiftLabel}】的排班志工。` };
   }
 
   // (3) 查詢對方志工
-  const targetCleanName = targetNameInput.trim();
-  let membersSnap = await db.collection('members').where('name', '==', targetCleanName).get();
-  if (membersSnap.empty) {
-    return { success: false, message: `⚠️ 志工名冊中查無「${targetCleanName}」志工。` };
+  const targetMember = await findMemberByNameOrDharma(db, targetNameInput, targetOrgInput);
+  if (!targetMember) {
+    return { success: false, message: `⚠️ 志工名冊中查無姓名為「${targetNameInput.trim()}」的志工。` };
   }
-  let targetMemberDoc = membersSnap.docs[0];
-  if (membersSnap.docs.length > 1 && targetOrgInput) {
-    const matched = membersSnap.docs.find(d => {
-      const data = d.data();
-      return (data.orgName && data.orgName.includes(targetOrgInput)) || (data.phone && data.phone.includes(targetOrgInput));
-    });
-    if (matched) targetMemberDoc = matched;
-  }
-  const targetMember = targetMemberDoc.data();
-  const targetMemberId = targetMemberDoc.id;
+  const targetMemberId = targetMember.id;
 
-  if (targetMemberId === requesterBinding.memberId || targetMember.name === requesterBinding.memberName) {
+  if (targetMemberId === requesterBinding.memberId || normalizeName(targetMember.name) === normalizeName(requesterBinding.memberName)) {
     return { success: false, message: '無法與自己換班。' };
   }
 
@@ -273,6 +362,17 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
     targetLineSnap = await db.collection('lineBindings').where('memberName', '==', targetMember.name).get();
   }
   if (targetLineSnap.empty) {
+    const allBindingsSnap = await db.collection('lineBindings').get();
+    const matchedBindingDoc = allBindingsSnap.docs.find(d => {
+      const dt = d.data();
+      return checkPersonMatch(null, dt.memberName, targetMemberId, targetMember.name, targetMember.dharmaName);
+    });
+    if (matchedBindingDoc) {
+      targetLineSnap = { empty: false, docs: [matchedBindingDoc] };
+    }
+  }
+
+  if (targetLineSnap.empty) {
     return {
       success: false,
       message: `⚠️ ${targetMember.name} 師兄/師姊 尚未將 LINE 帳號綁定系統，無法接收換班確認通知。`
@@ -289,7 +389,7 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
   let targetDutyDocId = null;
   const foundTargetDoc = targetDutiesSnap.docs.find(d => {
     const dt = d.data();
-    return (dt.memberId && dt.memberId === targetMemberId) || (dt.memberName && dt.memberName === targetMember.name);
+    return checkPersonMatch(dt.memberId, dt.memberName, targetMemberId, targetMember.name, targetMember.dharmaName);
   });
 
   if (foundTargetDoc) {
@@ -324,7 +424,9 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
     .get();
   const hasReqConflict = reqDateDutiesSnap.docs.some(d => {
     const dt = d.data();
-    return (dt.memberId && dt.memberId === requesterBinding.memberId) || (dt.memberName && dt.memberName === requesterBinding.memberName);
+    // 排除欲換出的目標班次自身
+    if (d.id === targetDutyDocId) return false;
+    return checkPersonMatch(dt.memberId, dt.memberName, requesterBinding.memberId, requesterBinding.memberName, requesterBinding.dharmaName);
   });
   if (hasReqConflict) {
     return {
@@ -338,7 +440,9 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
     .get();
   const hasTargetConflict = targetDateDutiesSnap.docs.some(d => {
     const dt = d.data();
-    return (dt.memberId && dt.memberId === targetMemberId) || (dt.memberName && dt.memberName === targetMember.name);
+    // 排除發起者目前佔有的班次
+    if (d.id === requesterDutyId) return false;
+    return checkPersonMatch(dt.memberId, dt.memberName, targetMemberId, targetMember.name, targetMember.dharmaName);
   });
   if (hasTargetConflict) {
     return {
@@ -366,6 +470,7 @@ async function createExchangeRequest(requesterUserId, requesterDutyId, targetNam
     requesterShiftId: reqDuty.shiftId,
     requesterShiftLabel: reqDuty.shiftLabel,
     requesterTimeRange: reqDuty.timeRange || (SHIFT_TIMES[reqDuty.location] && SHIFT_TIMES[reqDuty.location][reqDuty.shiftId]) || '',
+    genderType: reqDuty.genderType || '',
 
     targetDutyId: targetDutyDocId,
     targetDutyDate: targetDuty.dutyDate,
@@ -917,6 +1022,9 @@ module.exports = {
   SHIFT_TIMES,
   getDeadlineInfo,
   getTaiwanTodayStr,
+  normalizeName,
+  checkPersonMatch,
+  findMemberByNameOrDharma,
   createTransferRequest,
   createExchangeRequest,
   confirmSwap,
