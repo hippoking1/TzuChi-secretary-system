@@ -5,7 +5,14 @@
         <h1 class="text-2xl font-bold">LINE 帳號綁定與推播中心</h1>
         <p class="text-sm text-muted">管理已綁定 LINE 官方帳號之志工，並可即時發送測試推播驗證 Messaging API</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-wrap">
+        <button 
+          class="btn btn-sm btn-primary flex items-center gap-1"
+          :disabled="exporting || bindings.length === 0"
+          @click="handleExportExcel"
+        >
+          <span>{{ exporting ? '匯出中...' : '📥 匯出名單 (Excel 依協力分頁)' }}</span>
+        </button>
         <button class="btn btn-sm btn-outline-primary" @click="loadBindings">
           🔄 重新整理清單
         </button>
@@ -15,20 +22,19 @@
     <!-- 說明與功能測試卡片 -->
     <div class="card mb-6 grid grid-cols-3 gap-6">
       <div class="p-2" style="grid-column: span 2;">
-        <h3 class="font-bold text-lg mb-2">志工 LINE 官方帳號綁定與自動通知機制</h3>
+        <h3 class="font-bold text-lg mb-2">志工 LINE 官方帳號綁定與智慧訊息合併機制</h3>
         <p class="text-sm text-muted mb-2">
           志工只要在 LINE 官方帳號輸入「<strong>姓名 + 所屬組織</strong>」（例如：<code>張志工 第一協力</code>），系統即會自動核身並綁定，系統將會在：
         </p>
         <ul class="text-xs text-muted mb-3 pl-4 list-disc space-y-1">
-          <li><strong>每日 08:00</strong>：自動向隔日有排定<strong>道場值班</strong>之志工發出溫馨值班提醒。</li>
-          <li><strong>每日 08:30</strong>：自動向隔日有報名<strong>志業活動</strong>之成員發出活動行前提醒。</li>
-          <li><strong>每日 09:00</strong>：自動向隔日有各項<strong>組隊會議</strong>之參與人員發出會議行前提醒。</li>
+          <li><strong>每日 08:30 (單一聚合排程)</strong>：自動向隔日有<strong>道場值班</strong>、<strong>志業活動</strong>或<strong>組隊會議</strong>之志工發出溫馨提醒。若同一志工當天有多項行程，將<strong>智慧合併於同一則訊息</strong>發送，兼顧體驗並節省 30%~50% 額度！</li>
+          <li><strong>隨時</strong>：志工在 LINE 發起自助調班/換班時，即時推播確認卡片給對方志工。</li>
           <li><strong>隨時</strong>：幹部發佈組隊會議時，可一鍵推播即時開會通知。</li>
         </ul>
         <div class="flex gap-2 flex-wrap mb-3">
           <span class="badge badge-success">✓ 彰化機房 asia-east1</span>
           <span class="badge badge-info">✓ HMAC-SHA256 簽名驗證</span>
-          <span class="badge badge-warning">✓ 每日定時三排程 (08:00 / 08:30 / 09:00)</span>
+          <span class="badge badge-warning">✓ 每日 08:30 單一整合排程 (訊息合併省額度)</span>
         </div>
         <div class="bg-blue-50 border border-blue-200 rounded p-2.5 text-xs text-blue-900">
           <strong class="font-bold">⚙️ LINE 官方帳號管理後台關鍵設定：</strong>
@@ -45,25 +51,33 @@
         <p class="text-xs text-muted mb-3">即時手動觸發推播（不用等定時排程）：</p>
         <div class="flex flex-col gap-2">
           <button 
+            class="btn btn-sm btn-success font-bold" 
+            :disabled="testing"
+            @click="testUnifiedRemindersBatch"
+            title="測試每日 08:30 單一排程：若同一志工有多項行程自動合併發送"
+          >
+            🌟 即刻推播【明日綜合提醒 (聚合測試)】
+          </button>
+          <button 
             class="btn btn-sm btn-secondary" 
             :disabled="testing"
             @click="testDutyRemindersBatch"
           >
-            🚀 即刻推播【明日值班提醒】
+            🚀 明日值班提醒 (單項)
           </button>
           <button 
             class="btn btn-sm btn-primary" 
             :disabled="testing"
             @click="testEventRemindersBatch"
           >
-            📢 即刻推播【明日活動提醒】
+            📢 明日活動提醒 (單項)
           </button>
           <button 
             class="btn btn-sm btn-info" 
             :disabled="testing"
             @click="testMeetingRemindersBatch"
           >
-            📅 即刻推播【明日會議提醒】
+            📅 明日會議提醒 (單項)
           </button>
           <button 
             class="btn btn-sm btn-warning font-bold" 
@@ -190,18 +204,54 @@ import { getCollectionDocs, deleteDocById } from '@/firebase/db';
 import { useToast } from '@/composables/useToast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '@/firebase/config';
+import { exportLineBindingsToExcel } from '@/utils/excelExport';
 
 const toast = useToast();
 const bindings = ref([]);
 const testing = ref(false);
+const exporting = ref(false);
 const searchQuery = ref('');
 const sortOrder = ref('desc'); // 'desc': 最新在前, 'asc': 最舊在前
 
 const functions = getFunctions(app, 'asia-east1');
 const sendTestLine = httpsCallable(functions, 'sendTestLineMessage');
+const sendDailyUnifiedRemindersForDate = httpsCallable(functions, 'sendDailyUnifiedRemindersForDate');
 const sendDutyRemindersForDate = httpsCallable(functions, 'sendDutyRemindersForDate');
 const sendEventRemindersForDate = httpsCallable(functions, 'sendEventRemindersForDate');
 const sendMeetingRemindersForDate = httpsCallable(functions, 'sendMeetingRemindersForDate');
+
+async function handleExportExcel() {
+  if (bindings.value.length === 0) {
+    toast.warning('目前尚無綁定名冊可供匯出');
+    return;
+  }
+  exporting.value = true;
+  try {
+    const [members, orgs] = await Promise.all([
+      getCollectionDocs('members'),
+      getCollectionDocs('organizations')
+    ]);
+    const result = exportLineBindingsToExcel(bindings.value, members, orgs);
+    toast.success(`已成功匯出 ${result.totalBindings} 筆志工名單（依協力建立 ${result.groupCount} 個分頁）！`);
+  } catch (err) {
+    console.error('Export error:', err);
+    toast.error('匯出失敗：' + (err.message || '未知錯誤'));
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function testUnifiedRemindersBatch() {
+  testing.value = true;
+  try {
+    const res = await sendDailyUnifiedRemindersForDate({});
+    toast.success(res.data.message || '明日綜合行程提醒推播完成！');
+  } catch (err) {
+    toast.error('發送失敗：' + (err.message || '請確認 Cloud Functions 是否正常運作'));
+  } finally {
+    testing.value = false;
+  }
+}
 
 function getBindingTimeValue(b) {
   const val = b.bindingTime || b.updatedAt || b.migratedAt || b.createdAt;

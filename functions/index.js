@@ -8,9 +8,8 @@ admin.initializeApp();
 
 const { lineWebhook } = require('./lineWebhook');
 const { 
-  sendDutyRemindersScheduled, 
-  sendEventRemindersScheduled, 
-  sendMeetingRemindersScheduled,
+  sendDailyUnifiedRemindersScheduled,
+  sendDailyUnifiedRemindersForDate,
   expireStaleSwapRequestsScheduled 
 } = require('./scheduledTasks');
 const { syncBackupToSheetsScheduled } = require('./googleSheetsBackup');
@@ -38,9 +37,8 @@ exports.revertDutySwap = onCall(async (request) => {
 });
 
 exports.lineWebhook = lineWebhook;
-exports.sendDutyRemindersScheduled = sendDutyRemindersScheduled;
-exports.sendEventRemindersScheduled = sendEventRemindersScheduled;
-exports.sendMeetingRemindersScheduled = sendMeetingRemindersScheduled;
+exports.sendDailyUnifiedRemindersScheduled = sendDailyUnifiedRemindersScheduled;
+exports.sendDailyUnifiedRemindersForDate = sendDailyUnifiedRemindersForDate;
 exports.expireStaleSwapRequestsScheduled = expireStaleSwapRequestsScheduled;
 exports.syncBackupToSheetsScheduled = syncBackupToSheetsScheduled;
 exports.sendTestLineMessage = sendTestLineMessage;
@@ -48,4 +46,5 @@ exports.sendMeetingNotifications = sendMeetingNotifications;
 exports.sendMeetingRemindersForDate = sendMeetingRemindersForDate;
 exports.sendDutyRemindersForDate = sendDutyRemindersForDate;
 exports.sendEventRemindersForDate = sendEventRemindersForDate;
+
 
