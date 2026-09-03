@@ -70,9 +70,54 @@ function onXieliChange() {
   emit('change', current);
 }
 
+function syncFromModelValue(val) {
+  if (!val) {
+    selectedHeqi.value = '';
+    selectedHuhai.value = '';
+    selectedXieli.value = '';
+    return;
+  }
+  const orgMap = {};
+  orgsStore.orgs.forEach(o => { orgMap[o.id] = o; });
+
+  const chain = [];
+  let curr = orgMap[val];
+  let depth = 0;
+  while (curr && depth < 10) {
+    chain.unshift(curr);
+    curr = curr.parentId ? orgMap[curr.parentId] : null;
+    depth++;
+  }
+
+  if (chain.length === 1) {
+    selectedHeqi.value = chain[0].id;
+    selectedHuhai.value = '';
+    selectedXieli.value = '';
+  } else if (chain.length === 2) {
+    selectedHeqi.value = chain[0].id;
+    selectedHuhai.value = chain[1].id;
+    selectedXieli.value = '';
+  } else if (chain.length >= 3) {
+    selectedHeqi.value = chain[0].id;
+    selectedHuhai.value = chain[1].id;
+    selectedXieli.value = chain[2].id;
+  }
+}
+
+watch(() => props.modelValue, (newVal) => {
+  syncFromModelValue(newVal);
+});
+
+watch(() => orgsStore.orgs, () => {
+  if (props.modelValue) {
+    syncFromModelValue(props.modelValue);
+  }
+});
+
 onMounted(async () => {
   if (orgsStore.orgs.length === 0) {
     await orgsStore.fetchOrgs();
   }
+  syncFromModelValue(props.modelValue);
 });
 </script>

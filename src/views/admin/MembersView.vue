@@ -6,7 +6,7 @@
         <p class="text-sm text-muted">維護志工名冊基本資料、組織歸屬與指派兼任之幹部職稱</p>
       </div>
       <div class="flex gap-2">
-        <button class="btn btn-outline-primary" @click="showImportModal = true">📥 批次匯入名冊</button>
+        <button class="btn btn-outline-primary" @click="openImportModal">📥 批次匯入名冊</button>
         <button class="btn btn-primary" @click="openCreate">➕ 新增志工</button>
       </div>
     </div>
@@ -256,27 +256,87 @@
       </div>
     </div>
 
-    <!-- 批次匯入 Modal (含即時預覽表格) -->
+    <!-- 批次匯入 Modal (含指定組織與即時預覽表格) -->
     <div v-if="showImportModal" class="modal-backdrop" @click="showImportModal = false">
-      <div class="modal-content" style="max-width: 800px;" @click.stop>
+      <div class="modal-content" style="max-width: 850px;" @click.stop>
         <div class="modal-header">
-          <h3 class="modal-title">批次匯入志工名單 (Excel / CSV 複製貼上)</h3>
+          <h3 class="modal-title">📥 批次匯入志工名單 (Excel / CSV 複製貼上)</h3>
           <button class="modal-close" @click="showImportModal = false">×</button>
         </div>
-        <div class="modal-body">
-          <p class="text-sm text-muted mb-2">請從 Excel 複製表格內容並直接貼上於下方文字框（格式：姓名, 性別, 電話, 委員編號, 法號）：</p>
-          <textarea v-model="rawImportText" class="form-textarea" placeholder="王大明, 男, 0912345678, 12345, 慈明" style="min-height: 120px;" @input="parseImportText"></textarea>
+        <div class="modal-body space-y-4">
+          <!-- 1. 指定批次匯入之組織架構 -->
+          <div class="bg-gray-50 border border-gray-200 rounded-lg p-3.5">
+            <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <label class="form-label font-bold text-gray-800 m-0 flex items-center gap-1.5">
+                🏛️ 指定批次匯入之組織架構 (和氣 / 互愛 / 協力)：
+              </label>
+              <div class="flex items-center gap-2">
+                <span v-if="importOrgId" class="text-xs bg-primary-50 text-primary px-2.5 py-1 rounded font-bold border border-primary-200">
+                  {{ orgsStore.getOrgPath(importOrgId) }}
+                </span>
+                <button v-if="importOrgId" type="button" class="btn btn-xs btn-outline" @click="importOrgId = ''">
+                  清除指定 (不限組織)
+                </button>
+              </div>
+            </div>
+            <OrgCascader v-model="importOrgId" />
+            <p class="text-xs text-muted mt-2 mb-0">
+              💡 選擇後，此批次貼上匯入的所有志工將自動歸屬在此組織（例如：和氣二 ➔ 互愛一 ➔ 協力一）；若不指定組織可點擊「清除指定」。
+            </p>
+          </div>
 
-          <div v-if="parsedRows.length > 0" class="mt-4">
-            <h4 class="font-bold text-sm mb-2">解析預覽 (共 {{ parsedRows.length }} 筆)：</h4>
-            <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+          <!-- 2. 貼上表格資料 -->
+          <div>
+            <label class="form-label font-bold text-gray-800 mb-1">
+              📋 貼上名冊內容：
+            </label>
+            <p class="text-xs text-muted mb-2">請從 Excel 複製表格內容並直接貼上於下方文字框（格式：姓名, 性別, 電話, 委員編號, 法號）：</p>
+            <textarea 
+              v-model="rawImportText" 
+              class="form-textarea" 
+              placeholder="王大明, 男, 0912345678, 12345, 慈明&#10;陳小美, 女, 0922333444, 54321, 慮美" 
+              style="min-height: 120px;" 
+              @input="parseImportText"
+            ></textarea>
+          </div>
+
+          <!-- 3. 解析預覽表格 -->
+          <div v-if="parsedRows.length > 0" class="mt-3">
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="font-bold text-sm m-0">解析預覽 (共 {{ parsedRows.length }} 筆)：</h4>
+              <span class="text-xs text-primary font-bold">
+                歸屬組織：{{ importOrgId ? orgsStore.getOrgPath(importOrgId) : '未指定組織' }}
+              </span>
+            </div>
+            <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
               <table class="table">
                 <thead>
-                  <tr><th>姓名</th><th>性別</th><th>電話</th><th>編號</th><th>法號</th></tr>
+                  <tr>
+                    <th>姓名</th>
+                    <th>性別</th>
+                    <th>電話</th>
+                    <th>編號</th>
+                    <th>法號</th>
+                    <th>預計歸屬組織</th>
+                  </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(p, idx) in parsedRows" :key="idx">
-                    <td>{{ p.name }}</td><td>{{ p.gender }}</td><td>{{ p.phone }}</td><td>{{ p.volunteerCode }}</td><td>{{ p.dharmaName }}</td>
+                    <td class="font-bold text-gray-900">{{ p.name }}</td>
+                    <td>
+                      <span class="badge" :class="p.gender === '男' ? 'badge-primary' : 'badge-secondary'">
+                        {{ p.gender }}
+                      </span>
+                    </td>
+                    <td>{{ p.phone || '-' }}</td>
+                    <td>{{ p.volunteerCode || '-' }}</td>
+                    <td>{{ p.dharmaName || '-' }}</td>
+                    <td>
+                      <span v-if="importOrgId" class="text-xs text-primary font-medium">
+                        {{ orgsStore.getOrgPath(importOrgId) }}
+                      </span>
+                      <span v-else class="text-xs text-muted">未指定</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -286,7 +346,7 @@
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showImportModal = false">取消</button>
           <button class="btn btn-primary" :disabled="parsedRows.length === 0 || importing" @click="submitBatchImport">
-            {{ importing ? '匯入中...' : '確認批次匯入' }}
+            {{ importing ? '匯入中...' : `確認批次匯入 (${parsedRows.length} 筆)` }}
           </button>
         </div>
       </div>
@@ -295,7 +355,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { usePositionsStore } from '@/stores/positions';
@@ -313,6 +373,7 @@ const genderFilter = ref('');
 const positionFilter = ref('');
 const sortMode = ref('org'); // 'org': 依和氣/互愛/協力, 'name': 依姓名
 const showImportModal = ref(false);
+const importOrgId = ref('');
 const rawImportText = ref('');
 const parsedRows = ref([]);
 const importing = ref(false);
@@ -411,29 +472,60 @@ async function handleSearch() {
   });
 }
 
+function openImportModal() {
+  importOrgId.value = orgFilter.value || '';
+  rawImportText.value = '';
+  parsedRows.value = [];
+  showImportModal.value = true;
+}
+
 function parseImportText() {
   const lines = rawImportText.value.split(/\r?\n/).filter(l => l.trim().length > 0);
-  parsedRows.value = lines.map(line => {
+  const rows = [];
+  for (const line of lines) {
     const parts = line.split(/[,	]+/).map(p => p.trim());
-    return {
-      name: parts[0] || '',
-      gender: parts[1] || '女',
+    if (!parts[0] || parts[0] === '姓名' || parts[0] === '志工姓名') continue;
+
+    let gender = '女';
+    const gPart = parts[1] || '';
+    if (gPart.includes('男') || gPart.includes('兄')) {
+      gender = '男';
+    }
+
+    rows.push({
+      name: parts[0],
+      gender,
       phone: parts[2] || '',
       volunteerCode: parts[3] || '',
       dharmaName: parts[4] || '',
+      orgId: importOrgId.value || '',
       cadreRoles: []
-    };
-  });
+    });
+  }
+  parsedRows.value = rows;
 }
 
+watch(importOrgId, (newOrgId) => {
+  parsedRows.value.forEach(row => {
+    row.orgId = newOrgId || '';
+  });
+});
+
 async function submitBatchImport() {
+  if (parsedRows.value.length === 0) return;
   importing.value = true;
   try {
-    await membersStore.batchImportMembers(parsedRows.value);
-    toast.success(`成功匯入 ${parsedRows.value.length} 筆志工資料！`);
+    const rowsToImport = parsedRows.value.map(row => ({
+      ...row,
+      orgId: importOrgId.value || row.orgId || ''
+    }));
+    await membersStore.batchImportMembers(rowsToImport);
+    const orgPathText = importOrgId.value ? `至【${orgsStore.getOrgPath(importOrgId.value)}】` : '';
+    toast.success(`成功匯入 ${rowsToImport.length} 筆志工資料${orgPathText}！`);
     showImportModal.value = false;
     rawImportText.value = '';
     parsedRows.value = [];
+    importOrgId.value = '';
     await handleSearch();
   } catch (err) {
     toast.error('匯入失敗：' + err.message);
