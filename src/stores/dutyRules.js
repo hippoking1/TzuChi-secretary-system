@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { getDocById, setDocById, getCollectionDocs } from '@/firebase/db';
+import { getDocById, setDocById, getCollectionDocs, batchWriteItems } from '@/firebase/db';
 
 // 和氣二園區女眾班標準組別名單（依指示預載）
 export const DEFAULT_HEQI2_FEMALE_TEAMS = {
@@ -290,10 +290,19 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
     const rotationPointers = { ...(rule.rotationPointers || {}) };
 
-    const daysInMonth = new Date(year, month, 0).getDate();
+    // 決定遍歷起訖範圍（支援跨越任意月份之自訂區間）
+    let startD = startDate ? parseDateToMidnight(startDate) : new Date(year, month - 1, 1);
+    let endD = endDate ? parseDateToMidnight(endDate) : new Date(year, month, 0);
+
+    if (startD.getTime() > endD.getTime()) {
+      const tmp = startD;
+      startD = endD;
+      endD = tmp;
+    }
 
     // 複製目前矩陣
     const newMatrix = currentMatrix.map(slot => ({ ...slot }));
+    const allGeneratedSlots = [];
 
     // 紀錄各項資訊
     const scheduledDetails = [];
@@ -310,15 +319,13 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       }
     });
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      
-      // 支援自訂日期區間過濾
-      if (startDate && dateStr < startDate) continue;
-      if (endDate && dateStr > endDate) continue;
-
-      const dateObj = new Date(year, month - 1, day);
-      const dayOfWeek = String(dateObj.getDay()); // '0' ~ '6'
+    const curr = new Date(startD.getTime());
+    while (curr <= endD) {
+      const y = curr.getFullYear();
+      const m = String(curr.getMonth() + 1).padStart(2, '0');
+      const d = String(curr.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+      const dayOfWeek = String(curr.getDay()); // '0' ~ '6'
 
       // 檢查此日是否歸屬和氣二
       const assignedHeqi = getHeqiForDate(dateStr);
@@ -326,12 +333,16 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const shouldApplyRule = (mode === 'force_heqi2') || (mode === 'heqi_only' && isHeqi2Turn);
 
       if (!shouldApplyRule) {
+        curr.setDate(curr.getDate() + 1);
         continue;
       }
 
       // 取得該星期幾所定義的組別名冊清單
       const teams = weekdayTeams[dayOfWeek] || [];
-      if (teams.length === 0) continue;
+      if (teams.length === 0) {
+        curr.setDate(curr.getDate() + 1);
+        continue;
+      }
 
       // 組別輪替依「自基準日起算的該和氣輪值週次」循序下輪
       let teamIndex = 0;
@@ -345,14 +356,18 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       }
 
       const assignedTeam = teams[teamIndex];
-      if (!assignedTeam || !Array.isArray(assignedTeam.members)) continue;
+      if (!assignedTeam || !Array.isArray(assignedTeam.members)) {
+        curr.setDate(curr.getDate() + 1);
+        continue;
+      }
 
       const rawMembers = assignedTeam.members.map(n => (n || '').trim()).filter(Boolean);
-      if (rawMembers.length === 0) continue;
+      if (rawMembers.length === 0) {
+        curr.setDate(curr.getDate() + 1);
+        continue;
+      }
 
-      // 找出該日女眾班的 slots (YL_F)
-      const daySlots = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'YL_F'));
-      const quota = daySlots.length || 4;
+      const quota = 4;
 
       // 處理人數 > quota 的備用輪替機制（方案B）
       let selectedMembers = [];
@@ -386,20 +401,46 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         });
       }
 
-      // 指派給 slots
-      daySlots.forEach((slot, slotIdx) => {
-        // 檢查覆蓋策略
-        if (overwriteStrategy === 'empty_only' && slot.memberName) {
-          skippedSlots.push({ slotId: slot.id, reason: '已有排班故保留' });
-          return;
-        }
+      // 找出若存在於當前畫面矩陣中的 slots
+      const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'YL_F'));
 
+      for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
+        const slotNumber = slotIdx + 1;
         const memberName = selectedMembers[slotIdx] || '';
         const memberObj = memberName ? nameToMember.get(memberName) : null;
 
-        slot.memberName = memberName;
-        slot.memberId = memberObj ? memberObj.id : (memberName ? memberName : '');
-        slot.status = memberName ? '已排班' : '未指派';
+        // 若在當前矩陣中，同步更新前端視圖
+        const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
+        if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {
+          skippedSlots.push({ slotId: matrixSlot.id, reason: '已有排班故保留' });
+          continue;
+        }
+
+        if (matrixSlot) {
+          matrixSlot.memberName = memberName;
+          matrixSlot.memberId = memberObj ? memberObj.id : (memberName || '');
+          matrixSlot.status = memberName ? '已排班' : '未指派';
+        }
+
+        // 加入欲存入 Firestore 的完整席位記錄
+        const slotItem = {
+          id: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_${slotNumber}`,
+          location,
+          dutyDate: dateStr,
+          shiftId: rule.shiftId || 'YL_F',
+          shiftLabel: rule.shiftLabel || '女眾班',
+          shiftStart: '08:00',
+          shiftEnd: '16:00',
+          timeRange: '08:00~16:00',
+          quota,
+          slotIndex: slotNumber,
+          genderType: '女',
+          isWeekend: dayOfWeek === '0' || dayOfWeek === '6',
+          memberId: memberObj ? memberObj.id : (memberName || ''),
+          memberName: memberName || '',
+          status: memberName ? '已排班' : '未指派'
+        };
+        allGeneratedSlots.push(slotItem);
 
         // 檢查東港衝突
         if (memberName && otherMap.has(dateStr)) {
@@ -408,16 +449,16 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             conflicts.push({
               dateStr,
               memberName,
-              slotId: slot.id,
+              slotId: slotItem.id,
               currentLocation: location,
-              currentShift: slot.shiftLabel,
+              currentShift: slotItem.shiftLabel,
               otherLocation: otherConflicts[0].location || '東港聯絡處',
               otherShift: otherConflicts[0].shiftLabel || '值班',
               suggestAction: '優先保留園區排班，建議調動東港值班人員'
             });
           }
         }
-      });
+      }
 
       scheduledDetails.push({
         dateStr,
@@ -429,16 +470,44 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         assignedMembers: selectedMembers.slice(0, quota),
         standbys
       });
+
+      curr.setDate(curr.getDate() + 1);
     }
 
     return {
       matrixList: newMatrix,
+      allGeneratedSlots,
       scheduledDetails,
       conflicts,
       standbyList,
       skippedSlots,
       updatedRotationPointers: rotationPointers
     };
+  }
+
+  /**
+   * 將自動排班產生的席位清單批次儲存至 Firestore
+   * @param {Array} slots
+   * @param {Object} updatedPointers
+   * @param {string} ruleId
+   */
+  async function saveAutoScheduleToDb(slots = [], updatedPointers = null, ruleId = 'rule_heqi2_campus_female') {
+    loading.value = true;
+    try {
+      if (slots && slots.length > 0) {
+        await batchWriteItems('dutyShifts', slots, 'set');
+      }
+      if (updatedPointers && Object.keys(updatedPointers).length > 0) {
+        const found = rules.value.find(r => r.id === ruleId);
+        if (found) {
+          found.rotationPointers = { ...(found.rotationPointers || {}), ...updatedPointers };
+          await setDocById('dutySchedulingRules', ruleId, found);
+        }
+      }
+      return true;
+    } finally {
+      loading.value = false;
+    }
   }
 
   return {
@@ -452,6 +521,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     fetchWeekRotation,
     saveRule,
     saveWeekRotation,
-    generateAutoSchedule
+    generateAutoSchedule,
+    saveAutoScheduleToDb
   };
 });

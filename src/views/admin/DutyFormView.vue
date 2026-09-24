@@ -202,7 +202,7 @@
         <div class="modal-header">
           <div>
             <h3 class="modal-title flex items-center gap-2">
-              🤖 依規則自動排班 — {{ selectedMonth }} ({{ selectedLocation }})
+              🤖 依規則自動排班 — {{ autoStartDate && autoEndDate ? `${autoStartDate} ~ ${autoEndDate}` : selectedMonth }} ({{ selectedLocation }})
             </h3>
             <p class="text-xs text-muted mt-1">
               依據「和氣週輪值」與「星期 × 整組名冊」自動產生排班建議
@@ -423,15 +423,15 @@
           </router-link>
 
           <div class="flex items-center gap-2">
-            <button class="btn btn-outline btn-sm" @click="showAutoModal = false">
+            <button class="btn btn-outline btn-sm" :disabled="savingAutoSchedule" @click="showAutoModal = false">
               取消
             </button>
             <button 
               class="btn btn-primary btn-sm" 
-              :disabled="!autoPreviewResult || autoPreviewResult.scheduledDetails.length === 0"
+              :disabled="savingAutoSchedule || !autoPreviewResult || autoPreviewResult.scheduledDetails.length === 0"
               @click="applyAutoSchedule"
             >
-              ✅ 確認套用至排班表
+              {{ savingAutoSchedule ? '儲存資料庫中...' : '💾 確認套用並自動儲存至資料庫' }}
             </button>
           </div>
         </div>
@@ -768,11 +768,28 @@ function runAutoPreview() {
   });
 }
 
-function applyAutoSchedule() {
+const savingAutoSchedule = ref(false);
+
+async function applyAutoSchedule() {
   if (!autoPreviewResult.value) return;
-  matrixList.value = autoPreviewResult.value.matrixList;
-  showAutoModal.value = false;
-  toast.success(`🎉 已成功套用自動排班！共排定 ${autoPreviewResult.value.scheduledDetails.length} 天 (${autoStartDate.value} ~ ${autoEndDate.value})，請檢查後點擊「💾 儲存本月排班表」！`);
+  savingAutoSchedule.value = true;
+  try {
+    const slots = autoPreviewResult.value.allGeneratedSlots || [];
+    const pointers = autoPreviewResult.value.updatedRotationPointers || null;
+
+    // 直接批次儲存至 Firestore 資料庫
+    await dutyRulesStore.saveAutoScheduleToDb(slots, pointers);
+
+    // 同步更新當前月畫面矩陣並重新自資料庫載入
+    await initMatrix();
+
+    showAutoModal.value = false;
+    toast.success(`🎉 自動排班已成功套用並儲存至資料庫！共排定 ${autoPreviewResult.value.scheduledDetails.length} 天、${slots.length} 席位 (${autoStartDate.value} ~ ${autoEndDate.value})！`);
+  } catch (err) {
+    toast.error('儲存排班至資料庫失敗：' + err.message);
+  } finally {
+    savingAutoSchedule.value = false;
+  }
 }
 
 onMounted(async () => {
