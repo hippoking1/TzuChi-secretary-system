@@ -83,6 +83,30 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     return new Date(y, m - 1, d, 0, 0, 0, 0);
   }
 
+  // 取得特定日期所在週的週一（以 weekStartDay 為基準）
+  function getWeekStartDate(dateObj, weekStartDay = 1) {
+    const day = dateObj.getDay();
+    const diffToStart = (day - weekStartDay + 7) % 7;
+    return new Date(dateObj.getTime() - diffToStart * 86400000);
+  }
+
+  /**
+   * 計算特定日期所在週與基準週相距的週數
+   * @param {string} dateStr 'YYYY-MM-DD'
+   * @param {object} rotationConfig
+   * @returns {number}
+   */
+  function getWeekDiff(dateStr, rotationConfig = weekRotation.value) {
+    const target = parseDateToMidnight(dateStr);
+    const base = parseDateToMidnight(rotationConfig.baseStartDate || '2026-01-05');
+    const startDay = rotationConfig.weekStartDay !== undefined ? rotationConfig.weekStartDay : 1;
+
+    const targetWeekStart = getWeekStartDate(target, startDay);
+    const baseWeekStart = getWeekStartDate(base, startDay);
+
+    return Math.round((targetWeekStart.getTime() - baseWeekStart.getTime()) / (7 * 86400000));
+  }
+
   /**
    * 計算特定日期在週輪值下歸屬的和氣
    * @param {string} dateStr 'YYYY-MM-DD'
@@ -90,19 +114,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
    * @returns {string} 和氣名稱，例如 '和氣二'
    */
   function getHeqiForDate(dateStr, rotationConfig = weekRotation.value) {
-    const target = parseDateToMidnight(dateStr);
-    const base = parseDateToMidnight(rotationConfig.baseStartDate || '2026-01-05');
-    
-    // 計算 target 所在週的週一（以 weekStartDay 為基準）
-    const targetDay = target.getDay(); // 0~6 (0:日, 1:一)
-    const diffToStart = (targetDay - rotationConfig.weekStartDay + 7) % 7;
-    const targetWeekStart = new Date(target.getTime() - diffToStart * 86400000);
-
-    const baseDay = base.getDay();
-    const baseDiffToStart = (baseDay - rotationConfig.weekStartDay + 7) % 7;
-    const baseWeekStart = new Date(base.getTime() - baseDiffToStart * 86400000);
-
-    const diffWeeks = Math.floor((targetWeekStart.getTime() - baseWeekStart.getTime()) / (7 * 86400000));
+    const diffWeeks = getWeekDiff(dateStr, rotationConfig);
     const order = rotationConfig.rotationOrder || ['和氣一', '和氣二', '和氣三', '和氣四'];
     const baseIdx = order.indexOf(rotationConfig.baseStartHeqi || order[0]);
     const startIndex = baseIdx >= 0 ? baseIdx : 0;
@@ -110,6 +122,29 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     let index = (startIndex + diffWeeks) % order.length;
     if (index < 0) index = (index + order.length) % order.length;
     return order[index];
+  }
+
+  /**
+   * 計算特定和氣在該日期是第幾次輪值週 (0-indexed：0=第1組, 1=第2組...)
+   * @param {string} dateStr 'YYYY-MM-DD'
+   * @param {string} heqiName '和氣二'
+   * @param {object} rotationConfig
+   * @returns {number}
+   */
+  function getHeqiRoundIndex(dateStr, heqiName = '和氣二', rotationConfig = weekRotation.value) {
+    const diffWeeks = getWeekDiff(dateStr, rotationConfig);
+    const order = rotationConfig.rotationOrder || ['和氣一', '和氣二', '和氣三', '和氣四'];
+    const baseIdx = order.indexOf(rotationConfig.baseStartHeqi || order[0]);
+    const startIndex = baseIdx >= 0 ? baseIdx : 0;
+
+    const targetHeqiIdx = order.indexOf(heqiName);
+    const targetIndex = targetHeqiIdx >= 0 ? targetHeqiIdx : 0;
+
+    // 計算基準和氣到達目標和氣的週次偏移量 (offset)
+    const offset = ((targetIndex - startIndex) % order.length + order.length) % order.length;
+
+    // 該和氣自基準日起算的第 N 次值週 (0-indexed)
+    return Math.floor((diffWeeks - offset) / order.length);
   }
 
   /**
@@ -223,6 +258,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       location = '宜蘭園區',
       year,
       month,
+      startDate = null, // 自訂區間起 'YYYY-MM-DD'
+      endDate = null,   // 自訂區間訖 'YYYY-MM-DD'
       currentMatrix = [],
       otherLocationDuties = [],
       allMembers = [],
@@ -253,9 +290,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
     const rotationPointers = { ...(rule.rotationPointers || {}) };
 
-    // 統計當月各星期幾在月份中出現的累計次數（例如：第1個週一、第2個週一）
     const daysInMonth = new Date(year, month, 0).getDate();
-    const weekdayOccurrenceCount = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 };
 
     // 複製目前矩陣
     const newMatrix = currentMatrix.map(slot => ({ ...slot }));
@@ -277,11 +312,13 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      
+      // 支援自訂日期區間過濾
+      if (startDate && dateStr < startDate) continue;
+      if (endDate && dateStr > endDate) continue;
+
       const dateObj = new Date(year, month - 1, day);
       const dayOfWeek = String(dateObj.getDay()); // '0' ~ '6'
-
-      weekdayOccurrenceCount[dayOfWeek] += 1;
-      const nthWeekday = weekdayOccurrenceCount[dayOfWeek]; // 本月第 N 次出現該星期
 
       // 檢查此日是否歸屬和氣二
       const assignedHeqi = getHeqiForDate(dateStr);
@@ -296,8 +333,17 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const teams = weekdayTeams[dayOfWeek] || [];
       if (teams.length === 0) continue;
 
-      // 組別輪替依「該星期在月份中的出現次序」循序輪派 (0-indexed: (nth - 1) % teams.length)
-      const teamIndex = (nthWeekday - 1) % teams.length;
+      // 組別輪替依「自基準日起算的該和氣輪值週次」循序下輪
+      let teamIndex = 0;
+      if (isHeqi2Turn) {
+        const roundIndex = getHeqiRoundIndex(dateStr, '和氣二');
+        teamIndex = ((roundIndex % teams.length) + teams.length) % teams.length;
+      } else {
+        // 全月強制模式下，依週次差循序推進
+        const diffWeeks = getWeekDiff(dateStr);
+        teamIndex = ((diffWeeks % teams.length) + teams.length) % teams.length;
+      }
+
       const assignedTeam = teams[teamIndex];
       if (!assignedTeam || !Array.isArray(assignedTeam.members)) continue;
 
@@ -376,7 +422,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       scheduledDetails.push({
         dateStr,
         dayOfWeek,
-        nthWeekday,
+        teamIndex,
         heqi: assignedHeqi,
         teamName: assignedTeam.teamName,
         assignedCount: Math.min(selectedMembers.length, quota),
@@ -399,7 +445,9 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     rules,
     weekRotation,
     loading,
+    getWeekDiff,
     getHeqiForDate,
+    getHeqiRoundIndex,
     fetchRules,
     fetchWeekRotation,
     saveRule,

@@ -212,18 +212,66 @@
         </div>
 
         <div class="modal-body flex flex-col gap-4">
-          <!-- 當月和氣輪值週次速覽 -->
+          <!-- 當月和氣輪值週次速覽與快速區間切換 -->
           <div class="card p-3 bg-gray-50 border">
-            <h4 class="text-xs font-bold text-gray-700 mb-2">🗓️ 本月週次負責和氣歸屬：</h4>
+            <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <h4 class="text-xs font-bold text-gray-700 m-0">🗓️ 本月週次負責和氣（點擊標籤可直接填入排班區間）：</h4>
+              <div class="flex items-center gap-1">
+                <button type="button" class="btn btn-xs btn-outline" @click="resetToFullMonth">
+                  整月
+                </button>
+                <button 
+                  v-if="firstHeqi2Week" 
+                  type="button" 
+                  class="btn btn-xs btn-primary btn-outline"
+                  @click="setQuickRange(firstHeqi2Week.fullStartDate, firstHeqi2Week.fullEndDate)"
+                >
+                  僅和氣二週 ({{ firstHeqi2Week.range }})
+                </button>
+              </div>
+            </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <span 
+              <button 
                 v-for="w in currentMonthWeekInfo" 
                 :key="w.range" 
-                class="badge text-xs py-1 px-2.5"
-                :class="w.isHeqi2 ? 'badge-primary font-bold' : 'badge-gray'"
+                type="button"
+                class="badge text-xs py-1 px-2.5 cursor-pointer border transition-all"
+                :class="w.isHeqi2 ? 'badge-primary font-bold shadow-sm' : 'badge-gray hover:bg-gray-200'"
+                @click="setQuickRange(w.fullStartDate, w.fullEndDate)"
+                title="點擊設定排班區間為此週"
               >
                 {{ w.range }}：{{ w.heqi }} {{ w.isHeqi2 ? '★(和氣二值週)' : '' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 自訂排班日期區間控制 -->
+          <div class="card p-3 border bg-blue-50/20">
+            <label class="form-label font-bold text-sm mb-2 flex items-center justify-between">
+              <span>📅 自訂自動排班日期區間：</span>
+              <span class="text-xs font-normal text-muted">
+                （將僅針對此區間內之日期執行規則排班）
               </span>
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <span class="text-xs text-muted block mb-1">開始日期 (Start Date)：</span>
+                <input 
+                  v-model="autoStartDate" 
+                  type="date" 
+                  class="form-input form-input-sm" 
+                  @change="runAutoPreview" 
+                />
+              </div>
+              <div>
+                <span class="text-xs text-muted block mb-1">結束日期 (End Date)：</span>
+                <input 
+                  v-model="autoEndDate" 
+                  type="date" 
+                  class="form-input form-input-sm" 
+                  @change="runAutoPreview" 
+                />
+              </div>
             </div>
           </div>
 
@@ -635,8 +683,10 @@ async function handleSave() {
 
 // 自動排班相關狀態與邏輯
 const showAutoModal = ref(false);
-const autoScheduleMode = ref('force_heqi2'); // 'force_heqi2' | 'heqi_only'
+const autoScheduleMode = ref('heqi_only'); // 預設優先以和氣輪值週次為準
 const overwriteStrategy = ref('overwrite'); // 'overwrite' | 'empty_only'
+const autoStartDate = ref('');
+const autoEndDate = ref('');
 const autoPreviewResult = ref(null);
 
 const currentMonthWeekInfo = computed(() => {
@@ -659,6 +709,8 @@ const currentMonthWeekInfo = computed(() => {
       const last = currentWeekDays[currentWeekDays.length - 1].dateStr.substring(5);
       weeks.push({
         range: `${first} ~ ${last}`,
+        fullStartDate: currentWeekDays[0].dateStr,
+        fullEndDate: currentWeekDays[currentWeekDays.length - 1].dateStr,
         heqi: currentWeekDays[0].heqi,
         isHeqi2: currentWeekDays[0].heqi === '和氣二',
         daysCount: currentWeekDays.length
@@ -669,8 +721,34 @@ const currentMonthWeekInfo = computed(() => {
   return weeks;
 });
 
+const firstHeqi2Week = computed(() => {
+  return currentMonthWeekInfo.value.find(w => w.isHeqi2) || null;
+});
+
+function setQuickRange(start, end) {
+  autoStartDate.value = start;
+  autoEndDate.value = end;
+  runAutoPreview();
+}
+
+function resetToFullMonth() {
+  if (!selectedMonth.value) return;
+  const [year, month] = selectedMonth.value.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  autoStartDate.value = `${year}-${String(month).padStart(2, '0')}-01`;
+  autoEndDate.value = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+  runAutoPreview();
+}
+
 function openAutoScheduleModal() {
   showAutoModal.value = true;
+  // 若該月有和氣二值週，預設帶入和氣二值週區間，否則帶入全月
+  if (firstHeqi2Week.value) {
+    autoStartDate.value = firstHeqi2Week.value.fullStartDate;
+    autoEndDate.value = firstHeqi2Week.value.fullEndDate;
+  } else {
+    resetToFullMonth();
+  }
   runAutoPreview();
 }
 
@@ -680,6 +758,8 @@ function runAutoPreview() {
     location: selectedLocation.value,
     year,
     month,
+    startDate: autoStartDate.value || null,
+    endDate: autoEndDate.value || null,
     currentMatrix: matrixList.value,
     otherLocationDuties: otherLocationDuties.value,
     allMembers: allMembers.value,
@@ -692,7 +772,7 @@ function applyAutoSchedule() {
   if (!autoPreviewResult.value) return;
   matrixList.value = autoPreviewResult.value.matrixList;
   showAutoModal.value = false;
-  toast.success(`🎉 已成功套用自動排班！共排定 ${autoPreviewResult.value.scheduledDetails.length} 天，請檢查後點擊「💾 儲存本月排班表」！`);
+  toast.success(`🎉 已成功套用自動排班！共排定 ${autoPreviewResult.value.scheduledDetails.length} 天 (${autoStartDate.value} ~ ${autoEndDate.value})，請檢查後點擊「💾 儲存本月排班表」！`);
 }
 
 onMounted(async () => {
