@@ -14,6 +14,16 @@
           </p>
         </div>
         <div class="flex items-center gap-3 flex-wrap">
+          <router-link to="/admin/duty-rules" class="btn btn-outline" title="設定組別名冊與週輪值">
+            ⚙️ 規則設定
+          </router-link>
+          <button 
+            v-if="selectedLocation === '宜蘭園區'" 
+            class="btn btn-accent" 
+            @click="openAutoScheduleModal"
+          >
+            🤖 依規則自動排班
+          </button>
           <router-link to="/admin/duty-schedule" class="btn btn-outline">
             ← 返回值班月曆
           </router-link>
@@ -185,17 +195,213 @@
         </div>
       </div>
     </div>
+
+    <!-- 依規則自動排班彈出視窗 (Auto Schedule Modal) -->
+    <div v-if="showAutoModal" class="modal-backdrop" @click="showAutoModal = false">
+      <div class="modal-content" style="max-width: 820px;" @click.stop>
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title flex items-center gap-2">
+              🤖 依規則自動排班 — {{ selectedMonth }} ({{ selectedLocation }})
+            </h3>
+            <p class="text-xs text-muted mt-1">
+              依據「和氣週輪值」與「星期 × 整組名冊」自動產生排班建議
+            </p>
+          </div>
+          <button class="modal-close" @click="showAutoModal = false">×</button>
+        </div>
+
+        <div class="modal-body flex flex-col gap-4">
+          <!-- 當月和氣輪值週次速覽 -->
+          <div class="card p-3 bg-gray-50 border">
+            <h4 class="text-xs font-bold text-gray-700 mb-2">🗓️ 本月週次負責和氣歸屬：</h4>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span 
+                v-for="w in currentMonthWeekInfo" 
+                :key="w.range" 
+                class="badge text-xs py-1 px-2.5"
+                :class="w.isHeqi2 ? 'badge-primary font-bold' : 'badge-gray'"
+              >
+                {{ w.range }}：{{ w.heqi }} {{ w.isHeqi2 ? '★(和氣二值週)' : '' }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 排班選項控制 -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="card p-3 border">
+              <label class="form-label font-bold text-sm mb-2">1. 選擇排班模式：</label>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input 
+                    v-model="autoScheduleMode" 
+                    type="radio" 
+                    value="heqi_only" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>僅排和氣二負責週次</strong>
+                    <small class="text-muted block text-xs">（符合四個和氣每週輪替規範）</small>
+                  </span>
+                </label>
+
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input 
+                    v-model="autoScheduleMode" 
+                    type="radio" 
+                    value="force_heqi2" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>全月套用和氣二規則</strong>
+                    <small class="text-muted block text-xs">（強制/測試模式：全月女眾班均由和氣二排入）</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="card p-3 border">
+              <label class="form-label font-bold text-sm mb-2">2. 既有排班處理方式：</label>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input 
+                    v-model="overwriteStrategy" 
+                    type="radio" 
+                    value="overwrite" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>⚡ 覆蓋全部席位</strong>
+                    <small class="text-muted block text-xs">（清除目標時段現有名冊，依規則完整重填）</small>
+                  </span>
+                </label>
+
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input 
+                    v-model="overwriteStrategy" 
+                    type="radio" 
+                    value="empty_only" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>📝 僅填入空白未指派席位</strong>
+                    <small class="text-muted block text-xs">（保留目前已手動排好的志工人員）</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 衝突檢測與備用人員提示 -->
+          <div v-if="autoPreviewResult?.conflicts?.length > 0" class="card conflict-banner p-3">
+            <h4 class="font-bold text-danger text-sm mb-1 flex items-center gap-1">
+              <span>⚠️ 偵測到 {{ autoPreviewResult.conflicts.length }} 筆與【東港聯絡處】排班衝突：</span>
+            </h4>
+            <p class="text-xs text-danger mb-2">
+              依排班衝突處理原則：<strong>以園區排班為優先</strong>，建議於套用後前往東港聯絡處調動志工！
+            </p>
+            <ul class="text-xs text-gray-700 pl-4 list-disc space-y-1">
+              <li v-for="(c, idx) in autoPreviewResult.conflicts" :key="idx">
+                <strong>{{ c.dateStr }}</strong>：志工「<strong class="text-primary">{{ c.memberName }}</strong>」原已排在【{{ c.otherLocation }} - {{ c.otherShift }}】
+              </li>
+            </ul>
+          </div>
+
+          <!-- 備用人員提示（5人組取4人） -->
+          <div v-if="autoPreviewResult?.standbyList?.length > 0" class="card p-3 bg-amber-50 border border-amber-200">
+            <h4 class="font-bold text-amber-800 text-xs mb-1 flex items-center gap-1">
+              <span>🔄 備用輪替機制已生效（組員超過 4 人，本次未排班之備用人員）：</span>
+            </h4>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span 
+                v-for="(st, idx) in autoPreviewResult.standbyList" 
+                :key="idx" 
+                class="badge badge-warning text-xs py-1 px-2"
+              >
+                {{ st.dateStr }} ({{ st.teamName }}) 備用：{{ st.standbys.join('、') }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 預覽排班成果明細 -->
+          <div class="preview-results-box border rounded-lg p-3 bg-white max-h-[320px] overflow-y-auto">
+            <div class="flex items-center justify-between mb-2">
+              <strong class="text-sm text-gray-800">
+                📋 排班預覽明細（預計排定 {{ autoPreviewResult?.scheduledDetails?.length || 0 }} 天）：
+              </strong>
+              <span class="text-xs text-muted">
+                {{ autoScheduleMode === 'heqi_only' ? '僅和氣二週次' : '全月模式' }} / {{ overwriteStrategy === 'overwrite' ? '覆蓋全部' : '僅填空白' }}
+              </span>
+            </div>
+
+            <div class="space-y-2">
+              <div 
+                v-for="item in autoPreviewResult?.scheduledDetails" 
+                :key="item.dateStr" 
+                class="card p-2.5 flex items-center justify-between border text-xs"
+                :class="item.heqi === '和氣二' ? 'bg-pink-50/30' : 'bg-gray-50/50'"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-primary text-sm">{{ item.dateStr }}</span>
+                  <span class="badge badge-info">{{ item.dayOfWeek === '0' ? '週日' : '週' + ['日','一','二','三','四','五','六'][Number(item.dayOfWeek)] }}</span>
+                  <span class="badge badge-gray">{{ item.heqi }}</span>
+                  <strong class="text-gray-700 ml-1">{{ item.teamName }}</strong>
+                </div>
+
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span 
+                    v-for="(m, mIdx) in item.assignedMembers" 
+                    :key="mIdx" 
+                    class="badge badge-primary py-0.5 px-2"
+                  >
+                    {{ m }}
+                  </span>
+                  <span v-if="item.standbys?.length > 0" class="text-muted text-[11px]">
+                    (備用: {{ item.standbys.join(',') }})
+                  </span>
+                </div>
+              </div>
+
+              <div v-if="!autoPreviewResult || autoPreviewResult.scheduledDetails.length === 0" class="text-center py-6 text-muted">
+                本月在此條件下無符合排班的日期（請檢查和氣週輪值設定，或切換為全月套用模式）
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer flex items-center justify-between">
+          <router-link to="/admin/duty-rules" class="btn btn-outline btn-sm">
+            ⚙️ 調整組別名冊與週輪值規則
+          </router-link>
+
+          <div class="flex items-center gap-2">
+            <button class="btn btn-outline btn-sm" @click="showAutoModal = false">
+              取消
+            </button>
+            <button 
+              class="btn btn-primary btn-sm" 
+              :disabled="!autoPreviewResult || autoPreviewResult.scheduledDetails.length === 0"
+              @click="applyAutoSchedule"
+            >
+              ✅ 確認套用至排班表
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
+import { useDutyRulesStore } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
 
 const dutiesStore = useDutiesStore();
+const dutyRulesStore = useDutyRulesStore();
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();
@@ -427,12 +633,76 @@ async function handleSave() {
   }
 }
 
+// 自動排班相關狀態與邏輯
+const showAutoModal = ref(false);
+const autoScheduleMode = ref('force_heqi2'); // 'force_heqi2' | 'heqi_only'
+const overwriteStrategy = ref('overwrite'); // 'overwrite' | 'empty_only'
+const autoPreviewResult = ref(null);
+
+const currentMonthWeekInfo = computed(() => {
+  if (!selectedMonth.value) return [];
+  const [year, month] = selectedMonth.value.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const weeks = [];
+  let currentWeekDays = [];
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateObj = new Date(year, month - 1, day);
+    const dayOfWeek = dateObj.getDay();
+    const heqi = dutyRulesStore.getHeqiForDate(dateStr);
+
+    currentWeekDays.push({ dateStr, dayOfWeek, heqi });
+
+    if (dayOfWeek === 0 || day === daysInMonth) {
+      const first = currentWeekDays[0].dateStr.substring(5);
+      const last = currentWeekDays[currentWeekDays.length - 1].dateStr.substring(5);
+      weeks.push({
+        range: `${first} ~ ${last}`,
+        heqi: currentWeekDays[0].heqi,
+        isHeqi2: currentWeekDays[0].heqi === '和氣二',
+        daysCount: currentWeekDays.length
+      });
+      currentWeekDays = [];
+    }
+  }
+  return weeks;
+});
+
+function openAutoScheduleModal() {
+  showAutoModal.value = true;
+  runAutoPreview();
+}
+
+function runAutoPreview() {
+  const [year, month] = selectedMonth.value.split('-').map(Number);
+  autoPreviewResult.value = dutyRulesStore.generateAutoSchedule({
+    location: selectedLocation.value,
+    year,
+    month,
+    currentMatrix: matrixList.value,
+    otherLocationDuties: otherLocationDuties.value,
+    allMembers: allMembers.value,
+    mode: autoScheduleMode.value,
+    overwriteStrategy: overwriteStrategy.value
+  });
+}
+
+function applyAutoSchedule() {
+  if (!autoPreviewResult.value) return;
+  matrixList.value = autoPreviewResult.value.matrixList;
+  showAutoModal.value = false;
+  toast.success(`🎉 已成功套用自動排班！共排定 ${autoPreviewResult.value.scheduledDetails.length} 天，請檢查後點擊「💾 儲存本月排班表」！`);
+}
+
 onMounted(async () => {
   loading.value = true;
   const [males, females] = await Promise.all([
     membersStore.fetchMembers({ gender: '男' }),
     membersStore.fetchMembers({ gender: '女' }),
-    orgsStore.fetchOrgs()
+    orgsStore.fetchOrgs(),
+    dutyRulesStore.fetchRules('宜蘭園區'),
+    dutyRulesStore.fetchWeekRotation('宜蘭園區')
   ]);
   maleMembers.value = males;
   femaleMembers.value = females;
@@ -513,4 +783,14 @@ onMounted(async () => {
 .btn-xs { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
 .ml-2 { margin-left: 0.5rem; }
 .whitespace-nowrap { white-space: nowrap; }
+
+.modal-backdrop {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 9990;
+}
+.modal-content { background: #ffffff; border-radius: var(--radius-lg); width: 92%; }
+.modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-200); display: flex; justify-content: space-between; align-items: center; }
+.modal-body { padding: 1.25rem 1.5rem; max-height: 70vh; overflow-y: auto; }
+.modal-footer { padding: 1rem 1.5rem; background: var(--gray-50); border-top: 1px solid var(--gray-200); }
+.modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-500); }
 </style>

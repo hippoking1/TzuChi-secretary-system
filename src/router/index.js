@@ -20,6 +20,7 @@ import MeetingsView from '@/views/admin/MeetingsView.vue';
 import MeetingFormView from '@/views/admin/MeetingFormView.vue';
 import DutyScheduleView from '@/views/admin/DutyScheduleView.vue';
 import DutyFormView from '@/views/admin/DutyFormView.vue';
+import DutyRulesView from '@/views/admin/DutyRulesView.vue';
 import ShiftSwapLogView from '@/views/admin/ShiftSwapLogView.vue';
 import MembersView from '@/views/admin/MembersView.vue';
 import OrgsView from '@/views/admin/OrgsView.vue';
@@ -59,6 +60,7 @@ const routes = [
       // 道場值班管理模組
       { path: 'duty-schedule', name: 'admin-duty-schedule', component: DutyScheduleView, meta: { permission: 'duty' } },
       { path: 'duty-form', name: 'admin-duty-form', component: DutyFormView, meta: { permission: 'duty' } },
+      { path: 'duty-rules', name: 'admin-duty-rules', component: DutyRulesView, meta: { permission: 'duty' } },
       { path: 'shift-swap-log', name: 'admin-shift-swap-log', component: ShiftSwapLogView, meta: { permission: 'duty' } },
       
       // 組織與志工管理模組

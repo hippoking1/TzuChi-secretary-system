@@ -84,6 +84,17 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 值班排班規則與和氣週輪值設定
+    match /dutySchedulingRules/{ruleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /dutyWeekRotation/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // LINE 綁定：前台綁定/後台管理
     match /lineBindings/{bindingId} {
       allow read: if true;

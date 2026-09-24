@@ -60,6 +60,9 @@
         <router-link to="/admin/duty-form" class="nav-item" active-class="active" @click="$emit('close')">
           <span>✏️ 月度排班維護</span>
         </router-link>
+        <router-link to="/admin/duty-rules" class="nav-item" active-class="active" @click="$emit('close')">
+          <span>⚙️ 排班規則管理</span>
+        </router-link>
         <router-link to="/admin/shift-swap-log" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🔄 調班紀錄查詢</span>
         </router-link>
