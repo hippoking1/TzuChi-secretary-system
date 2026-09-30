@@ -60,6 +60,37 @@ export const useDutiesStore = defineStore('duties', () => {
     }
   }
 
+  /**
+   * 依自訂日期區間 (startDate ~ endDate) 載入指定道場排班清單
+   */
+  async function fetchDutyScheduleByRange(location, startDate, endDate) {
+    loading.value = true;
+    try {
+      const list = await getCollectionDocs('dutyShifts', [
+        where('location', '==', location)
+      ]);
+      duties.value = list
+        .filter(d => {
+          if (!d.dutyDate) return false;
+          if (startDate && d.dutyDate < startDate) return false;
+          if (endDate && d.dutyDate > endDate) return false;
+          return true;
+        })
+        .map(d => ({
+          ...d,
+          timeRange: d.timeRange || getShiftTimeRange(location, d.shiftId, d.shiftLabel)
+        }))
+        .sort((a, b) => {
+          const cmp = (a.dutyDate || '').localeCompare(b.dutyDate || '');
+          if (cmp !== 0) return cmp;
+          return (a.id || '').localeCompare(b.id || '');
+        });
+      return duties.value;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function saveMonthlyDuties(location, year, month, dutyList) {
     loading.value = true;
     try {
@@ -127,6 +158,7 @@ export const useDutiesStore = defineStore('duties', () => {
     DUTY_SHIFTS_CONFIG,
     getShiftTimeRange,
     fetchDutySchedule,
+    fetchDutyScheduleByRange,
     saveMonthlyDuties,
     generateMonthlyTemplate
   };

@@ -32,6 +32,14 @@
           >
             🗑️ 刪除排班
           </button>
+          <button 
+            type="button"
+            class="btn btn-outline"
+            @click="showExportModal = true"
+            title="匯出指定區間或全月排班名單 (Excel / PDF)"
+          >
+            📤 匯出名冊
+          </button>
           <router-link to="/admin/duty-schedule" class="btn btn-outline">
             ← 返回值班月曆
           </router-link>
@@ -729,17 +737,28 @@
         </div>
       </div>
     </div>
+
+    <!-- 匯出排班名冊 Modal (支援自訂區間 / 整月) -->
+    <DutyExportModal 
+      :show="showExportModal" 
+      :default-location="selectedLocation" 
+      :default-month="selectedMonth" 
+      @close="showExportModal = false" 
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 import { useDutiesStore } from '@/stores/duties';
 import { useDutyRulesStore, getRuleQuota } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
 import { batchWriteItems } from '@/firebase/db';
+
+const showExportModal = ref(false);
 
 const dutiesStore = useDutiesStore();
 const dutyRulesStore = useDutyRulesStore();

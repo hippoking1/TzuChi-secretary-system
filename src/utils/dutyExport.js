@@ -82,7 +82,8 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
 }
 
 /**
- * 匯出整月志工值班排班表至 Excel (.xlsx)
+ * 匯出志工值班排班表至 Excel (.xlsx)
+ * - 支援整月或自訂日期區間
  * - 依所選和氣過濾（或全部和氣）
  * - 自動依「互愛及協力」建立獨立分頁工作表 (Worksheet)
  */
@@ -90,6 +91,8 @@ export function exportDutyScheduleToExcel({
   location = '宜蘭園區',
   year,
   month,
+  startDate = null,
+  endDate = null,
   duties = [],
   members = [],
   orgs = [],
@@ -98,8 +101,10 @@ export function exportDutyScheduleToExcel({
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
 
-  // 依和氣與眾別過濾
+  // 依和氣、眾別與日期區間過濾
   const filteredList = enrichedList.filter(item => {
+    if (startDate && item.dutyDate < startDate) return false;
+    if (endDate && item.dutyDate > endDate) return false;
     const matchHeqi = (targetHeqi === 'all' || !targetHeqi) ? true : (item.heqi === targetHeqi);
     const matchGender = (targetGender === 'all' || !targetGender) ? true : (item.genderType === targetGender);
     return matchHeqi && matchGender;
@@ -108,13 +113,32 @@ export function exportDutyScheduleToExcel({
   const genderLabel = targetGender === 'all' ? '全部志工' : (targetGender === '男' ? '男眾' : '女眾');
   const heqiLabel = targetHeqi === 'all' ? '全部和氣' : targetHeqi;
 
+  // 決定區間文字標籤與檔名標記
+  let dateRangeLabel = '';
+  let filenameDateTag = '';
+  if (startDate && endDate) {
+    if (startDate === endDate) {
+      dateRangeLabel = `${startDate}`;
+      filenameDateTag = `${startDate}`;
+    } else {
+      dateRangeLabel = `${startDate} ~ ${endDate}`;
+      filenameDateTag = `${startDate}至${endDate}`;
+    }
+  } else if (year && month) {
+    const monthStr = String(month).padStart(2, '0');
+    dateRangeLabel = `${year}年${monthStr}月`;
+    filenameDateTag = `${year}年${monthStr}月`;
+  } else {
+    dateRangeLabel = '值班名冊';
+    filenameDateTag = '值班名冊';
+  }
+
   if (filteredList.length === 0) {
-    throw new Error(`在【${location}】${year}年${month}月 (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供匯出`);
+    throw new Error(`在【${location}】${dateRangeLabel} (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供匯出`);
   }
 
   const wb = XLSX.utils.book_new();
   const nowStr = new Date().toLocaleString('zh-TW', { hour12: false });
-  const monthStr = String(month).padStart(2, '0');
 
   // ───── 1. 建立「總表」工作頁 ─────
   const genderSuffix = targetGender === 'all' ? '' : `(${genderLabel})`;
@@ -140,8 +164,8 @@ export function exportDutyScheduleToExcel({
   ]);
 
   const totalAoa = [
-    [`【慈濟 ${location}】${year}年${monthStr}月 志工值班排班表 - ${totalSheetTitle}`],
-    [`輸出範圍：${heqiLabel} ｜ 眾別：${genderLabel} ｜ 總席次：${filteredList.length} 席 ｜ 產表時間：${nowStr}`],
+    [`【慈濟 ${location}】${dateRangeLabel} 志工值班排班表 - ${totalSheetTitle}`],
+    [`輸出範圍：${heqiLabel} ｜ 眾別：${genderLabel} ｜ 區間：${dateRangeLabel} ｜ 總席次：${filteredList.length} 席 ｜ 產表時間：${nowStr}`],
     [],
     totalHeaders,
     ...totalRows,
@@ -211,8 +235,8 @@ export function exportDutyScheduleToExcel({
     ]);
 
     const grpAoa = [
-      [`【慈濟 ${location}】${year}年${monthStr}月 志工值班名冊${genderSuffix ? ` (${genderLabel})` : ''}`],
-      [`所屬單位：${grp.heqi} / ${grp.huai} / ${grp.xieli} ｜ 眾別：${genderLabel} ｜ 出勤人次：${grp.list.length} 席 ｜ 產表時間：${nowStr}`],
+      [`【慈濟 ${location}】${dateRangeLabel} 志工值班名冊${genderSuffix ? ` (${genderLabel})` : ''}`],
+      [`所屬單位：${grp.heqi} / ${grp.huai} / ${grp.xieli} ｜ 眾別：${genderLabel} ｜ 區間：${dateRangeLabel} ｜ 出勤人次：${grp.list.length} 席 ｜ 產表時間：${nowStr}`],
       [],
       grpHeaders,
       ...grpRows,
@@ -236,7 +260,7 @@ export function exportDutyScheduleToExcel({
 
   const scopeLabel = targetHeqi === 'all' ? '全區' : targetHeqi;
   const genderTag = targetGender === 'all' ? '' : `_${genderLabel}`;
-  const filename = `${location}_${year}年${monthStr}月_${scopeLabel}${genderTag}_志工值班名冊(依協力分頁).xlsx`;
+  const filename = `${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊(依協力分頁).xlsx`;
   XLSX.writeFile(wb, filename);
 
   return {
@@ -253,15 +277,22 @@ export function exportBatchHeqiExcel({
   location = '宜蘭園區',
   year,
   month,
+  startDate = null,
+  endDate = null,
   duties = [],
   members = [],
   orgs = [],
   targetGender = 'all'
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
+  const dateFiltered = enrichedList.filter(item => {
+    if (startDate && item.dutyDate < startDate) return false;
+    if (endDate && item.dutyDate > endDate) return false;
+    return true;
+  });
   const genderFiltered = (targetGender === 'all' || !targetGender)
-    ? enrichedList
-    : enrichedList.filter(item => item.genderType === targetGender);
+    ? dateFiltered
+    : dateFiltered.filter(item => item.genderType === targetGender);
 
   const heqiSet = new Set();
   genderFiltered.forEach(item => {
@@ -281,6 +312,8 @@ export function exportBatchHeqiExcel({
           location,
           year,
           month,
+          startDate,
+          endDate,
           duties,
           members,
           orgs,
@@ -305,6 +338,8 @@ export function printDutySchedulePdf({
   location = '宜蘭園區',
   year,
   month,
+  startDate = null,
+  endDate = null,
   duties = [],
   members = [],
   orgs = [],
@@ -313,6 +348,8 @@ export function printDutySchedulePdf({
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
   const filteredList = enrichedList.filter(item => {
+    if (startDate && item.dutyDate < startDate) return false;
+    if (endDate && item.dutyDate > endDate) return false;
     const matchHeqi = (targetHeqi === 'all' || !targetHeqi) ? true : (item.heqi === targetHeqi);
     const matchGender = (targetGender === 'all' || !targetGender) ? true : (item.genderType === targetGender);
     return matchHeqi && matchGender;
@@ -321,11 +358,30 @@ export function printDutySchedulePdf({
   const genderLabel = targetGender === 'all' ? '全部志工' : (targetGender === '男' ? '男眾' : '女眾');
   const heqiLabel = targetHeqi === 'all' ? '全部和氣' : targetHeqi;
 
-  if (filteredList.length === 0) {
-    throw new Error(`在【${location}】${year}年${month}月 (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供列印 PDF`);
+  // 決定區間文字標籤與檔名標記
+  let dateRangeLabel = '';
+  let filenameDateTag = '';
+  if (startDate && endDate) {
+    if (startDate === endDate) {
+      dateRangeLabel = `${startDate}`;
+      filenameDateTag = `${startDate}`;
+    } else {
+      dateRangeLabel = `${startDate} ~ ${endDate}`;
+      filenameDateTag = `${startDate}至${endDate}`;
+    }
+  } else if (year && month) {
+    const monthStr = String(month).padStart(2, '0');
+    dateRangeLabel = `${year}年${monthStr}月`;
+    filenameDateTag = `${year}年${monthStr}月`;
+  } else {
+    dateRangeLabel = '值班名冊';
+    filenameDateTag = '值班名冊';
   }
 
-  const monthStr = String(month).padStart(2, '0');
+  if (filteredList.length === 0) {
+    throw new Error(`在【${location}】${dateRangeLabel} (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供列印 PDF`);
+  }
+
   const printDateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
   const genderSuffix = targetGender === 'all' ? '' : `（${genderLabel}）`;
 
@@ -365,12 +421,12 @@ export function printDutySchedulePdf({
       <div class="print-page">
         <div class="header">
           <h1 class="title">慈濟【${location}】志工值班排班名冊${genderSuffix}</h1>
-          <p class="subtitle">${year} 年 ${monthStr} 月度值班表 ｜ 範圍：${heqiLabel} ｜ 眾別：${genderLabel}</p>
+          <p class="subtitle">${dateRangeLabel} 值班表 ｜ 範圍：${heqiLabel} ｜ 眾別：${genderLabel}</p>
         </div>
 
         <div class="meta-box">
           <div><strong>所屬組織：</strong>${grp.heqi} ➔ ${grp.huai} ➔ <span class="highlight">${grp.xieli}</span></div>
-          <div><strong>眾別：</strong>${genderLabel} ｜ <strong>本月值班總人次：</strong>${grp.list.length} 席</div>
+          <div><strong>眾別：</strong>${genderLabel} ｜ <strong>區間值班總人次：</strong>${grp.list.length} 席</div>
         </div>
 
         <table class="duty-table">
@@ -409,7 +465,7 @@ export function printDutySchedulePdf({
     <html>
     <head>
       <meta charset="utf-8">
-      <title>${location}_${year}年${monthStr}月_${scopeLabel}${genderTag}_志工值班名冊</title>
+      <title>${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊</title>
       <style>
         @page {
           size: A4 portrait;

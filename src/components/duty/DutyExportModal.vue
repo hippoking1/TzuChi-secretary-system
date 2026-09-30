@@ -4,10 +4,10 @@
       <div class="modal-header">
         <div>
           <h3 class="modal-title flex items-center gap-2">
-            📤 匯出整月志工值班排班名單
+            📤 匯出志工值班排班名單
           </h3>
           <p class="text-xs text-muted mt-1">
-            可依和氣篩選並自動依「互愛及協力」拆分獨立工作表 (Excel / PDF)
+            可指定整月份或自訂區間，依和氣/眾別篩選並自動依「互愛及協力」拆分獨立工作表 (Excel / PDF)
           </p>
         </div>
         <button class="modal-close" @click="$emit('close')">×</button>
@@ -19,15 +19,67 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">1. 選擇場地：</label>
-              <select v-model="selectedLocation" class="form-select form-select-sm" @change="onFilterChange">
+              <select v-model="selectedLocation" class="form-select form-select-sm" @change="onLocationChange">
                 <option value="宜蘭園區">宜蘭園區</option>
                 <option value="東港聯絡處">東港聯絡處</option>
               </select>
             </div>
 
             <div class="form-group mb-0">
-              <label class="form-label font-bold text-xs">2. 選擇月份：</label>
-              <input v-model="selectedMonth" type="month" class="form-input form-input-sm" @change="onFilterChange" />
+              <label class="form-label font-bold text-xs">2. 匯出區間模式：</label>
+              <div class="flex items-center gap-2 mt-0.5">
+                <label 
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded border bg-white cursor-pointer text-xs flex-1 transition-all"
+                  :class="rangeMode === 'month' ? 'border-primary bg-blue-50/50 font-bold text-primary shadow-xs' : 'hover:bg-gray-100'"
+                >
+                  <input type="radio" v-model="rangeMode" value="month" @change="onRangeModeChange" />
+                  <span>🗓️ 整月匯出</span>
+                </label>
+                <label 
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded border bg-white cursor-pointer text-xs flex-1 transition-all"
+                  :class="rangeMode === 'custom' ? 'border-primary bg-blue-50/50 font-bold text-primary shadow-xs' : 'hover:bg-gray-100'"
+                >
+                  <input type="radio" v-model="rangeMode" value="custom" @change="onRangeModeChange" />
+                  <span>📅 自訂區間</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 整月模式選擇月份 -->
+          <div v-if="rangeMode === 'month'" class="form-group mb-3 p-2.5 rounded bg-blue-50/30 border border-blue-200">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <label class="form-label font-bold text-xs text-primary m-0">🗓️ 選擇匯出月份：</label>
+              <span class="text-[11px] text-muted">
+                （將匯出 {{ exportStartDate }} ~ {{ exportEndDate }} 全月所有班次）
+              </span>
+            </div>
+            <div class="flex items-center gap-2 mt-1.5">
+              <input v-model="selectedMonth" type="month" class="form-input form-input-sm" style="max-width: 200px;" @change="onMonthChange" />
+              <button type="button" class="btn btn-xs btn-outline" @click="setMonthQuick(0)">本月</button>
+              <button type="button" class="btn btn-xs btn-outline" @click="setMonthQuick(1)">下月</button>
+            </div>
+          </div>
+
+          <!-- 自訂區間模式 -->
+          <div v-else class="form-group mb-3 p-2.5 rounded bg-amber-50/40 border border-amber-200">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-1.5">
+              <label class="form-label font-bold text-xs text-amber-900 m-0">📅 設定自訂匯出區間：</label>
+              <div class="flex items-center gap-1">
+                <button type="button" class="btn btn-xs btn-outline" @click="setCustomQuick('current_month')">當月全月</button>
+                <button type="button" class="btn btn-xs btn-outline" @click="setCustomQuick('first_half')">上半月 (1~15日)</button>
+                <button type="button" class="btn btn-xs btn-outline" @click="setCustomQuick('second_half')">下半月 (16~底)</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <span class="text-[11px] text-muted block mb-0.5">開始日期 (Start Date)：</span>
+                <input v-model="exportStartDate" type="date" class="form-input form-input-sm font-bold" @change="onCustomDateChange" />
+              </div>
+              <div>
+                <span class="text-[11px] text-muted block mb-0.5">結束日期 (End Date)：</span>
+                <input v-model="exportEndDate" type="date" class="form-input form-input-sm font-bold" @change="onCustomDateChange" />
+              </div>
             </div>
           </div>
 
@@ -87,9 +139,10 @@
         <div v-if="loading" class="text-center py-4 text-xs text-muted">
           🔄 正在載入與整理名冊資料中...
         </div>
-        <div v-else class="text-xs text-muted flex items-center justify-between px-1">
+        <div v-else class="text-xs text-muted flex items-center justify-between px-1 flex-wrap gap-2">
           <span>目前排班席次：<strong class="text-primary">{{ filteredDutiesCount }} 席</strong></span>
           <span v-if="targetXieliCount > 0">涵蓋協力組數：<strong>{{ targetXieliCount }} 組</strong></span>
+          <span>匯出區間：<strong class="text-gray-800">{{ exportStartDate }} ~ {{ exportEndDate }}</strong></span>
         </div>
       </div>
 
@@ -144,7 +197,9 @@ import { exportDutyScheduleToExcel, exportBatchHeqiExcel, printDutySchedulePdf, 
 const props = defineProps({
   show: { type: Boolean, default: false },
   defaultLocation: { type: String, default: '宜蘭園區' },
-  defaultMonth: { type: String, default: '' }
+  defaultMonth: { type: String, default: '' },
+  defaultStartDate: { type: String, default: '' },
+  defaultEndDate: { type: String, default: '' }
 });
 
 const emit = defineEmits(['close']);
@@ -154,8 +209,12 @@ const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();
 
+const rangeMode = ref('month'); // 'month' | 'custom'
 const selectedLocation = ref(props.defaultLocation || '宜蘭園區');
 const selectedMonth = ref(props.defaultMonth || new Date().toISOString().substring(0, 7));
+const exportStartDate = ref('');
+const exportEndDate = ref('');
+
 const selectedHeqi = ref('all');
 const selectedGender = ref('all');
 const loading = ref(false);
@@ -180,13 +239,34 @@ const genderOptions = [
   { value: '女', label: '僅女眾 (女眾班)', icon: '👩' }
 ];
 
+function updateDatesFromMonth(ym) {
+  if (!ym) return;
+  const [y, m] = ym.split('-').map(Number);
+  const lastD = new Date(y, m, 0).getDate();
+  exportStartDate.value = `${y}-${String(m).padStart(2, '0')}-01`;
+  exportEndDate.value = `${y}-${String(m).padStart(2, '0')}-${String(lastD).padStart(2, '0')}`;
+}
+
 async function loadData() {
-  if (!selectedMonth.value) return;
+  if (!exportStartDate.value || !exportEndDate.value) {
+    if (selectedMonth.value) {
+      updateDatesFromMonth(selectedMonth.value);
+    } else {
+      return;
+    }
+  }
+
+  // 防呆：起訖顛倒自動校正
+  if (exportStartDate.value > exportEndDate.value) {
+    const tmp = exportStartDate.value;
+    exportStartDate.value = exportEndDate.value;
+    exportEndDate.value = tmp;
+  }
+
   loading.value = true;
   try {
-    const [year, month] = selectedMonth.value.split('-').map(Number);
     const [dutiesList, membersList, orgsList] = await Promise.all([
-      dutiesStore.fetchDutySchedule(selectedLocation.value, year, month),
+      dutiesStore.fetchDutyScheduleByRange(selectedLocation.value, exportStartDate.value, exportEndDate.value),
       membersStore.members.length > 0 ? membersStore.members : membersStore.fetchMembers(),
       orgsStore.orgs.length > 0 ? orgsStore.orgs : orgsStore.fetchOrgs()
     ]);
@@ -203,12 +283,66 @@ async function loadData() {
 watch(() => props.show, (newVal) => {
   if (newVal) {
     if (props.defaultLocation) selectedLocation.value = props.defaultLocation;
-    if (props.defaultMonth) selectedMonth.value = props.defaultMonth;
+    if (props.defaultStartDate && props.defaultEndDate) {
+      rangeMode.value = 'custom';
+      exportStartDate.value = props.defaultStartDate;
+      exportEndDate.value = props.defaultEndDate;
+      selectedMonth.value = props.defaultStartDate.substring(0, 7);
+    } else {
+      rangeMode.value = 'month';
+      if (props.defaultMonth) selectedMonth.value = props.defaultMonth;
+      updateDatesFromMonth(selectedMonth.value);
+    }
     loadData();
   }
 });
 
-function onFilterChange() {
+function onLocationChange() {
+  loadData();
+}
+
+function onRangeModeChange() {
+  if (rangeMode.value === 'month') {
+    updateDatesFromMonth(selectedMonth.value);
+  }
+  loadData();
+}
+
+function onMonthChange() {
+  updateDatesFromMonth(selectedMonth.value);
+  loadData();
+}
+
+function onCustomDateChange() {
+  if (exportStartDate.value && exportEndDate.value) {
+    loadData();
+  }
+}
+
+function setMonthQuick(offsetMonths = 0) {
+  const now = new Date();
+  now.setMonth(now.getMonth() + offsetMonths);
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  selectedMonth.value = ym;
+  updateDatesFromMonth(ym);
+  loadData();
+}
+
+function setCustomQuick(type) {
+  const ym = selectedMonth.value || new Date().toISOString().substring(0, 7);
+  const [y, m] = ym.split('-').map(Number);
+  const lastD = new Date(y, m, 0).getDate();
+
+  if (type === 'current_month') {
+    exportStartDate.value = `${y}-${String(m).padStart(2, '0')}-01`;
+    exportEndDate.value = `${y}-${String(m).padStart(2, '0')}-${String(lastD).padStart(2, '0')}`;
+  } else if (type === 'first_half') {
+    exportStartDate.value = `${y}-${String(m).padStart(2, '0')}-01`;
+    exportEndDate.value = `${y}-${String(m).padStart(2, '0')}-15`;
+  } else if (type === 'second_half') {
+    exportStartDate.value = `${y}-${String(m).padStart(2, '0')}-16`;
+    exportEndDate.value = `${y}-${String(m).padStart(2, '0')}-${String(lastD).padStart(2, '0')}`;
+  }
   loadData();
 }
 
@@ -218,6 +352,12 @@ const enrichedList = computed(() => {
 
 const filteredDuties = computed(() => {
   let list = enrichedList.value;
+  if (exportStartDate.value) {
+    list = list.filter(d => d.dutyDate >= exportStartDate.value);
+  }
+  if (exportEndDate.value) {
+    list = list.filter(d => d.dutyDate <= exportEndDate.value);
+  }
   if (selectedHeqi.value !== 'all') {
     list = list.filter(d => d.heqi === selectedHeqi.value);
   }
@@ -240,18 +380,20 @@ const targetXieliCount = computed(() => {
 function handleExportExcel() {
   exporting.value = true;
   try {
-    const [year, month] = selectedMonth.value.split('-').map(Number);
+    const [year, month] = selectedMonth.value ? selectedMonth.value.split('-').map(Number) : [null, null];
     const res = exportDutyScheduleToExcel({
       location: selectedLocation.value,
       year,
       month,
+      startDate: exportStartDate.value,
+      endDate: exportEndDate.value,
       duties: internalDuties.value,
       members: internalMembers.value,
       orgs: internalOrgs.value,
       targetHeqi: selectedHeqi.value,
       targetGender: selectedGender.value
     });
-    toast.success(`🎉 Excel 匯出成功！共產出 ${res.totalCount} 席次、${res.groupCount} 個協力工作頁。`);
+    toast.success(`🎉 Excel 匯出成功！共產出 ${res.totalCount} 席次、${res.groupCount} 個協力工作頁 (${exportStartDate.value} ~ ${exportEndDate.value})。`);
   } catch (err) {
     toast.error('匯出 Excel 失敗：' + err.message);
   } finally {
@@ -262,17 +404,19 @@ function handleExportExcel() {
 function handleBatchHeqi() {
   exporting.value = true;
   try {
-    const [year, month] = selectedMonth.value.split('-').map(Number);
+    const [year, month] = selectedMonth.value ? selectedMonth.value.split('-').map(Number) : [null, null];
     const count = exportBatchHeqiExcel({
       location: selectedLocation.value,
       year,
       month,
+      startDate: exportStartDate.value,
+      endDate: exportEndDate.value,
       duties: internalDuties.value,
       members: internalMembers.value,
       orgs: internalOrgs.value,
       targetGender: selectedGender.value
     });
-    toast.success(`🎉 已啟動批次下載！正在為各和氣分別產出專屬 Excel 檔案（共 ${count} 份）。`);
+    toast.success(`🎉 已啟動批次下載！正在為各和氣分別產出專屬 Excel 檔案（共 ${count} 份，區間：${exportStartDate.value} ~ ${exportEndDate.value}）。`);
   } catch (err) {
     toast.error('批次匯出失敗：' + err.message);
   } finally {
@@ -283,11 +427,13 @@ function handleBatchHeqi() {
 function handlePrintPdf() {
   exporting.value = true;
   try {
-    const [year, month] = selectedMonth.value.split('-').map(Number);
+    const [year, month] = selectedMonth.value ? selectedMonth.value.split('-').map(Number) : [null, null];
     printDutySchedulePdf({
       location: selectedLocation.value,
       year,
       month,
+      startDate: exportStartDate.value,
+      endDate: exportEndDate.value,
       duties: internalDuties.value,
       members: internalMembers.value,
       orgs: internalOrgs.value,
@@ -303,7 +449,16 @@ function handlePrintPdf() {
 }
 
 onMounted(() => {
-  if (props.show) loadData();
+  if (props.show) {
+    if (props.defaultStartDate && props.defaultEndDate) {
+      rangeMode.value = 'custom';
+      exportStartDate.value = props.defaultStartDate;
+      exportEndDate.value = props.defaultEndDate;
+    } else {
+      updateDatesFromMonth(selectedMonth.value);
+    }
+    loadData();
+  }
 });
 </script>
 
