@@ -11,6 +11,9 @@
           <option value="東港聯絡處">東港聯絡處</option>
         </select>
         <input v-model="selectedMonth" type="month" class="form-input" style="min-width: 150px;" @change="loadSchedule" />
+        <button class="btn btn-outline flex items-center gap-1.5" @click="showExportModal = true">
+          📤 匯出排班名冊
+        </button>
         <router-link to="/admin/duty-form" class="btn btn-primary">✏️ 維護本月排班</router-link>
       </div>
     </div>
@@ -103,18 +106,28 @@
         </div>
       </div>
     </div>
+
+    <!-- 匯出排班名冊 Modal -->
+    <DutyExportModal 
+      :show="showExportModal" 
+      :default-location="selectedLocation" 
+      :default-month="selectedMonth" 
+      @close="showExportModal = false" 
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
+import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 
 const dutiesStore = useDutiesStore();
 
 const selectedLocation = ref('宜蘭園區');
 const selectedMonth = ref(new Date().toISOString().substring(0, 7));
 const showDayModal = ref(false);
+const showExportModal = ref(false);
 const selectedDayCell = ref(null);
 
 const calendarCells = computed(() => {

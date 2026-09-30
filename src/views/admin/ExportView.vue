@@ -10,9 +10,13 @@
       </div>
 
       <div class="card">
-        <h3 class="font-bold mb-2">📥 匯出月度值班表 (CSV)</h3>
-        <p class="text-sm text-muted mb-4">匯出宜蘭園區或東港聯絡處全月值班清單。</p>
-        <button class="btn btn-primary" @click="exportDutyData">產生值班表 CSV</button>
+        <h3 class="font-bold mb-2">📥 匯出月度值班表 (Excel / PDF)</h3>
+        <p class="text-sm text-muted mb-4">
+          匯出宜蘭園區或東港聯絡處全月排班名單，可依和氣篩選並自動依互愛及協力拆分獨立工作表 (Excel) 或獨立分頁 (PDF)。
+        </p>
+        <button class="btn btn-primary" @click="showDutyExportModal = true">
+          📤 匯出值班名冊 (Excel / PDF)
+        </button>
       </div>
 
       <div class="card" style="grid-column: span 2;">
@@ -25,6 +29,9 @@
         </button>
       </div>
     </div>
+
+    <!-- 值班名冊匯出 Modal -->
+    <DutyExportModal :show="showDutyExportModal" @close="showDutyExportModal = false" />
   </div>
 </template>
 
@@ -33,10 +40,12 @@ import { ref } from 'vue';
 import { useExport } from '@/composables/useExport';
 import { useToast } from '@/composables/useToast';
 import { getCollectionDocs } from '@/firebase/db';
+import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 
 const { downloadCsv } = useExport();
 const toast = useToast();
 const syncing = ref(false);
+const showDutyExportModal = ref(false);
 
 async function exportEventsData() {
   const regs = await getCollectionDocs('registrations');
