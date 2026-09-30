@@ -312,7 +312,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
    * 核心自動排班產生演算法（支援宜蘭園區與東港聯絡處、支援跨月自訂區間）
    * @param {Object} options
    */
-  function generateAutoSchedule(options) {
+  function generateAutoSchedule(options = {}) {
     const {
       location = '宜蘭園區',
       year,
@@ -322,6 +322,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       currentMatrix = [],
       otherLocationDuties = [],
       allMembers = [],
+      ruleId = null,    // 目標規則 ID
       mode = 'heqi_only', // 'heqi_only' | 'force_heqi2'
       overwriteStrategy = 'overwrite', // 'overwrite' | 'empty_only'
       targetRule = null
@@ -333,7 +334,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       if (m.name) nameToMember.set(m.name.trim(), m);
     });
 
-    // 尋找目標規則：依據傳入 ruleId、場地自選或自動配對
+    // 尋找目標規則：依據傳入 targetRule、ruleId、場地自選或自動配對
     let rule = targetRule;
     if (!rule && ruleId) {
       rule = rules.value.find(r => r.id === ruleId);
@@ -345,8 +346,11 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         rule = rules.value.find(r => r.location === '宜蘭園區' && r.heqiGroup === '和氣二' && r.shiftId === 'YL_F' && r.enabled !== false) || DEFAULT_HEQI2_CAMPUS_FEMALE_RULE;
       }
     }
+    if (!rule) {
+      rule = DEFAULT_HEQI2_CAMPUS_FEMALE_RULE;
+    }
 
-    const rotationPointers = { ...(rule.rotationPointers || {}) };
+    const rotationPointers = { ...(rule?.rotationPointers || {}) };
 
     // 決定遍歷起訖範圍（支援跨越任意月份之自訂區間）
     let startD = startDate ? parseDateToMidnight(startDate) : new Date(year, month - 1, 1);

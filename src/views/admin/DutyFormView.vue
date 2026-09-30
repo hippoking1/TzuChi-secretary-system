@@ -127,16 +127,16 @@
               {{ week.heqi }}值週
             </span>
             <span class="text-xs text-muted">
-              已排 {{ getWeekAssignedCount(week) }} / {{ getWeekTotalSlotsCount(week) }} 席
+              已排 {{ week.assignedCount }} / {{ week.totalCount }} 席
             </span>
           </div>
 
           <button 
             type="button" 
             class="btn btn-xs btn-outline text-danger border-danger hover:bg-red-50 flex items-center gap-1"
-            :disabled="clearing || getWeekAssignedCount(week) === 0"
+            :disabled="clearing || week.assignedCount === 0"
             @click="handleDeleteWeek(week)"
-            :title="getWeekAssignedCount(week) === 0 ? '本週尚無排班' : '一鍵刪除此週排班'"
+            :title="week.assignedCount === 0 ? '本週尚無排班' : '一鍵刪除此週排班'"
           >
             🗑️ 刪除此週排班
           </button>
@@ -199,7 +199,7 @@
                         <option value="">-- 未指派 --</option>
                         <!-- 若已指派志工不在目前過濾條件中，固定列於首位 -->
                         <option 
-                          v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
+                          v-if="slot.memberId && !isVolunteerInFilteredList(slot.memberId, slot.genderType)"
                           :value="slot.memberId"
                         >
                           ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
@@ -645,7 +645,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
 import { useDutyRulesStore, getRuleQuota } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
@@ -702,22 +702,24 @@ function clearFilters() {
   searchKeyword.value = '';
 }
 
+// 衝突檢測計算與 Map 快取 (O(1) 快速讀取)
 const conflictList = computed(() => {
   const conflicts = [];
   const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
 
-  const otherMap = {};
+  const otherMap = new Map();
   otherLocationDuties.value.forEach(d => {
     if (d.memberName && d.dutyDate) {
-      if (!otherMap[d.dutyDate]) otherMap[d.dutyDate] = {};
-      otherMap[d.dutyDate][d.memberName] = d;
+      if (!otherMap.has(d.dutyDate)) otherMap.set(d.dutyDate, new Map());
+      otherMap.get(d.dutyDate).set(d.memberName, d);
     }
   });
 
   matrixList.value.forEach(slot => {
     if (slot.memberName && slot.dutyDate) {
-      if (otherMap[slot.dutyDate] && otherMap[slot.dutyDate][slot.memberName]) {
-        const otherShift = otherMap[slot.dutyDate][slot.memberName];
+      const dayMap = otherMap.get(slot.dutyDate);
+      if (dayMap && dayMap.has(slot.memberName)) {
+        const otherShift = dayMap.get(slot.memberName);
         conflicts.push({
           dateStr: slot.dutyDate,
           memberName: slot.memberName,
@@ -733,31 +735,71 @@ const conflictList = computed(() => {
   return conflicts;
 });
 
+const conflictMap = computed(() => {
+  const map = new Map();
+  conflictList.value.forEach(c => {
+    map.set(c.slotId, `已在【${c.otherLocation} - ${c.otherShiftLabel}】排班`);
+  });
+  return map;
+});
+
+const conflictDateSet = computed(() => {
+  return new Set(conflictList.value.map(c => c.dateStr));
+});
+
 function dayHasConflict(dateStr) {
-  return conflictList.value.some(c => c.dateStr === dateStr);
+  return conflictDateSet.value.has(dateStr);
 }
 
 function slotConflictInfo(slot) {
-  const found = conflictList.value.find(c => c.slotId === slot.id);
-  if (!found) return '';
-  return `已在【${found.otherLocation} - ${found.otherShiftLabel}】排班`;
+  return conflictMap.value.get(slot.id) || '';
 }
+
+// 志工所屬組織路徑文字快取 Map，杜絕在各席位 option 渲染時重複遞迴搜尋 (30,000x 加速)
+const memberOrgPathMap = computed(() => {
+  const map = new Map();
+  const members = allMembers.value;
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
+    if (m.id && m.orgId) {
+      const p = orgsStore.getOrgPath(m.orgId);
+      if (p) map.set(m.id, `(${p})`);
+    }
+  }
+  return map;
+});
 
 function getMemberOrgPathText(memberId) {
   if (!memberId) return '';
-  const m = allMembers.value.find(x => x.id === memberId);
-  if (!m || !m.orgId) return '';
-  const path = orgsStore.getOrgPath(m.orgId);
-  return path ? `(${path})` : '';
+  return memberOrgPathMap.value.get(memberId) || '';
 }
 
-function getFilteredVolunteers(gender) {
-  const baseList = gender === '男' ? maleMembers.value : femaleMembers.value;
+// 志工當月排班次數快取 Map，杜絕數萬次重複 filter(matrixList)
+const memberShiftCountMap = computed(() => {
+  const counts = new Map();
+  const list = matrixList.value;
+  for (let i = 0; i < list.length; i++) {
+    const name = list[i].memberName;
+    if (name) {
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+  }
+  return counts;
+});
+
+function getMemberShiftCount(memberName) {
+  if (!memberName) return 0;
+  return memberShiftCountMap.value.get(memberName) || 0;
+}
+
+// 依據篩選條件計算男女志工清單 (computed 快取)
+function filterVolunteersByCriteria(baseList) {
   const allowedOrgIds = filterOrgId.value ? orgsStore.getDescendantOrgIds(filterOrgId.value) : null;
+  const kw = searchKeyword.value ? searchKeyword.value.toLowerCase().trim() : null;
+
   return baseList.filter(m => {
     if (allowedOrgIds && !allowedOrgIds.includes(m.orgId)) return false;
-    if (searchKeyword.value) {
-      const kw = searchKeyword.value.toLowerCase();
+    if (kw) {
       const matchName = (m.name || '').toLowerCase().includes(kw);
       const matchPhone = (m.phone || '').includes(kw);
       const matchCode = (m.volunteerCode || '').includes(kw);
@@ -768,9 +810,19 @@ function getFilteredVolunteers(gender) {
   });
 }
 
-function getMemberShiftCount(memberName) {
-  if (!memberName) return 0;
-  return matrixList.value.filter(s => s.memberName === memberName).length;
+const filteredMaleVolunteers = computed(() => filterVolunteersByCriteria(maleMembers.value));
+const filteredFemaleVolunteers = computed(() => filterVolunteersByCriteria(femaleMembers.value));
+
+const filteredMaleVolunteerIds = computed(() => new Set(filteredMaleVolunteers.value.map(m => m.id)));
+const filteredFemaleVolunteerIds = computed(() => new Set(filteredFemaleVolunteers.value.map(m => m.id)));
+
+function getFilteredVolunteers(gender) {
+  return gender === '男' ? filteredMaleVolunteers.value : filteredFemaleVolunteers.value;
+}
+
+function isVolunteerInFilteredList(memberId, gender) {
+  if (!memberId) return false;
+  return gender === '男' ? filteredMaleVolunteerIds.value.has(memberId) : filteredFemaleVolunteerIds.value.has(memberId);
 }
 
 function onSlotMemberChange(slot) {
@@ -935,22 +987,32 @@ const groupedWeeks = computed(() => {
   const dayMap = new Map();
   groupedDays.value.forEach(d => dayMap.set(d.dateStr, d));
 
-  return currentMonthWeekInfo.value.map(w => ({
-    ...w,
-    days: (w.dateStrings || []).map(ds => dayMap.get(ds)).filter(Boolean)
-  }));
+  return currentMonthWeekInfo.value.map(w => {
+    const days = (w.dateStrings || []).map(ds => dayMap.get(ds)).filter(Boolean);
+    let assignedCount = 0;
+    let totalCount = 0;
+    days.forEach(d => {
+      (d.slots || []).forEach(s => {
+        totalCount++;
+        if (s.memberName) assignedCount++;
+      });
+    });
+
+    return {
+      ...w,
+      days,
+      assignedCount,
+      totalCount
+    };
+  });
 });
 
 function getWeekAssignedCount(week) {
-  if (!week) return 0;
-  const dateSet = new Set(week.dateStrings || (week.days ? week.days.map(d => d.dateStr) : []));
-  return matrixList.value.filter(s => dateSet.has(s.dutyDate) && !!s.memberName).length;
+  return week?.assignedCount ?? 0;
 }
 
 function getWeekTotalSlotsCount(week) {
-  if (!week) return 0;
-  const dateSet = new Set(week.dateStrings || (week.days ? week.days.map(d => d.dateStr) : []));
-  return matrixList.value.filter(s => dateSet.has(s.dutyDate)).length;
+  return week?.totalCount ?? 0;
 }
 
 async function handleDeleteMonth() {
@@ -1046,6 +1108,12 @@ const currentSelectedAutoRuleQuota = computed(() => {
   return getRuleQuota(currentSelectedAutoRule.value);
 });
 
+// 監聽道場切換，自動匹配當前道場適用的排班規則
+watch(selectedLocation, (newLoc) => {
+  const validRule = (dutyRulesStore.rules || []).find(r => r.location === newLoc && r.enabled !== false);
+  selectedAutoRuleId.value = validRule ? validRule.id : '';
+});
+
 function onAutoRuleChange() {
   runAutoPreview();
 }
@@ -1055,35 +1123,52 @@ function openAutoScheduleModal() {
   if (!selectedAutoRuleId.value || !availableAutoRules.value.some(r => r.id === selectedAutoRuleId.value)) {
     selectedAutoRuleId.value = availableAutoRules.value[0]?.id || '';
   }
+
   if (selectedLocation.value === '東港聯絡處') {
-    resetToFullMonth();
+    if (selectedMonth.value) {
+      const [year, month] = selectedMonth.value.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      autoStartDate.value = `${year}-${String(month).padStart(2, '0')}-01`;
+      autoEndDate.value = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    }
   } else {
     // 宜蘭園區：若該月有和氣二值週，預設帶入和氣二值週區間，否則帶入全月
     if (firstHeqi2Week.value) {
       autoStartDate.value = firstHeqi2Week.value.fullStartDate;
       autoEndDate.value = firstHeqi2Week.value.fullEndDate;
     } else {
-      resetToFullMonth();
+      if (selectedMonth.value) {
+        const [year, month] = selectedMonth.value.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+        autoStartDate.value = `${year}-${String(month).padStart(2, '0')}-01`;
+        autoEndDate.value = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+      }
     }
   }
   runAutoPreview();
 }
 
 function runAutoPreview() {
-  const [year, month] = selectedMonth.value.split('-').map(Number);
-  autoPreviewResult.value = dutyRulesStore.generateAutoSchedule({
-    location: selectedLocation.value,
-    year,
-    month,
-    startDate: autoStartDate.value || null,
-    endDate: autoEndDate.value || null,
-    currentMatrix: matrixList.value,
-    otherLocationDuties: otherLocationDuties.value,
-    allMembers: allMembers.value,
-    ruleId: selectedAutoRuleId.value || null,
-    mode: autoScheduleMode.value,
-    overwriteStrategy: overwriteStrategy.value
-  });
+  if (!selectedMonth.value) return;
+  try {
+    const [year, month] = selectedMonth.value.split('-').map(Number);
+    autoPreviewResult.value = dutyRulesStore.generateAutoSchedule({
+      location: selectedLocation.value,
+      year,
+      month,
+      startDate: autoStartDate.value || null,
+      endDate: autoEndDate.value || null,
+      currentMatrix: matrixList.value,
+      otherLocationDuties: otherLocationDuties.value,
+      allMembers: allMembers.value,
+      ruleId: selectedAutoRuleId.value || null,
+      mode: autoScheduleMode.value,
+      overwriteStrategy: overwriteStrategy.value
+    });
+  } catch (err) {
+    console.error('runAutoPreview error:', err);
+    toast.error('自動排班預覽計算失敗：' + err.message);
+  }
 }
 
 const savingAutoSchedule = ref(false);
