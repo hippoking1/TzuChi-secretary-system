@@ -3,7 +3,7 @@
     <!-- 頂部浮動固定控制與篩選面板 -->
     <div class="sticky-control-panel">
       <!-- 頂部導航與標題 -->
-      <div class="flex items-center justify-between mb-3 flex-wrap gap-4 bg-white/95 px-4 py-3 rounded-lg border border-gray-200 shadow-sm">
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-4 bg-white px-4 py-3 rounded-lg border border-gray-200 shadow-sm">
         <div>
           <h1 class="text-2xl font-bold m-0 flex items-center gap-2">📝 編輯月度值班表</h1>
           <p class="text-sm text-muted m-0 mt-1">
@@ -23,13 +23,22 @@
           >
             🤖 依規則自動排班
           </button>
+          <button 
+            type="button"
+            class="btn btn-outline text-danger border-danger hover:bg-red-50"
+            :disabled="loading || clearing"
+            @click="showClearModal = true"
+            title="一鍵刪除整月或指定週次排班"
+          >
+            🗑️ 刪除排班
+          </button>
           <router-link to="/admin/duty-schedule" class="btn btn-outline">
             ← 返回值班月曆
           </router-link>
           <button 
             class="btn btn-primary" 
             :class="{ 'btn-danger': conflictList.length > 0 }"
-            :disabled="saving" 
+            :disabled="saving || clearing" 
             @click="handleSave"
           >
             {{ saving ? '儲存中...' : (conflictList.length > 0 ? '⚠️ 存在衝突請先修正' : '💾 儲存本月排班表') }}
@@ -53,7 +62,7 @@
       </div>
 
       <!-- 1. 場地與月份選擇控制卡片 -->
-      <div class="card mb-4 p-4 bg-white/95 shadow-md">
+      <div class="card mb-0 p-4 bg-white shadow-sm">
         <div class="duty-control-row">
           <div class="form-group mb-0">
             <label class="form-label font-bold">1. 選擇場地：</label>
@@ -105,89 +114,119 @@
       <p class="text-muted text-lg">載入排班表與志工資料中...</p>
     </div>
 
-    <!-- 每日值班名單填寫 -->
-    <div v-else class="days-container flex flex-col gap-6">
-      <div 
-        v-for="day in groupedDays" 
-        :key="day.dateStr" 
-        class="card day-block-card"
-        :class="{ 'weekend-highlight': day.isWeekend, 'has-conflict': dayHasConflict(day.dateStr) }"
-      >
-        <!-- 日期標題欄 -->
-        <div class="day-block-header flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-primary font-bold text-lg">🗓️ {{ day.dateStr }}</span>
-            <span class="badge" :class="day.isWeekend ? 'badge-warning' : 'badge-gray'">
-              {{ day.dayOfWeek }}
+    <!-- 每日值班名單填寫 (按週次分組組織) -->
+    <div v-else class="weeks-container flex flex-col gap-6">
+      <div v-for="week in groupedWeeks" :key="week.weekNum" class="week-section">
+        <!-- 週次標題橫條 (含快速刪除本週排班按鈕) -->
+        <div class="week-header-bar flex items-center justify-between px-4 py-2.5 rounded-lg mb-3 bg-white border border-gray-200 shadow-sm">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-bold text-gray-800 text-sm md:text-base">
+              🗓️ 第 {{ week.weekNum }} 週 ({{ week.range }})
             </span>
-            <span v-if="dayHasConflict(day.dateStr)" class="badge badge-danger">
-              ⚠️ 此日期有衝突
+            <span v-if="selectedLocation === '宜蘭園區'" class="badge badge-primary text-xs">
+              {{ week.heqi }}值週
+            </span>
+            <span class="text-xs text-muted">
+              已排 {{ getWeekAssignedCount(week) }} / {{ getWeekTotalSlotsCount(week) }} 席
             </span>
           </div>
-          <span class="text-xs text-muted">
-            已排定 {{ day.slots.filter(s => !!s.memberName).length }} / {{ day.slots.length }} 席
-          </span>
+
+          <button 
+            type="button" 
+            class="btn btn-xs btn-outline text-danger border-danger hover:bg-red-50 flex items-center gap-1"
+            :disabled="clearing || getWeekAssignedCount(week) === 0"
+            @click="handleDeleteWeek(week)"
+            :title="getWeekAssignedCount(week) === 0 ? '本週尚無排班' : '一鍵刪除此週排班'"
+          >
+            🗑️ 刪除此週排班
+          </button>
         </div>
 
-        <!-- 班次分區網格 -->
-        <div class="grid grid-cols-2 gap-4 mt-4">
+        <!-- 該週內的每日值班卡片清單 -->
+        <div class="days-container flex flex-col gap-4">
           <div 
-            v-for="shiftGroup in day.shiftGroups" 
-            :key="shiftGroup.shiftId" 
-            class="shift-group-box"
-            :class="shiftGroup.genderType === '男' ? 'box-male' : 'box-female'"
+            v-for="day in week.days" 
+            :key="day.dateStr" 
+            class="card day-block-card"
+            :class="{ 'weekend-highlight': day.isWeekend, 'has-conflict': dayHasConflict(day.dateStr) }"
           >
-            <!-- 班次標題 -->
-            <div class="shift-group-title flex items-center justify-between mb-3">
-              <span class="font-bold text-sm text-gray-800">
-                {{ shiftGroup.shiftLabel }} ({{ shiftGroup.timeRange }}) - {{ shiftGroup.genderType }}眾 ({{ shiftGroup.quota }}位)
+            <!-- 日期標題欄 -->
+            <div class="day-block-header flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-primary font-bold text-lg">🗓️ {{ day.dateStr }}</span>
+                <span class="badge" :class="day.isWeekend ? 'badge-warning' : 'badge-gray'">
+                  {{ day.dayOfWeek }}
+                </span>
+                <span v-if="dayHasConflict(day.dateStr)" class="badge badge-danger">
+                  ⚠️ 此日期有衝突
+                </span>
+              </div>
+              <span class="text-xs text-muted">
+                已排定 {{ day.slots.filter(s => !!s.memberName).length }} / {{ day.slots.length }} 席
               </span>
             </div>
 
-            <!-- 各個席位下拉選單 -->
-            <div class="slots-list flex flex-col gap-2">
+            <!-- 班次分區網格 -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
               <div 
-                v-for="slot in shiftGroup.slots" 
-                :key="slot.id" 
-                class="slot-row flex items-center gap-2"
-                :class="{ 'slot-conflict': slotConflictInfo(slot) }"
+                v-for="shiftGroup in day.shiftGroups" 
+                :key="shiftGroup.shiftId" 
+                class="shift-group-box"
+                :class="shiftGroup.genderType === '男' ? 'box-male' : 'box-female'"
               >
-                <div class="flex-1">
-                  <select 
-                    v-model="slot.memberId" 
-                    class="form-select form-select-sm"
-                    :class="{ 'border-danger': slotConflictInfo(slot) }"
-                    @change="onSlotMemberChange(slot)"
-                  >
-                    <option value="">-- 未指派 --</option>
-                    <!-- 若已指派志工不在目前過濾條件中，固定列於首位 -->
-                    <option 
-                      v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
-                      :value="slot.memberId"
-                    >
-                      ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
-                    </option>
-                    <option 
-                      v-for="m in getFilteredVolunteers(slot.genderType)" 
-                      :key="m.id" 
-                      :value="m.id"
-                    >
-                      {{ m.name }} {{ getMemberOrgPathText(m.id) }} [本月: {{ getMemberShiftCount(m.name) }}班]
-                    </option>
-                  </select>
-                  <span v-if="slotConflictInfo(slot)" class="text-xs text-danger font-bold block mt-1">
-                    ⚠️ {{ slotConflictInfo(slot) }}
+                <!-- 班次標題 -->
+                <div class="shift-group-title flex items-center justify-between mb-3">
+                  <span class="font-bold text-sm text-gray-800">
+                    {{ shiftGroup.shiftLabel }} ({{ shiftGroup.timeRange }}) - {{ shiftGroup.genderType }}眾 ({{ shiftGroup.quota }}位)
                   </span>
                 </div>
 
-                <button 
-                  v-if="slot.memberId || slot.memberName" 
-                  class="btn btn-sm btn-outline btn-clear" 
-                  @click="clearSlot(slot)" 
-                  title="清空此席位"
-                >
-                  ✕
-                </button>
+                <!-- 各個席位下拉選單 -->
+                <div class="slots-list flex flex-col gap-2">
+                  <div 
+                    v-for="slot in shiftGroup.slots" 
+                    :key="slot.id" 
+                    class="slot-row flex items-center gap-2"
+                    :class="{ 'slot-conflict': slotConflictInfo(slot) }"
+                  >
+                    <div class="flex-1">
+                      <select 
+                        v-model="slot.memberId" 
+                        class="form-select form-select-sm"
+                        :class="{ 'border-danger': slotConflictInfo(slot) }"
+                        @change="onSlotMemberChange(slot)"
+                      >
+                        <option value="">-- 未指派 --</option>
+                        <!-- 若已指派志工不在目前過濾條件中，固定列於首位 -->
+                        <option 
+                          v-if="slot.memberId && !getFilteredVolunteers(slot.genderType).some(m => m.id === slot.memberId)"
+                          :value="slot.memberId"
+                        >
+                          ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
+                        </option>
+                        <option 
+                          v-for="m in getFilteredVolunteers(slot.genderType)" 
+                          :key="m.id" 
+                          :value="m.id"
+                        >
+                          {{ m.name }} {{ getMemberOrgPathText(m.id) }} [本月: {{ getMemberShiftCount(m.name) }}班]
+                        </option>
+                      </select>
+                      <span v-if="slotConflictInfo(slot)" class="text-xs text-danger font-bold block mt-1">
+                        ⚠️ {{ slotConflictInfo(slot) }}
+                      </span>
+                    </div>
+
+                    <button 
+                      v-if="slot.memberId || slot.memberName" 
+                      class="btn btn-sm btn-outline btn-clear" 
+                      @click="clearSlot(slot)" 
+                      title="清空此席位"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -469,6 +508,92 @@
         </div>
       </div>
     </div>
+
+    <!-- 一鍵刪除/清空排班彈出視窗 (Clear Schedule Modal) -->
+    <div v-if="showClearModal" class="modal-backdrop" @click="showClearModal = false">
+      <div class="modal-content" style="max-width: 620px;" @click.stop>
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title flex items-center gap-2 text-danger">
+              🗑️ 刪除 / 清空排班席位
+            </h3>
+            <p class="text-xs text-muted mt-1">
+              場地：<strong>{{ selectedLocation }}</strong> ｜ 月份：<strong>{{ selectedMonth }}</strong>
+            </p>
+          </div>
+          <button class="modal-close" @click="showClearModal = false">×</button>
+        </div>
+
+        <div class="modal-body flex flex-col gap-4">
+          <!-- 區塊 1：整月排班刪除 -->
+          <div class="card p-4 border border-red-200 bg-red-50/40">
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="font-bold text-danger text-sm m-0 flex items-center gap-1.5">
+                <span>🗓️ 整月排班一鍵刪除</span>
+              </h4>
+              <span class="badge badge-gray text-xs">
+                目前全月已排：<strong class="text-primary">{{ assignedTotalCount }} / {{ matrixList.length }}</strong> 席
+              </span>
+            </div>
+            <p class="text-xs text-gray-600 mb-3 leading-relaxed">
+              將清空【{{ selectedMonth }}】當月所有日期的已排班名單，並直接同步至資料庫。
+            </p>
+            <button 
+              type="button" 
+              class="btn btn-danger btn-sm btn-block flex items-center justify-center gap-1.5"
+              :disabled="clearing || assignedTotalCount === 0"
+              @click="handleDeleteMonth"
+            >
+              {{ clearing ? '刪除處理中...' : `🗑️ 一鍵刪除【${selectedMonth}】整月所有排班` }}
+            </button>
+          </div>
+
+          <!-- 區塊 2：依週次刪除排班 -->
+          <div class="card p-4 border">
+            <h4 class="font-bold text-gray-800 text-sm mb-2 flex items-center gap-1.5">
+              <span>📅 依特定週次刪除排班</span>
+            </h4>
+            <p class="text-xs text-muted mb-3">
+              可僅針對特定週次進行刪除與清空，其餘週次的排班將完整保留：
+            </p>
+
+            <div class="space-y-2">
+              <div 
+                v-for="w in currentMonthWeekInfo" 
+                :key="w.weekNum"
+                class="flex items-center justify-between p-2.5 border rounded-lg bg-gray-50/70 text-xs hover:bg-gray-100 transition-colors"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-gray-800">第 {{ w.weekNum }} 週</span>
+                  <span class="text-muted">({{ w.range }})</span>
+                  <span v-if="selectedLocation === '宜蘭園區'" class="badge badge-primary py-0.5 px-2">
+                    {{ w.heqi }}
+                  </span>
+                  <span class="text-gray-600 ml-1">
+                    已排：<strong>{{ getWeekAssignedCount(w) }}</strong> / {{ getWeekTotalSlotsCount(w) }} 席
+                  </span>
+                </div>
+
+                <button 
+                  type="button" 
+                  class="btn btn-xs btn-outline text-danger border-danger hover:bg-red-50"
+                  :disabled="clearing || getWeekAssignedCount(w) === 0"
+                  @click="handleDeleteWeek(w)"
+                >
+                  🗑️ 刪除此週
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer flex items-center justify-end">
+          <button class="btn btn-outline btn-sm" :disabled="clearing" @click="showClearModal = false">
+            關閉
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -479,6 +604,7 @@ import { useDutyRulesStore } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
+import { batchWriteItems } from '@/firebase/db';
 
 const dutiesStore = useDutiesStore();
 const dutyRulesStore = useDutyRulesStore();
@@ -492,6 +618,8 @@ const filterOrgId = ref('');
 const searchKeyword = ref('');
 const loading = ref(false);
 const saving = ref(false);
+const clearing = ref(false);
+const showClearModal = ref(false);
 
 const matrixList = ref([]);
 const otherLocationDuties = ref([]);
@@ -740,18 +868,102 @@ const currentMonthWeekInfo = computed(() => {
       const first = currentWeekDays[0].dateStr.substring(5);
       const last = currentWeekDays[currentWeekDays.length - 1].dateStr.substring(5);
       weeks.push({
+        weekNum: weeks.length + 1,
         range: `${first} ~ ${last}`,
         fullStartDate: currentWeekDays[0].dateStr,
         fullEndDate: currentWeekDays[currentWeekDays.length - 1].dateStr,
         heqi: currentWeekDays[0].heqi,
         isHeqi2: currentWeekDays[0].heqi === '和氣二',
-        daysCount: currentWeekDays.length
+        daysCount: currentWeekDays.length,
+        dateStrings: currentWeekDays.map(d => d.dateStr)
       });
       currentWeekDays = [];
     }
   }
   return weeks;
 });
+
+const groupedWeeks = computed(() => {
+  if (!currentMonthWeekInfo.value.length || !groupedDays.value.length) return [];
+  const dayMap = new Map();
+  groupedDays.value.forEach(d => dayMap.set(d.dateStr, d));
+
+  return currentMonthWeekInfo.value.map(w => ({
+    ...w,
+    days: (w.dateStrings || []).map(ds => dayMap.get(ds)).filter(Boolean)
+  }));
+});
+
+function getWeekAssignedCount(week) {
+  if (!week) return 0;
+  const dateSet = new Set(week.dateStrings || (week.days ? week.days.map(d => d.dateStr) : []));
+  return matrixList.value.filter(s => dateSet.has(s.dutyDate) && !!s.memberName).length;
+}
+
+function getWeekTotalSlotsCount(week) {
+  if (!week) return 0;
+  const dateSet = new Set(week.dateStrings || (week.days ? week.days.map(d => d.dateStr) : []));
+  return matrixList.value.filter(s => dateSet.has(s.dutyDate)).length;
+}
+
+async function handleDeleteMonth() {
+  const assigned = assignedTotalCount.value;
+  if (!confirm(`⚠️ 確定要一鍵刪除【${selectedLocation.value}】在【${selectedMonth.value}】整月的排班嗎？\n\n目前共有 ${assigned} 席已排定志工，執行後將清空全月所有席位並直接自資料庫刪除！`)) {
+    return;
+  }
+  clearing.value = true;
+  try {
+    const slotsToDelete = matrixList.value.filter(s => !!s.id);
+    if (slotsToDelete.length > 0) {
+      await batchWriteItems('dutyShifts', slotsToDelete, 'delete');
+    }
+    matrixList.value.forEach(s => {
+      s.memberId = '';
+      s.memberName = '';
+      s.status = '未指派';
+    });
+    await initMatrix();
+    showClearModal.value = false;
+    toast.success(`🎉 已成功刪除【${selectedMonth.value}】整月排班！共清空 ${assigned} 席位。`);
+  } catch (err) {
+    toast.error('刪除整月排班失敗：' + err.message);
+  } finally {
+    clearing.value = false;
+  }
+}
+
+async function handleDeleteWeek(week) {
+  if (!week) return;
+  const assigned = getWeekAssignedCount(week);
+  if (!confirm(`⚠️ 確定要一鍵刪除【第 ${week.weekNum} 週 (${week.range})】的排班嗎？\n\n目前該週共有 ${assigned} 席已排定志工，執行後將清空該週所有席位並直接自資料庫刪除！`)) {
+    return;
+  }
+  clearing.value = true;
+  try {
+    const dateSet = new Set(week.dateStrings || (week.days ? week.days.map(d => d.dateStr) : []));
+    const slotsToDelete = matrixList.value.filter(s => dateSet.has(s.dutyDate) && !!s.id);
+    
+    if (slotsToDelete.length > 0) {
+      await batchWriteItems('dutyShifts', slotsToDelete, 'delete');
+    }
+
+    matrixList.value.forEach(s => {
+      if (dateSet.has(s.dutyDate)) {
+        s.memberId = '';
+        s.memberName = '';
+        s.status = '未指派';
+      }
+    });
+
+    await initMatrix();
+    showClearModal.value = false;
+    toast.success(`🎉 已成功刪除第 ${week.weekNum} 週 (${week.range}) 排班！共清空 ${assigned} 席位。`);
+  } catch (err) {
+    toast.error(`刪除第 ${week.weekNum} 週排班失敗：` + err.message);
+  } finally {
+    clearing.value = false;
+  }
+}
 
 const firstHeqi2Week = computed(() => {
   return currentMonthWeekInfo.value.find(w => w.isHeqi2) || null;
@@ -850,12 +1062,27 @@ onMounted(async () => {
   position: sticky;
   top: 60px; /* 緊貼在 AppHeader 下方 */
   z-index: 100;
+  background-color: var(--gray-50); /* 實心背景，徹底遮擋下方捲動內容，解決透光疊字問題 */
+  padding-top: 0.5rem;
+  padding-bottom: 0.75rem;
   margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--gray-200);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 @media (max-width: 992px) {
   .sticky-control-panel {
     top: 50px;
+    padding-top: 0.35rem;
+    padding-bottom: 0.5rem;
   }
+}
+
+.week-section {
+  scroll-margin-top: 260px;
+}
+.week-header-bar {
+  background: #ffffff;
+  border-left: 4px solid var(--primary-500);
 }
 
 .duty-control-row {
