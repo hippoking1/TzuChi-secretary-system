@@ -243,7 +243,7 @@
               🤖 依規則自動排班 — {{ autoStartDate && autoEndDate ? `${autoStartDate} ~ ${autoEndDate}` : selectedMonth }} ({{ selectedLocation }})
             </h3>
             <p class="text-xs text-muted mt-1">
-              {{ selectedLocation === '東港聯絡處' ? '依據「男眾平日/假日循序循環名冊」自動排班，自動檢測園區衝突並順延' : '依據「和氣週輪值」與「星期 × 整組名冊」自動產生排班建議' }}
+              依據「{{ currentSelectedAutoRule?.ruleName || '所選排班規則' }}」{{ currentSelectedAutoRule?.ruleType === 'weekday_weekend_sequential' ? '（平假日雙軌循序輪替）' : '（星期 × 整組循環輪替）' }}自動產生排班建議，每班基本席次需求：{{ currentSelectedAutoRuleQuota }} 席
             </p>
           </div>
           <button class="modal-close" @click="showAutoModal = false">×</button>
@@ -257,7 +257,7 @@
                 <span>📋 選擇套用排班規則：</span>
               </label>
               <span v-if="currentSelectedAutoRule" class="badge badge-primary text-xs font-bold">
-                每班基本席次需求：{{ getRuleQuota(currentSelectedAutoRule) }} 席
+                每班基本席次需求：{{ currentSelectedAutoRuleQuota }} 席
               </span>
             </div>
             <select v-model="selectedAutoRuleId" class="form-select form-select-sm" @change="onAutoRuleChange">
@@ -267,8 +267,8 @@
             </select>
           </div>
 
-          <!-- 宜蘭園區：當月和氣輪值週次速覽與快速區間切換 -->
-          <div v-if="selectedLocation === '宜蘭園區'" class="card p-3 bg-gray-50 border">
+          <!-- A. 宜蘭園區和氣組隊值週規則：週次速覽與快速區間切換 -->
+          <div v-if="currentSelectedAutoRule?.ruleType === 'weekday_group_rotation' && selectedLocation === '宜蘭園區'" class="card p-3 bg-gray-50 border">
             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
               <h4 class="text-xs font-bold text-gray-700 m-0">🗓️ 本月週次負責和氣（點擊標籤可直接填入排班區間）：</h4>
               <div class="flex items-center gap-1">
@@ -300,10 +300,10 @@
             </div>
           </div>
 
-          <!-- 東港聯絡處：男眾排班規則提示與快速區間切換 -->
-          <div v-else class="card p-3 bg-blue-50/40 border border-blue-200">
+          <!-- B. 平假日雙軌循序輪替規則 (如東港聯絡處男眾) -->
+          <div v-else-if="currentSelectedAutoRule?.ruleType === 'weekday_weekend_sequential'" class="card p-3 bg-blue-50/40 border border-blue-200">
             <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-              <h4 class="text-xs font-bold text-primary m-0">🌊 東港聯絡處男眾值班規則（平日/假日雙軌循環輪替）：</h4>
+              <h4 class="text-xs font-bold text-primary m-0">🌊 {{ currentSelectedAutoRule.ruleName }}（平日/假日雙軌循環輪替）：</h4>
               <div class="flex items-center gap-1">
                 <button type="button" class="btn btn-xs btn-outline" @click="resetToFullMonth">
                   重設整月 ({{ selectedMonth }})
@@ -311,7 +311,22 @@
               </div>
             </div>
             <p class="text-xs text-muted m-0">
-              平日（週一至週五，22人名冊）與假日（週六至週日，14人名冊）分別依序排入席位。若遇宜蘭園區排班衝突，以園區為優先，東港自動順延由下一位志工接替！
+              平日（週一至週五）與假日（週六至週日）分別依序排入席位。若遇宜蘭園區排班衝突，以園區為優先，東港自動順延由下一位志工接替！
+            </p>
+          </div>
+
+          <!-- C. 非園區星期整組輪替規則 (如東港聯絡處女眾或未來其他道場) -->
+          <div v-else class="card p-3 bg-emerald-50/40 border border-emerald-200">
+            <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+              <h4 class="text-xs font-bold text-emerald-800 m-0">🌸 {{ currentSelectedAutoRule?.ruleName || '星期整組排班規則' }}（整月常態輪值）：</h4>
+              <div class="flex items-center gap-1">
+                <button type="button" class="btn btn-xs btn-outline" @click="resetToFullMonth">
+                  重設整月 ({{ selectedMonth }})
+                </button>
+              </div>
+            </div>
+            <p class="text-xs text-muted m-0">
+              依週一至週日各組別名冊常態循序輪替（每班需求 {{ currentSelectedAutoRuleQuota }} 席，多出志工下次自動備用輪替遞補）。
             </p>
           </div>
 
@@ -347,7 +362,8 @@
 
           <!-- 排班選項控制 -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div v-if="selectedLocation === '宜蘭園區'" class="card p-3 border">
+            <!-- 園區和氣值週模式選擇 -->
+            <div v-if="currentSelectedAutoRule?.ruleType === 'weekday_group_rotation' && selectedLocation === '宜蘭園區'" class="card p-3 border">
               <label class="form-label font-bold text-sm mb-2">1. 選擇排班模式：</label>
               <div class="flex flex-col gap-2">
                 <label class="flex items-center gap-2 text-sm cursor-pointer">
@@ -378,14 +394,28 @@
               </div>
             </div>
 
-            <div v-else class="card p-3 border">
-              <label class="form-label font-bold text-sm mb-2">1. 東港男眾輪值方式：</label>
+            <!-- 平假日雙軌輪替說明 -->
+            <div v-else-if="currentSelectedAutoRule?.ruleType === 'weekday_weekend_sequential'" class="card p-3 border">
+              <label class="form-label font-bold text-sm mb-2">1. 男眾平假日輪替方式：</label>
               <div class="text-xs text-gray-700 space-y-1.5">
                 <div class="flex items-center gap-1.5 font-bold text-primary">
                   <span>🔄 平日/假日雙軌循序循環輪值</span>
                 </div>
                 <div class="text-muted leading-relaxed">
                   系統將於指定排班區間內，平日與假日名冊自動循序推進排班（各 1 席）。遇園區值班人員自動順延至下一位志工接替。
+                </div>
+              </div>
+            </div>
+
+            <!-- 常態星期整組輪值說明 -->
+            <div v-else class="card p-3 border">
+              <label class="form-label font-bold text-sm mb-2">1. 女眾整組輪替方式：</label>
+              <div class="text-xs text-gray-700 space-y-1.5">
+                <div class="flex items-center gap-1.5 font-bold text-emerald-700">
+                  <span>📅 星期整組循序輪替（每班 {{ currentSelectedAutoRuleQuota }} 席）</span>
+                </div>
+                <div class="text-muted leading-relaxed">
+                  系統將依指定排班區間內之星期，自動自該星期的組別名冊循序排入整組志工。組員超額時自動啟用備用輪替並推進指標。
                 </div>
               </div>
             </div>
@@ -1009,6 +1039,11 @@ const selectedAutoRuleId = ref('');
 
 const currentSelectedAutoRule = computed(() => {
   return availableAutoRules.value.find(r => r.id === selectedAutoRuleId.value) || availableAutoRules.value[0] || null;
+});
+
+const currentSelectedAutoRuleQuota = computed(() => {
+  if (!currentSelectedAutoRule.value) return 1;
+  return getRuleQuota(currentSelectedAutoRule.value);
 });
 
 function onAutoRuleChange() {

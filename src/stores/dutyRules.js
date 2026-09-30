@@ -501,11 +501,18 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       // ─── 模式 B：星期 × 整組循環輪替（自適應當前道場與班次基本需求席次） ───
       const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
 
-      // 檢查此日是否符合該規則輪值和氣
+      // 和氣週輪值判定：僅在宜蘭園區且特定和氣規則時生效，非園區道場（如東港聯絡處）或全區通用規則採常態輪替
+      const isCampusDuty = (location === '宜蘭園區' || rule.location === '宜蘭園區');
       const targetHeqi = rule.heqiGroup || '全區通用';
       const assignedHeqi = getHeqiForDate(dateStr);
-      const isTargetHeqiTurn = (targetHeqi === '全區通用') || (assignedHeqi === targetHeqi);
-      const shouldApplyRule = (mode === 'force_heqi2') || isTargetHeqiTurn;
+      
+      let shouldApplyRule = true;
+      let isTargetHeqiTurn = false;
+
+      if (isCampusDuty && targetHeqi !== '全區通用') {
+        isTargetHeqiTurn = (assignedHeqi === targetHeqi);
+        shouldApplyRule = (mode === 'force_heqi2' || mode === 'full_month') || isTargetHeqiTurn;
+      }
 
       if (!shouldApplyRule) {
         curr.setDate(curr.getDate() + 1);
@@ -519,13 +526,13 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         continue;
       }
 
-      // 組別輪替依「自基準日起算的該和氣輪值週次」循序下輪
+      // 組別輪替依「週次」循序下輪
       let teamIndex = 0;
-      if (isTargetHeqiTurn && targetHeqi !== '全區通用') {
+      if (isCampusDuty && targetHeqi !== '全區通用') {
         const roundIndex = getHeqiRoundIndex(dateStr, targetHeqi);
         teamIndex = ((roundIndex % teams.length) + teams.length) % teams.length;
       } else {
-        // 全區通用或強制模式下，依週次差循序推進
+        // 非園區（如東港聯絡處）或全區通用或全月強制模式：依自基準日起算的週次差循序推進
         const diffWeeks = getWeekDiff(dateStr);
         teamIndex = ((diffWeeks % teams.length) + teams.length) % teams.length;
       }
