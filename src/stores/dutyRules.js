@@ -1,6 +1,18 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getDocById, setDocById, deleteDocById, getCollectionDocs, batchWriteItems } from '@/firebase/db';
+import { getStandardShiftConfig, getStandardShiftQuota } from '@/stores/duties';
+
+/**
+ * 取得排班規則之基本需求人數 (自適應當前道場與班次)
+ */
+export function getRuleQuota(rule) {
+  if (!rule) return 4;
+  if (typeof rule.quota === 'number' && rule.quota > 0) {
+    return rule.quota;
+  }
+  return getStandardShiftQuota(rule.location, rule.shiftId, rule.genderType);
+}
 
 // 和氣二園區女眾班標準組別名單（依指示預載）
 export const DEFAULT_HEQI2_FEMALE_TEAMS = {
@@ -69,6 +81,7 @@ export const DEFAULT_HEQI2_CAMPUS_FEMALE_RULE = {
   shiftId: 'YL_F',
   shiftLabel: '女眾班',
   genderType: '女',
+  quota: 4,
   ruleType: 'weekday_group_rotation', // 星期 × 整組輪替
   weekdayTeams: JSON.parse(JSON.stringify(DEFAULT_HEQI2_FEMALE_TEAMS)),
   rotationPointers: {},
@@ -95,6 +108,7 @@ export const DEFAULT_DONGGANG_MALE_RULE = {
   shiftId: 'DG_M',
   shiftLabel: '男眾班',
   genderType: '男',
+  quota: 1,
   ruleType: 'weekday_weekend_sequential', // 平日/假日雙軌循序循環輪替
   weekdayMembers: [...DEFAULT_DONGGANG_MALE_WEEKDAY_MEMBERS],
   weekendMembers: [...DEFAULT_DONGGANG_MALE_WEEKEND_MEMBERS],
@@ -319,11 +333,14 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       if (m.name) nameToMember.set(m.name.trim(), m);
     });
 
-    // 尋找目標規則：依據場地自選或自動配對
+    // 尋找目標規則：依據傳入 ruleId、場地自選或自動配對
     let rule = targetRule;
+    if (!rule && ruleId) {
+      rule = rules.value.find(r => r.id === ruleId);
+    }
     if (!rule) {
       if (location === '東港聯絡處') {
-        rule = rules.value.find(r => r.location === '東港聯絡處' && r.shiftId === 'DG_M' && r.enabled !== false) || DEFAULT_DONGGANG_MALE_RULE;
+        rule = rules.value.find(r => r.location === '東港聯絡處' && r.enabled !== false) || DEFAULT_DONGGANG_MALE_RULE;
       } else {
         rule = rules.value.find(r => r.location === '宜蘭園區' && r.heqiGroup === '和氣二' && r.shiftId === 'YL_F' && r.enabled !== false) || DEFAULT_HEQI2_CAMPUS_FEMALE_RULE;
       }
@@ -368,8 +385,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const dateStr = `${y}-${m}-${d}`;
       const dayOfWeek = String(curr.getDay()); // '0' ~ '6'
 
-      // ─── 模式 A：東港聯絡處男眾班（平日/假日雙軌循序循環輪班） ───
-      if (rule.ruleType === 'weekday_weekend_sequential' || location === '東港聯絡處') {
+      // ─── 模式 A：平日/假日雙軌循序循環輪替（依據規則類型判定，不再硬編碼道場） ───
+      if (rule.ruleType === 'weekday_weekend_sequential') {
         const isWeekend = (dayOfWeek === '0' || dayOfWeek === '6');
         const pool = isWeekend ? (rule.weekendMembers || []) : (rule.weekdayMembers || []);
         
@@ -481,13 +498,14 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         continue;
       }
 
-      // ─── 模式 B：宜蘭園區和氣二女眾班（星期 × 整組輪替） ───
+      // ─── 模式 B：星期 × 整組循環輪替（自適應當前道場與班次基本需求席次） ───
       const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
 
-      // 檢查此日是否歸屬和氣二
+      // 檢查此日是否符合該規則輪值和氣
+      const targetHeqi = rule.heqiGroup || '全區通用';
       const assignedHeqi = getHeqiForDate(dateStr);
-      const isHeqi2Turn = (assignedHeqi === '和氣二');
-      const shouldApplyRule = (mode === 'force_heqi2') || (mode === 'heqi_only' && isHeqi2Turn);
+      const isTargetHeqiTurn = (targetHeqi === '全區通用') || (assignedHeqi === targetHeqi);
+      const shouldApplyRule = (mode === 'force_heqi2') || isTargetHeqiTurn;
 
       if (!shouldApplyRule) {
         curr.setDate(curr.getDate() + 1);
@@ -503,11 +521,11 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
       // 組別輪替依「自基準日起算的該和氣輪值週次」循序下輪
       let teamIndex = 0;
-      if (isHeqi2Turn) {
-        const roundIndex = getHeqiRoundIndex(dateStr, '和氣二');
+      if (isTargetHeqiTurn && targetHeqi !== '全區通用') {
+        const roundIndex = getHeqiRoundIndex(dateStr, targetHeqi);
         teamIndex = ((roundIndex % teams.length) + teams.length) % teams.length;
       } else {
-        // 全月強制模式下，依週次差循序推進
+        // 全區通用或強制模式下，依週次差循序推進
         const diffWeeks = getWeekDiff(dateStr);
         teamIndex = ((diffWeeks % teams.length) + teams.length) % teams.length;
       }
@@ -524,7 +542,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         continue;
       }
 
-      const quota = 4;
+      // 自適應取得該道場與班次所需人數（例如東港女眾班為 2，園區女眾班為 4）
+      const quota = getRuleQuota(rule);
 
       // 處理人數 > quota 的備用輪替機制（方案B）
       let selectedMembers = [];
@@ -555,6 +574,12 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         });
       }
 
+      // 取得班次時間常數配置
+      const shiftConfig = getStandardShiftConfig(location, rule.shiftId, rule.shiftLabel);
+      const shiftStart = shiftConfig?.startTime || '08:00';
+      const shiftEnd = shiftConfig?.endTime || (quota <= 2 ? '13:00' : '16:00');
+      const timeRange = shiftConfig?.timeRange || `${shiftStart}~${shiftEnd}`;
+
       const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'YL_F'));
 
       for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
@@ -580,12 +605,12 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           dutyDate: dateStr,
           shiftId: rule.shiftId || 'YL_F',
           shiftLabel: rule.shiftLabel || '女眾班',
-          shiftStart: '08:00',
-          shiftEnd: '16:00',
-          timeRange: '08:00~16:00',
+          shiftStart,
+          shiftEnd,
+          timeRange,
           quota,
           slotIndex: slotNumber,
-          genderType: '女',
+          genderType: rule.genderType || '女',
           isWeekend: dayOfWeek === '0' || dayOfWeek === '6',
           memberId: memberObj ? memberObj.id : (memberName || ''),
           memberName: memberName || '',

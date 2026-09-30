@@ -3,26 +3,40 @@ import { ref } from 'vue';
 import { getCollectionDocs, batchWriteItems } from '@/firebase/db';
 import { where } from 'firebase/firestore';
 
+// 道場班次時段常數定義 (含標準時段字串與席次需求 quota)
+export const DUTY_SHIFTS_CONFIG = {
+  '東港聯絡處': [
+    { shiftId: 'DG_F', label: '女眾班', startTime: '08:00', endTime: '13:00', timeRange: '08:00~13:00', gender: '女', quota: 2 },
+    { shiftId: 'DG_M', label: '男眾班', startTime: '13:00', endTime: '17:00', timeRange: '13:00~17:00', gender: '男', quota: 1 }
+  ],
+  '宜蘭園區': [
+    { shiftId: 'YL_F', label: '女眾班', startTime: '08:00', endTime: '16:00', timeRange: '08:00~16:00', gender: '女', quota: 4 },
+    { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', timeRange: '16:00~18:30', gender: '男', quota: 2 },
+    { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', timeRange: '18:30~20:30', gender: '男', quota: 2 }
+  ]
+};
+
+export function getStandardShiftConfig(location, shiftId, label) {
+  const list = DUTY_SHIFTS_CONFIG[location] || [];
+  return list.find(s => s.shiftId === shiftId || s.label === label) || null;
+}
+
+export function getStandardShiftQuota(location, shiftId, genderType = '女') {
+  const found = getStandardShiftConfig(location, shiftId);
+  if (found && typeof found.quota === 'number') return found.quota;
+  // 若為未預設之道場或班次，根據已知代碼或眾別推導
+  if (shiftId === 'DG_F') return 2;
+  if (shiftId === 'DG_M') return 1;
+  if (shiftId === 'YL_F') return 4;
+  return genderType === '男' ? 2 : 4;
+}
+
 export const useDutiesStore = defineStore('duties', () => {
   const duties = ref([]);
   const loading = ref(false);
 
-  // 道場班次時段常數定義 (含標準時段字串)
-  const DUTY_SHIFTS_CONFIG = {
-    '東港聯絡處': [
-      { shiftId: 'DG_F', label: '女眾班', startTime: '08:00', endTime: '13:00', timeRange: '08:00~13:00', gender: '女', quota: 2 },
-      { shiftId: 'DG_M', label: '男眾班', startTime: '13:00', endTime: '17:00', timeRange: '13:00~17:00', gender: '男', quota: 1 }
-    ],
-    '宜蘭園區': [
-      { shiftId: 'YL_F', label: '女眾班', startTime: '08:00', endTime: '16:00', timeRange: '08:00~16:00', gender: '女', quota: 4 },
-      { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', timeRange: '16:00~18:30', gender: '男', quota: 2 },
-      { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', timeRange: '18:30~20:30', gender: '男', quota: 2 }
-    ]
-  };
-
   function getShiftTimeRange(location, shiftId, label) {
-    const list = DUTY_SHIFTS_CONFIG[location] || [];
-    const found = list.find(s => s.shiftId === shiftId || s.label === label);
+    const found = getStandardShiftConfig(location, shiftId, label);
     return found ? found.timeRange : '';
   }
 

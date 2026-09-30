@@ -250,6 +250,23 @@
         </div>
 
         <div class="modal-body flex flex-col gap-4">
+          <!-- 選擇排班規則 (自適應當前道場各班次規則與需求席次) -->
+          <div v-if="availableAutoRules.length > 0" class="card p-3 border bg-gray-50/70 shadow-xs">
+            <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <label class="form-label font-bold text-xs m-0 flex items-center gap-1.5 text-primary">
+                <span>📋 選擇套用排班規則：</span>
+              </label>
+              <span v-if="currentSelectedAutoRule" class="badge badge-primary text-xs font-bold">
+                每班基本席次需求：{{ getRuleQuota(currentSelectedAutoRule) }} 席
+              </span>
+            </div>
+            <select v-model="selectedAutoRuleId" class="form-select form-select-sm" @change="onAutoRuleChange">
+              <option v-for="r in availableAutoRules" :key="r.id" :value="r.id">
+                {{ r.ruleName }} ({{ r.shiftLabel }} / {{ r.genderType }}眾 / {{ r.ruleType === 'weekday_weekend_sequential' ? '平假日雙軌' : '星期整組' }} - 每班 {{ getRuleQuota(r) }} 席)
+              </option>
+            </select>
+          </div>
+
           <!-- 宜蘭園區：當月和氣輪值週次速覽與快速區間切換 -->
           <div v-if="selectedLocation === '宜蘭園區'" class="card p-3 bg-gray-50 border">
             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
@@ -423,10 +440,10 @@
             </ul>
           </div>
 
-          <!-- 備用人員提示（5人組取4人） -->
+          <!-- 備用人員提示（組員超過基本席次需求） -->
           <div v-if="autoPreviewResult?.standbyList?.length > 0" class="card p-3 bg-amber-50 border border-amber-200">
             <h4 class="font-bold text-amber-800 text-xs mb-1 flex items-center gap-1">
-              <span>🔄 備用輪替機制已生效（組員超過 4 人，本次未排班之備用人員）：</span>
+              <span>🔄 備用輪替機制已生效（組員超過該班次基本需求席次，本次未排班之備用人員）：</span>
             </h4>
             <div class="flex items-center gap-2 flex-wrap">
               <span 
@@ -600,7 +617,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
-import { useDutyRulesStore } from '@/stores/dutyRules';
+import { useDutyRulesStore, getRuleQuota } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
@@ -984,8 +1001,25 @@ function resetToFullMonth() {
   runAutoPreview();
 }
 
+const availableAutoRules = computed(() => {
+  return (dutyRulesStore.rules || []).filter(r => r.location === selectedLocation.value && r.enabled !== false);
+});
+
+const selectedAutoRuleId = ref('');
+
+const currentSelectedAutoRule = computed(() => {
+  return availableAutoRules.value.find(r => r.id === selectedAutoRuleId.value) || availableAutoRules.value[0] || null;
+});
+
+function onAutoRuleChange() {
+  runAutoPreview();
+}
+
 function openAutoScheduleModal() {
   showAutoModal.value = true;
+  if (!selectedAutoRuleId.value || !availableAutoRules.value.some(r => r.id === selectedAutoRuleId.value)) {
+    selectedAutoRuleId.value = availableAutoRules.value[0]?.id || '';
+  }
   if (selectedLocation.value === '東港聯絡處') {
     resetToFullMonth();
   } else {
@@ -1011,6 +1045,7 @@ function runAutoPreview() {
     currentMatrix: matrixList.value,
     otherLocationDuties: otherLocationDuties.value,
     allMembers: allMembers.value,
+    ruleId: selectedAutoRuleId.value || null,
     mode: autoScheduleMode.value,
     overwriteStrategy: overwriteStrategy.value
   });

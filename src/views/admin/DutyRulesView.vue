@@ -210,6 +210,21 @@
             </div>
 
             <div>
+              <span class="text-xs text-muted block mb-0.5">每班需求人數：</span>
+              <div class="flex items-center gap-1">
+                <input 
+                  v-model.number="activeRule.quota" 
+                  type="number" 
+                  min="1" 
+                  max="10" 
+                  class="form-input form-input-sm font-bold text-primary" 
+                  style="width: 70px;" 
+                />
+                <span class="text-xs text-muted font-bold">人/班</span>
+              </div>
+            </div>
+
+            <div>
               <span class="text-xs text-muted block mb-0.5">規則類型：</span>
               <span class="badge badge-primary py-1 px-2.5 text-xs">
                 {{ activeRule.ruleType === 'weekday_weekend_sequential' ? '🏢🏖️ 平日/假日雙軌循序輪替' : '📅 星期 × 整組循環輪替' }}
@@ -459,7 +474,7 @@
               v-for="(team, teamIdx) in (activeRule.weekdayTeams?.[activeWeekday] || [])" 
               :key="teamIdx"
               class="team-card p-4 border rounded-lg bg-gray-50/50"
-              :class="{ 'border-warning': team.members.length > 4 }"
+              :class="{ 'border-warning': team.members.length > activeRuleQuota }"
             >
               <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div class="flex items-center gap-2">
@@ -468,11 +483,11 @@
                     class="form-input form-input-sm font-bold text-primary" 
                     style="max-width: 140px;"
                   />
-                  <span class="badge" :class="team.members.length > 4 ? 'badge-warning' : 'badge-primary'">
+                  <span class="badge" :class="team.members.length > activeRuleQuota ? 'badge-warning' : 'badge-primary'">
                     共 {{ team.members.length }} 人
                   </span>
-                  <span v-if="team.members.length > 4" class="text-xs text-warning font-bold">
-                    ⚠️ 超額 {{ team.members.length - 4 }} 人，自動啟動備用輪替機制（每次 4 人，多出志工下次遞補）
+                  <span v-if="team.members.length > activeRuleQuota" class="text-xs text-warning font-bold">
+                    ⚠️ 超額 {{ team.members.length - activeRuleQuota }} 人，自動啟動備用輪替機制（每次 {{ activeRuleQuota }} 人，多出志工下次遞補）
                   </span>
                 </div>
 
@@ -511,11 +526,11 @@
                   v-for="(member, mIdx) in team.members" 
                   :key="mIdx"
                   class="member-chip"
-                  :class="{ 'chip-overflow': mIdx >= 4 }"
+                  :class="{ 'chip-overflow': mIdx >= activeRuleQuota }"
                 >
                   <span class="chip-index">{{ mIdx + 1 }}.</span>
                   <span class="chip-text">{{ member }}</span>
-                  <span v-if="mIdx >= 4" class="chip-badge">備用輪替</span>
+                  <span v-if="mIdx >= activeRuleQuota" class="chip-badge">備用輪替</span>
                   <button 
                     type="button" 
                     class="chip-delete-btn" 
@@ -608,7 +623,7 @@
           <div class="grid grid-cols-2 gap-3">
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">班次時段代碼：</label>
-              <select v-model="newRuleForm.shiftId" class="form-select form-select-sm">
+              <select v-model="newRuleForm.shiftId" class="form-select form-select-sm" @change="onNewRuleShiftChange">
                 <option value="YL_F">YL_F (宜蘭園區 女眾班)</option>
                 <option value="YL_M1">YL_M1 (宜蘭園區 男眾一班)</option>
                 <option value="YL_M2">YL_M2 (宜蘭園區 男眾二班)</option>
@@ -619,10 +634,27 @@
 
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">眾別：</label>
-              <select v-model="newRuleForm.genderType" class="form-select form-select-sm">
+              <select v-model="newRuleForm.genderType" class="form-select form-select-sm" @change="onNewRuleShiftChange">
                 <option value="女">女眾</option>
                 <option value="男">男眾</option>
               </select>
+            </div>
+          </div>
+
+          <div class="form-group mb-0">
+            <label class="form-label font-bold text-xs">每班基本需求人數 (席次)：</label>
+            <div class="flex items-center gap-2">
+              <input 
+                v-model.number="newRuleForm.quota" 
+                type="number" 
+                min="1" 
+                max="10" 
+                class="form-input form-input-sm font-bold text-primary" 
+                style="width: 80px;" 
+              />
+              <span class="text-xs text-muted">
+                人 / 班（系統已依班次自適應帶入建議值，亦可自行調整）
+              </span>
             </div>
           </div>
 
@@ -649,13 +681,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { 
   useDutyRulesStore, 
   DEFAULT_HEQI2_CAMPUS_FEMALE_RULE, 
   DEFAULT_DONGGANG_MALE_RULE, 
-  DEFAULT_WEEK_ROTATION 
+  DEFAULT_WEEK_ROTATION,
+  getRuleQuota
 } from '@/stores/dutyRules';
+import { getStandardShiftQuota } from '@/stores/duties';
 import { useMembersStore } from '@/stores/members';
 import { useToast } from '@/composables/useToast';
 
@@ -710,6 +744,7 @@ const newRuleForm = ref({
   heqiGroup: '和氣一',
   shiftId: 'YL_F',
   genderType: '女',
+  quota: 4,
   ruleType: 'weekday_group_rotation'
 });
 
@@ -727,6 +762,22 @@ const filteredRules = computed(() => {
 const activeRule = computed(() => {
   return dutyRulesStore.rules.find(r => r.id === activeRuleId.value) || dutyRulesStore.rules[0] || null;
 });
+
+// 當前規則自適應需求席次（由規則設定或道場班次配置決定）
+const activeRuleQuota = computed(() => {
+  if (!activeRule.value) return 4;
+  if (typeof activeRule.value.quota === 'number' && activeRule.value.quota > 0) {
+    return activeRule.value.quota;
+  }
+  return getRuleQuota(activeRule.value);
+});
+
+// 監聽 activeRule 切換，確保 quota 數值正確同步
+watch(activeRule, (newRule) => {
+  if (newRule && typeof newRule.quota !== 'number') {
+    newRule.quota = getRuleQuota(newRule);
+  }
+}, { immediate: true });
 
 function selectRule(ruleId) {
   activeRuleId.value = ruleId;
@@ -828,6 +879,7 @@ async function handleSaveActiveRule() {
   if (!activeRule.value) return;
   savingRule.value = true;
   try {
+    activeRule.value.quota = Number(activeRule.value.quota) || activeRuleQuota.value;
     await dutyRulesStore.saveRule(activeRule.value);
     toast.success(`「${activeRule.value.ruleName || '排班規則'}」已成功儲存！`);
   } catch (err) {
@@ -835,6 +887,14 @@ async function handleSaveActiveRule() {
   } finally {
     savingRule.value = false;
   }
+}
+
+function onNewRuleShiftChange() {
+  newRuleForm.value.quota = getStandardShiftQuota(
+    newRuleForm.value.location,
+    newRuleForm.value.shiftId,
+    newRuleForm.value.genderType
+  );
 }
 
 function handleResetActiveRule() {
@@ -872,6 +932,7 @@ function openCreateRuleModal() {
     heqiGroup: '和氣一',
     shiftId: 'YL_F',
     genderType: '女',
+    quota: 4,
     ruleType: 'weekday_group_rotation'
   };
   showCreateModal.value = true;
@@ -885,6 +946,11 @@ async function handleCreateRuleSubmit() {
     'DG_F': '女眾班',
     'DG_M': '男眾班'
   };
+  const determinedQuota = Number(newRuleForm.value.quota) || getStandardShiftQuota(
+    newRuleForm.value.location, 
+    newRuleForm.value.shiftId, 
+    newRuleForm.value.genderType
+  );
   const newRule = {
     id: `rule_${Date.now()}`,
     ruleName: newRuleForm.value.ruleName,
@@ -893,6 +959,7 @@ async function handleCreateRuleSubmit() {
     shiftId: newRuleForm.value.shiftId,
     shiftLabel: shiftLabels[newRuleForm.value.shiftId] || '值班',
     genderType: newRuleForm.value.genderType,
+    quota: determinedQuota,
     ruleType: newRuleForm.value.ruleType,
     weekdayTeams: newRuleForm.value.ruleType === 'weekday_group_rotation' ? { '1': [{ teamName: '第一組', members: [] }] } : null,
     weekdayMembers: newRuleForm.value.ruleType === 'weekday_weekend_sequential' ? [] : null,
