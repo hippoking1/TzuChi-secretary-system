@@ -18,7 +18,6 @@
             ⚙️ 規則設定
           </router-link>
           <button 
-            v-if="selectedLocation === '宜蘭園區'" 
             class="btn btn-accent" 
             @click="openAutoScheduleModal"
           >
@@ -205,15 +204,15 @@
               🤖 依規則自動排班 — {{ autoStartDate && autoEndDate ? `${autoStartDate} ~ ${autoEndDate}` : selectedMonth }} ({{ selectedLocation }})
             </h3>
             <p class="text-xs text-muted mt-1">
-              依據「和氣週輪值」與「星期 × 整組名冊」自動產生排班建議
+              {{ selectedLocation === '東港聯絡處' ? '依據「男眾平日/假日循序循環名冊」自動排班，自動檢測園區衝突並順延' : '依據「和氣週輪值」與「星期 × 整組名冊」自動產生排班建議' }}
             </p>
           </div>
           <button class="modal-close" @click="showAutoModal = false">×</button>
         </div>
 
         <div class="modal-body flex flex-col gap-4">
-          <!-- 當月和氣輪值週次速覽與快速區間切換 -->
-          <div class="card p-3 bg-gray-50 border">
+          <!-- 宜蘭園區：當月和氣輪值週次速覽與快速區間切換 -->
+          <div v-if="selectedLocation === '宜蘭園區'" class="card p-3 bg-gray-50 border">
             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
               <h4 class="text-xs font-bold text-gray-700 m-0">🗓️ 本月週次負責和氣（點擊標籤可直接填入排班區間）：</h4>
               <div class="flex items-center gap-1">
@@ -243,6 +242,21 @@
                 {{ w.range }}：{{ w.heqi }} {{ w.isHeqi2 ? '★(和氣二值週)' : '' }}
               </button>
             </div>
+          </div>
+
+          <!-- 東港聯絡處：男眾排班規則提示與快速區間切換 -->
+          <div v-else class="card p-3 bg-blue-50/40 border border-blue-200">
+            <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+              <h4 class="text-xs font-bold text-primary m-0">🌊 東港聯絡處男眾值班規則（平日/假日雙軌循環輪替）：</h4>
+              <div class="flex items-center gap-1">
+                <button type="button" class="btn btn-xs btn-outline" @click="resetToFullMonth">
+                  重設整月 ({{ selectedMonth }})
+                </button>
+              </div>
+            </div>
+            <p class="text-xs text-muted m-0">
+              平日（週一至週五，22人名冊）與假日（週六至週日，14人名冊）分別依序排入席位。若遇宜蘭園區排班衝突，以園區為優先，東港自動順延由下一位志工接替！
+            </p>
           </div>
 
           <!-- 自訂排班日期區間控制 -->
@@ -277,7 +291,7 @@
 
           <!-- 排班選項控制 -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="card p-3 border">
+            <div v-if="selectedLocation === '宜蘭園區'" class="card p-3 border">
               <label class="form-label font-bold text-sm mb-2">1. 選擇排班模式：</label>
               <div class="flex flex-col gap-2">
                 <label class="flex items-center gap-2 text-sm cursor-pointer">
@@ -305,6 +319,18 @@
                     <small class="text-muted block text-xs">（強制/測試模式：全月女眾班均由和氣二排入）</small>
                   </span>
                 </label>
+              </div>
+            </div>
+
+            <div v-else class="card p-3 border">
+              <label class="form-label font-bold text-sm mb-2">1. 東港男眾輪值方式：</label>
+              <div class="text-xs text-gray-700 space-y-1.5">
+                <div class="flex items-center gap-1.5 font-bold text-primary">
+                  <span>🔄 平日/假日雙軌循序循環輪值</span>
+                </div>
+                <div class="text-muted leading-relaxed">
+                  系統將於指定排班區間內，平日與假日名冊自動循序推進排班（各 1 席）。遇園區值班人員自動順延至下一位志工接替。
+                </div>
               </div>
             </div>
 
@@ -343,14 +369,17 @@
           <!-- 衝突檢測與備用人員提示 -->
           <div v-if="autoPreviewResult?.conflicts?.length > 0" class="card conflict-banner p-3">
             <h4 class="font-bold text-danger text-sm mb-1 flex items-center gap-1">
-              <span>⚠️ 偵測到 {{ autoPreviewResult.conflicts.length }} 筆與【東港聯絡處】排班衝突：</span>
+              <span>⚠️ 偵測到 {{ autoPreviewResult.conflicts.length }} 筆跨場地排班衝突：</span>
             </h4>
             <p class="text-xs text-danger mb-2">
-              依排班衝突處理原則：<strong>以園區排班為優先</strong>，建議於套用後前往東港聯絡處調動志工！
+              依排班衝突處理原則：<strong>以園區排班為優先</strong>{{ selectedLocation === '東港聯絡處' ? '，東港已自動為衝突日期順延由下一位志工接替！' : '，建議於套用後前往東港聯絡處調動志工！' }}
             </p>
             <ul class="text-xs text-gray-700 pl-4 list-disc space-y-1">
               <li v-for="(c, idx) in autoPreviewResult.conflicts" :key="idx">
                 <strong>{{ c.dateStr }}</strong>：志工「<strong class="text-primary">{{ c.memberName }}</strong>」原已排在【{{ c.otherLocation }} - {{ c.otherShift }}】
+                <span v-if="c.replaceName" class="text-emerald-700 font-bold ml-1">
+                  ➔ 東港已自動改由「{{ c.replaceName }}」接替
+                </span>
               </li>
             </ul>
           </div>
@@ -378,7 +407,7 @@
                 📋 排班預覽明細（預計排定 {{ autoPreviewResult?.scheduledDetails?.length || 0 }} 天）：
               </strong>
               <span class="text-xs text-muted">
-                {{ autoScheduleMode === 'heqi_only' ? '僅和氣二週次' : '全月模式' }} / {{ overwriteStrategy === 'overwrite' ? '覆蓋全部' : '僅填空白' }}
+                {{ selectedLocation === '東港聯絡處' ? '平日/假日雙軌輪替' : (autoScheduleMode === 'heqi_only' ? '僅和氣二週次' : '全月模式') }} / {{ overwriteStrategy === 'overwrite' ? '覆蓋全部' : '僅填空白' }}
               </span>
             </div>
 
@@ -387,13 +416,16 @@
                 v-for="item in autoPreviewResult?.scheduledDetails" 
                 :key="item.dateStr" 
                 class="card p-2.5 flex items-center justify-between border text-xs"
-                :class="item.heqi === '和氣二' ? 'bg-pink-50/30' : 'bg-gray-50/50'"
+                :class="item.heqi === '和氣二' || item.heqi === '假日組' ? 'bg-pink-50/30' : 'bg-gray-50/50'"
               >
                 <div class="flex items-center gap-2">
                   <span class="font-bold text-primary text-sm">{{ item.dateStr }}</span>
                   <span class="badge badge-info">{{ item.dayOfWeek === '0' ? '週日' : '週' + ['日','一','二','三','四','五','六'][Number(item.dayOfWeek)] }}</span>
                   <span class="badge badge-gray">{{ item.heqi }}</span>
                   <strong class="text-gray-700 ml-1">{{ item.teamName }}</strong>
+                  <span v-if="item.adjustedFrom" class="badge badge-warning text-[10px]" title="因園區排班衝突順延接替">
+                    🔄 順延接替 {{ item.adjustedFrom }}
+                  </span>
                 </div>
 
                 <div class="flex items-center gap-1.5 flex-wrap">
@@ -742,12 +774,16 @@ function resetToFullMonth() {
 
 function openAutoScheduleModal() {
   showAutoModal.value = true;
-  // 若該月有和氣二值週，預設帶入和氣二值週區間，否則帶入全月
-  if (firstHeqi2Week.value) {
-    autoStartDate.value = firstHeqi2Week.value.fullStartDate;
-    autoEndDate.value = firstHeqi2Week.value.fullEndDate;
-  } else {
+  if (selectedLocation.value === '東港聯絡處') {
     resetToFullMonth();
+  } else {
+    // 宜蘭園區：若該月有和氣二值週，預設帶入和氣二值週區間，否則帶入全月
+    if (firstHeqi2Week.value) {
+      autoStartDate.value = firstHeqi2Week.value.fullStartDate;
+      autoEndDate.value = firstHeqi2Week.value.fullEndDate;
+    } else {
+      resetToFullMonth();
+    }
   }
   runAutoPreview();
 }
@@ -776,9 +812,10 @@ async function applyAutoSchedule() {
   try {
     const slots = autoPreviewResult.value.allGeneratedSlots || [];
     const pointers = autoPreviewResult.value.updatedRotationPointers || null;
+    const ruleId = autoPreviewResult.value.ruleId || null;
 
     // 直接批次儲存至 Firestore 資料庫
-    await dutyRulesStore.saveAutoScheduleToDb(slots, pointers);
+    await dutyRulesStore.saveAutoScheduleToDb(slots, pointers, ruleId);
 
     // 同步更新當前月畫面矩陣並重新自資料庫載入
     await initMatrix();
@@ -798,7 +835,7 @@ onMounted(async () => {
     membersStore.fetchMembers({ gender: '男' }),
     membersStore.fetchMembers({ gender: '女' }),
     orgsStore.fetchOrgs(),
-    dutyRulesStore.fetchRules('宜蘭園區'),
+    dutyRulesStore.fetchRules(),
     dutyRulesStore.fetchWeekRotation('宜蘭園區')
   ]);
   maleMembers.value = males;

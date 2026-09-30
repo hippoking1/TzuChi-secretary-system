@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { getDocById, setDocById, getCollectionDocs, batchWriteItems } from '@/firebase/db';
+import { getDocById, setDocById, deleteDocById, getCollectionDocs, batchWriteItems } from '@/firebase/db';
 
 // 和氣二園區女眾班標準組別名單（依指示預載）
 export const DEFAULT_HEQI2_FEMALE_TEAMS = {
@@ -60,13 +60,58 @@ export const DEFAULT_HEQI2_FEMALE_TEAMS = {
   ]
 };
 
-// 預設和氣週輪值設定
+// 宜蘭園區和氣二女眾標準規則物件
+export const DEFAULT_HEQI2_CAMPUS_FEMALE_RULE = {
+  id: 'rule_heqi2_campus_female',
+  ruleName: '宜蘭園區和氣二女眾值班規則',
+  heqiGroup: '和氣二',
+  location: '宜蘭園區',
+  shiftId: 'YL_F',
+  shiftLabel: '女眾班',
+  genderType: '女',
+  ruleType: 'weekday_group_rotation', // 星期 × 整組輪替
+  weekdayTeams: JSON.parse(JSON.stringify(DEFAULT_HEQI2_FEMALE_TEAMS)),
+  rotationPointers: {},
+  enabled: true
+};
+
+// 東港聯絡處男眾班平日/假日輪值標準名單
+export const DEFAULT_DONGGANG_MALE_WEEKDAY_MEMBERS = [
+  '游天祥', '林茂祥', '林明村', '鄭文松', '石有杉', '陳振川', '林東建', '李長和',
+  '吳福源', '陳榮忠', '吳順王', '陳茂春', '李世清', '吳金福', '楊志忠', '呂連通',
+  '黃國材', '吳世明', '許國基', '林俊宏', '趙正文', '黃木村'
+];
+
+export const DEFAULT_DONGGANG_MALE_WEEKEND_MEMBERS = [
+  '何忠憲', '黃文彬', '徐棟樑', '洪光賢', '林子民', '羅文熙', '龔福鳴', '張振益',
+  '莊盧達', '黃志煌', '葉文熙', '薛登霖', '李自強', '莊漢僑'
+];
+
+export const DEFAULT_DONGGANG_MALE_RULE = {
+  id: 'rule_donggang_male',
+  ruleName: '東港聯絡處男眾值班規則',
+  heqiGroup: '全區通用',
+  location: '東港聯絡處',
+  shiftId: 'DG_M',
+  shiftLabel: '男眾班',
+  genderType: '男',
+  ruleType: 'weekday_weekend_sequential', // 平日/假日雙軌循序循環輪替
+  weekdayMembers: [...DEFAULT_DONGGANG_MALE_WEEKDAY_MEMBERS],
+  weekendMembers: [...DEFAULT_DONGGANG_MALE_WEEKEND_MEMBERS],
+  rotationPointers: {
+    weekday: 0,
+    weekend: 0
+  },
+  enabled: true
+};
+
+// 預設和氣週輪值設定（宜蘭園區）
 export const DEFAULT_WEEK_ROTATION = {
   id: 'campus_week_rotation',
   location: '宜蘭園區',
   rotationOrder: ['和氣一', '和氣二', '和氣三', '和氣四'],
-  // 基準週起始日（以 2026-01-05 週一為基準，當週為和氣一）
-  baseStartDate: '2026-01-05',
+  // 基準週起始日（以 2027-01-04 週一為基準，當週為和氣一）
+  baseStartDate: '2027-01-04',
   baseStartHeqi: '和氣一',
   weekStartDay: 1, // 1 = 週一開始, 0 = 週日開始
   enabled: true
@@ -98,7 +143,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
    */
   function getWeekDiff(dateStr, rotationConfig = weekRotation.value) {
     const target = parseDateToMidnight(dateStr);
-    const base = parseDateToMidnight(rotationConfig.baseStartDate || '2026-01-05');
+    const base = parseDateToMidnight(rotationConfig.baseStartDate || '2027-01-04');
     const startDay = rotationConfig.weekStartDay !== undefined ? rotationConfig.weekStartDay : 1;
 
     const targetWeekStart = getWeekStartDate(target, startDay);
@@ -148,32 +193,27 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
   }
 
   /**
-   * 載入特定場地的排班規則清單
+   * 載入排班規則清單（若未指定 location 則載入所有道場與和氣之規則）
    */
-  async function fetchRules(location = '宜蘭園區') {
+  async function fetchRules(location = null) {
     loading.value = true;
     try {
       const docs = await getCollectionDocs('dutySchedulingRules');
-      let filtered = docs.filter(r => !location || r.location === location);
+      let all = [...docs];
 
-      // 若和氣二規則尚未存入 Firestore，以預設規則呈現
-      const hasHeqi2 = filtered.some(r => r.heqiGroup === '和氣二' && r.location === '宜蘭園區' && r.shiftId === 'YL_F');
-      if (!hasHeqi2 && location === '宜蘭園區') {
-        const defaultHeqi2Rule = {
-          id: 'rule_heqi2_campus_female',
-          heqiGroup: '和氣二',
-          location: '宜蘭園區',
-          shiftId: 'YL_F',
-          shiftLabel: '女眾班',
-          genderType: '女',
-          ruleType: 'weekday_group_rotation',
-          weekdayTeams: JSON.parse(JSON.stringify(DEFAULT_HEQI2_FEMALE_TEAMS)),
-          rotationPointers: {},
-          enabled: true
-        };
-        filtered.push(defaultHeqi2Rule);
+      // 若和氣二宜蘭女眾規則尚未存在，以預設規則呈現
+      const hasHeqi2 = all.some(r => r.heqiGroup === '和氣二' && r.location === '宜蘭園區' && r.shiftId === 'YL_F');
+      if (!hasHeqi2) {
+        all.push({ ...DEFAULT_HEQI2_CAMPUS_FEMALE_RULE });
       }
 
+      // 若東港聯絡處男眾規則尚未存在，以預設規則呈現
+      const hasDonggangMale = all.some(r => r.location === '東港聯絡處' && r.shiftId === 'DG_M');
+      if (!hasDonggangMale) {
+        all.push({ ...DEFAULT_DONGGANG_MALE_RULE });
+      }
+
+      const filtered = location ? all.filter(r => r.location === location) : all;
       rules.value = filtered;
       return filtered;
     } finally {
@@ -213,8 +253,22 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         updatedAt: new Date().toISOString()
       };
       await setDocById('dutySchedulingRules', ruleId, payload);
-      await fetchRules(ruleData.location);
+      await fetchRules();
       return ruleId;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * 刪除特定規則
+   */
+  async function deleteRule(ruleId) {
+    loading.value = true;
+    try {
+      await deleteDocById('dutySchedulingRules', ruleId);
+      rules.value = rules.value.filter(r => r.id !== ruleId);
+      return true;
     } finally {
       loading.value = false;
     }
@@ -241,17 +295,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
   }
 
   /**
-   * 核心自動排班產生演算法
+   * 核心自動排班產生演算法（支援宜蘭園區與東港聯絡處、支援跨月自訂區間）
    * @param {Object} options
-   * @param {string} options.location '宜蘭園區'
-   * @param {number} options.year
-   * @param {number} options.month
-   * @param {Array} options.currentMatrix 現有本月矩陣 slots
-   * @param {Array} options.otherLocationDuties 另一場地（東港）當月已排班項目
-   * @param {Array} options.allMembers 所有志工列表
-   * @param {string} options.mode 'heqi_only' (僅排輪到和氣的週次) | 'force_heqi2' (全月均套用和氣二規則)
-   * @param {string} options.overwriteStrategy 'overwrite' (覆蓋全部) | 'empty_only' (僅填空白席)
-   * @param {object} options.targetRule 指定使用的排班規則物件（若無則自動尋找）
    */
   function generateAutoSchedule(options) {
     const {
@@ -274,20 +319,16 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       if (m.name) nameToMember.set(m.name.trim(), m);
     });
 
-    // 尋找目標規則（以和氣二女眾班為主要）
-    const rule = targetRule || rules.value.find(r => 
-      r.location === location && r.heqiGroup === '和氣二' && r.shiftId === 'YL_F' && r.enabled !== false
-    ) || {
-      id: 'rule_heqi2_campus_female',
-      heqiGroup: '和氣二',
-      location: '宜蘭園區',
-      shiftId: 'YL_F',
-      genderType: '女',
-      weekdayTeams: DEFAULT_HEQI2_FEMALE_TEAMS,
-      rotationPointers: {}
-    };
+    // 尋找目標規則：依據場地自選或自動配對
+    let rule = targetRule;
+    if (!rule) {
+      if (location === '東港聯絡處') {
+        rule = rules.value.find(r => r.location === '東港聯絡處' && r.shiftId === 'DG_M' && r.enabled !== false) || DEFAULT_DONGGANG_MALE_RULE;
+      } else {
+        rule = rules.value.find(r => r.location === '宜蘭園區' && r.heqiGroup === '和氣二' && r.shiftId === 'YL_F' && r.enabled !== false) || DEFAULT_HEQI2_CAMPUS_FEMALE_RULE;
+      }
+    }
 
-    const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
     const rotationPointers = { ...(rule.rotationPointers || {}) };
 
     // 決定遍歷起訖範圍（支援跨越任意月份之自訂區間）
@@ -310,7 +351,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     const standbyList = []; // 備用名單紀錄
     const skippedSlots = [];
 
-    // 東港現有排班對照表：date -> Set of memberNames
+    // 另一場地現有排班對照表：date -> list of duties
     const otherMap = new Map();
     otherLocationDuties.forEach(d => {
       if (d.dutyDate && d.memberName) {
@@ -326,6 +367,122 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const d = String(curr.getDate()).padStart(2, '0');
       const dateStr = `${y}-${m}-${d}`;
       const dayOfWeek = String(curr.getDay()); // '0' ~ '6'
+
+      // ─── 模式 A：東港聯絡處男眾班（平日/假日雙軌循序循環輪班） ───
+      if (rule.ruleType === 'weekday_weekend_sequential' || location === '東港聯絡處') {
+        const isWeekend = (dayOfWeek === '0' || dayOfWeek === '6');
+        const pool = isWeekend ? (rule.weekendMembers || []) : (rule.weekdayMembers || []);
+        
+        if (pool.length === 0) {
+          curr.setDate(curr.getDate() + 1);
+          continue;
+        }
+
+        const pointerKey = isWeekend ? 'weekend' : 'weekday';
+        let curPointer = rotationPointers[pointerKey] || 0;
+
+        // 挑選志工（支援宜蘭園區衝突時優先保留園區，東港自動調動順延接替）
+        let chosenMember = null;
+        let conflictAdjustedInfo = null;
+
+        for (let attempt = 0; attempt < pool.length; attempt++) {
+          const candidateIdx = (curPointer + attempt) % pool.length;
+          const candidateName = (pool[candidateIdx] || '').trim();
+          if (!candidateName) continue;
+
+          // 檢查該候選志工當日是否已排在宜蘭園區 (以園區為優先)
+          const hasCampusConflict = otherMap.has(dateStr) && otherMap.get(dateStr).some(o => o.memberName === candidateName);
+          
+          if (!hasCampusConflict) {
+            chosenMember = candidateName;
+            curPointer = (candidateIdx + 1) % pool.length;
+            break;
+          } else {
+            if (!conflictAdjustedInfo) {
+              const conflictShift = otherMap.get(dateStr).find(o => o.memberName === candidateName);
+              conflictAdjustedInfo = {
+                dateStr,
+                originalMember: candidateName,
+                conflictLocation: conflictShift?.location || '宜蘭園區',
+                conflictShiftLabel: conflictShift?.shiftLabel || '值班'
+              };
+            }
+          }
+        }
+
+        if (!chosenMember) {
+          chosenMember = (pool[curPointer % pool.length] || '').trim();
+          curPointer = (curPointer + 1) % pool.length;
+        }
+
+        rotationPointers[pointerKey] = curPointer;
+
+        if (conflictAdjustedInfo) {
+          conflicts.push({
+            dateStr,
+            memberName: conflictAdjustedInfo.originalMember,
+            replaceName: chosenMember,
+            currentLocation: location,
+            currentShift: rule.shiftLabel || '男眾班',
+            otherLocation: conflictAdjustedInfo.conflictLocation,
+            otherShift: conflictAdjustedInfo.conflictShiftLabel,
+            suggestAction: `已優先保留園區排班，東港排班由「${chosenMember}」接替輪值`
+          });
+        }
+
+        const slotNumber = 1;
+        const memberObj = chosenMember ? nameToMember.get(chosenMember) : null;
+        const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'DG_M'));
+        const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
+
+        if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {
+          skippedSlots.push({ slotId: matrixSlot.id, reason: '已有排班故保留' });
+          curr.setDate(curr.getDate() + 1);
+          continue;
+        }
+
+        if (matrixSlot) {
+          matrixSlot.memberName = chosenMember;
+          matrixSlot.memberId = memberObj ? memberObj.id : (chosenMember || '');
+          matrixSlot.status = chosenMember ? '已排班' : '未指派';
+        }
+
+        const slotItem = {
+          id: `${location}_${dateStr}_${rule.shiftId || 'DG_M'}_${slotNumber}`,
+          location,
+          dutyDate: dateStr,
+          shiftId: rule.shiftId || 'DG_M',
+          shiftLabel: rule.shiftLabel || '男眾班',
+          shiftStart: '13:00',
+          shiftEnd: '17:00',
+          timeRange: '13:00~17:00',
+          quota: 1,
+          slotIndex: slotNumber,
+          genderType: '男',
+          isWeekend,
+          memberId: memberObj ? memberObj.id : (chosenMember || ''),
+          memberName: chosenMember || '',
+          status: chosenMember ? '已排班' : '未指派'
+        };
+        allGeneratedSlots.push(slotItem);
+
+        scheduledDetails.push({
+          dateStr,
+          dayOfWeek,
+          teamName: isWeekend ? '假日輪值' : '平日輪值',
+          heqi: isWeekend ? '假日組' : '平日組',
+          assignedCount: 1,
+          assignedMembers: [chosenMember],
+          standbys: [],
+          adjustedFrom: conflictAdjustedInfo?.originalMember || null
+        });
+
+        curr.setDate(curr.getDate() + 1);
+        continue;
+      }
+
+      // ─── 模式 B：宜蘭園區和氣二女眾班（星期 × 整組輪替） ───
+      const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
 
       // 檢查此日是否歸屬和氣二
       const assignedHeqi = getHeqiForDate(dateStr);
@@ -377,17 +534,14 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       let startIdx = rotationPointers[pointerKey] || 0;
 
       if (rawMembers.length > quota) {
-        // 從 startIdx 循環挑選 quota 位
         for (let i = 0; i < quota; i++) {
           const mIdx = (startIdx + i) % rawMembers.length;
           selectedMembers.push(rawMembers[mIdx]);
         }
-        // 未入選的列為備用
         for (let i = quota; i < rawMembers.length; i++) {
           const mIdx = (startIdx + i) % rawMembers.length;
           standbys.push(rawMembers[mIdx]);
         }
-        // 更新指標供未來下次輪到時使用
         rotationPointers[pointerKey] = (startIdx + quota) % rawMembers.length;
       } else {
         selectedMembers = [...rawMembers];
@@ -401,7 +555,6 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         });
       }
 
-      // 找出若存在於當前畫面矩陣中的 slots
       const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'YL_F'));
 
       for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
@@ -409,7 +562,6 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         const memberName = selectedMembers[slotIdx] || '';
         const memberObj = memberName ? nameToMember.get(memberName) : null;
 
-        // 若在當前矩陣中，同步更新前端視圖
         const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
         if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {
           skippedSlots.push({ slotId: matrixSlot.id, reason: '已有排班故保留' });
@@ -422,7 +574,6 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           matrixSlot.status = memberName ? '已排班' : '未指派';
         }
 
-        // 加入欲存入 Firestore 的完整席位記錄
         const slotItem = {
           id: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_${slotNumber}`,
           location,
@@ -442,7 +593,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         };
         allGeneratedSlots.push(slotItem);
 
-        // 檢查東港衝突
+        // 檢查跨場地衝突
         if (memberName && otherMap.has(dateStr)) {
           const otherConflicts = otherMap.get(dateStr).filter(o => o.memberName === memberName);
           if (otherConflicts.length > 0) {
@@ -481,7 +632,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       conflicts,
       standbyList,
       skippedSlots,
-      updatedRotationPointers: rotationPointers
+      updatedRotationPointers: rotationPointers,
+      ruleId: rule?.id
     };
   }
 
@@ -491,13 +643,13 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
    * @param {Object} updatedPointers
    * @param {string} ruleId
    */
-  async function saveAutoScheduleToDb(slots = [], updatedPointers = null, ruleId = 'rule_heqi2_campus_female') {
+  async function saveAutoScheduleToDb(slots = [], updatedPointers = null, ruleId = null) {
     loading.value = true;
     try {
       if (slots && slots.length > 0) {
         await batchWriteItems('dutyShifts', slots, 'set');
       }
-      if (updatedPointers && Object.keys(updatedPointers).length > 0) {
+      if (updatedPointers && Object.keys(updatedPointers).length > 0 && ruleId) {
         const found = rules.value.find(r => r.id === ruleId);
         if (found) {
           found.rotationPointers = { ...(found.rotationPointers || {}), ...updatedPointers };
@@ -520,6 +672,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     fetchRules,
     fetchWeekRotation,
     saveRule,
+    deleteRule,
     saveWeekRotation,
     generateAutoSchedule,
     saveAutoScheduleToDb
