@@ -325,7 +325,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       ruleId = null,    // 目標規則 ID
       mode = 'heqi_only', // 'heqi_only' | 'force_heqi2'
       overwriteStrategy = 'overwrite', // 'overwrite' | 'empty_only'
-      targetRule = null
+      targetRule = null,
+      customStartTeamIndex = null,   // 自訂星期整組輪替起始組別 (0-indexed: 0=第一組, 1=第二組...)
+      startWeekdayMember = null,     // 自訂平日輪值起始志工姓名
+      startWeekendMember = null      // 自訂假日輪值起始志工姓名
     } = options;
 
     // 建立姓名與志工 ID 對應字典
@@ -352,6 +355,20 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
     const rotationPointers = { ...(rule?.rotationPointers || {}) };
 
+    // 若有自訂平日或假日起始志工，設定起始 pointer
+    if (startWeekdayMember && Array.isArray(rule?.weekdayMembers)) {
+      const idx = rule.weekdayMembers.findIndex(n => (n || '').trim() === startWeekdayMember.trim());
+      if (idx >= 0) {
+        rotationPointers.weekday = idx;
+      }
+    }
+    if (startWeekendMember && Array.isArray(rule?.weekendMembers)) {
+      const idx = rule.weekendMembers.findIndex(n => (n || '').trim() === startWeekendMember.trim());
+      if (idx >= 0) {
+        rotationPointers.weekend = idx;
+      }
+    }
+
     // 決定遍歷起訖範圍（支援跨越任意月份之自訂區間）
     let startD = startDate ? parseDateToMidnight(startDate) : new Date(year, month - 1, 1);
     let endD = endDate ? parseDateToMidnight(endDate) : new Date(year, month, 0);
@@ -361,6 +378,17 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       startD = endD;
       endD = tmp;
     }
+
+    // 計算排班區間起始週差與組別控制變數
+    const hasCustomStartTeam = (customStartTeamIndex !== null && customStartTeamIndex !== undefined && customStartTeamIndex !== '' && !isNaN(Number(customStartTeamIndex)));
+    const forcedStartTeamIndex = hasCustomStartTeam ? Number(customStartTeamIndex) : null;
+
+    const startYear = startD.getFullYear();
+    const startMonth = String(startD.getMonth() + 1).padStart(2, '0');
+    const startDay = String(startD.getDate()).padStart(2, '0');
+    const startDateStr = `${startYear}-${startMonth}-${startDay}`;
+    const firstWeekDiff = getWeekDiff(startDateStr);
+    let firstCampusRoundIndex = null;
 
     // 複製目前矩陣
     const newMatrix = currentMatrix.map(slot => ({ ...slot }));
@@ -530,15 +558,28 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         continue;
       }
 
-      // 組別輪替依「週次」循序下輪
+      // 組別輪替依「週次」循序下輪（支援自訂起始組別）
       let teamIndex = 0;
       if (isCampusDuty && targetHeqi !== '全區通用') {
         const roundIndex = getHeqiRoundIndex(dateStr, targetHeqi);
-        teamIndex = ((roundIndex % teams.length) + teams.length) % teams.length;
+        if (forcedStartTeamIndex !== null) {
+          if (firstCampusRoundIndex === null) {
+            firstCampusRoundIndex = roundIndex;
+          }
+          const roundOffset = roundIndex - firstCampusRoundIndex;
+          teamIndex = ((forcedStartTeamIndex + roundOffset) % teams.length + teams.length) % teams.length;
+        } else {
+          teamIndex = ((roundIndex % teams.length) + teams.length) % teams.length;
+        }
       } else {
         // 非園區（如東港聯絡處）或全區通用或全月強制模式：依自基準日起算的週次差循序推進
         const diffWeeks = getWeekDiff(dateStr);
-        teamIndex = ((diffWeeks % teams.length) + teams.length) % teams.length;
+        if (forcedStartTeamIndex !== null) {
+          const weekOffset = diffWeeks - firstWeekDiff;
+          teamIndex = ((forcedStartTeamIndex + weekOffset) % teams.length + teams.length) % teams.length;
+        } else {
+          teamIndex = ((diffWeeks % teams.length) + teams.length) % teams.length;
+        }
       }
 
       const assignedTeam = teams[teamIndex];
@@ -651,7 +692,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         dateStr,
         dayOfWeek,
         teamIndex,
-        heqi: assignedHeqi,
+        heqi: isCampusDuty ? assignedHeqi : (rule.heqiGroup || '常態輪值'),
         teamName: assignedTeam.teamName,
         assignedCount: Math.min(selectedMembers.length, quota),
         assignedMembers: selectedMembers.slice(0, quota),

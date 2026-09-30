@@ -360,6 +360,94 @@
             </div>
           </div>
 
+          <!-- 自訂輪值起始設定 (依規則自訂起始組別或起始志工) -->
+          <div class="card p-3 border bg-amber-50/30 border-amber-200 shadow-xs">
+            <!-- 模式 1：星期整組循序輪替規則 (例如宜蘭女眾、東港女眾) -->
+            <div v-if="currentSelectedAutoRule?.ruleType === 'weekday_group_rotation'">
+              <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+                <label class="form-label font-bold text-xs text-amber-900 m-0 flex items-center gap-1.5">
+                  <span>🎯 自訂本次排班起始組別：</span>
+                </label>
+                <span class="text-xs text-muted">
+                  （指定排班區間第 1 週開始輪值的組別，往後依週次循序遞增輪替）
+                </span>
+              </div>
+              <div class="flex items-center gap-3 flex-wrap">
+                <select 
+                  v-model="customStartTeamIndex" 
+                  class="form-select form-select-sm font-bold text-gray-800" 
+                  style="max-width: 320px;"
+                  @change="runAutoPreview"
+                >
+                  <option value="">⚙️ 系統預設（依標準週次自動推算）</option>
+                  <option 
+                    v-for="t in availableStartTeams" 
+                    :key="t.index" 
+                    :value="t.index"
+                  >
+                    {{ t.label }}
+                  </option>
+                </select>
+                <span v-if="customStartTeamIndex !== ''" class="badge badge-primary text-xs py-1 px-2.5 font-bold">
+                  ✓ 本次將自【{{ availableStartTeams.find(t => t.index === Number(customStartTeamIndex))?.label || `第 ${Number(customStartTeamIndex) + 1} 組` }}】開始輪值
+                </span>
+              </div>
+            </div>
+
+            <!-- 模式 2：平日/假日雙軌循序循環輪替規則 (例如東港男眾) -->
+            <div v-else-if="currentSelectedAutoRule?.ruleType === 'weekday_weekend_sequential'">
+              <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+                <label class="form-label font-bold text-xs text-blue-900 m-0 flex items-center gap-1.5">
+                  <span>🎯 自訂本次排班起始輪值人員：</span>
+                </label>
+                <span class="text-xs text-muted">
+                  （可分別指定平日與假日自哪一位志工開始循序輪替）
+                </span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <span class="text-xs font-bold text-gray-700 block mb-1">🏢 平日輪值起始志工：</span>
+                  <select 
+                    v-model="customStartWeekdayMember" 
+                    class="form-select form-select-sm font-bold"
+                    @change="runAutoPreview"
+                  >
+                    <option value="">
+                      ⚙️ 接續上次指標（目前為：{{ currentWeekdayPointerMember || '第一位' }}）
+                    </option>
+                    <option 
+                      v-for="(name, idx) in availableWeekdayMembers" 
+                      :key="idx" 
+                      :value="name"
+                    >
+                      {{ idx + 1 }}. {{ name }}
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <span class="text-xs font-bold text-gray-700 block mb-1">🏖️ 假日輪值起始志工：</span>
+                  <select 
+                    v-model="customStartWeekendMember" 
+                    class="form-select form-select-sm font-bold"
+                    @change="runAutoPreview"
+                  >
+                    <option value="">
+                      ⚙️ 接續上次指標（目前為：{{ currentWeekendPointerMember || '第一位' }}）
+                    </option>
+                    <option 
+                      v-for="(name, idx) in availableWeekendMembers" 
+                      :key="idx" 
+                      :value="name"
+                    >
+                      {{ idx + 1 }}. {{ name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 排班選項控制 -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- 園區和氣值週模式選擇 -->
@@ -1098,6 +1186,9 @@ const availableAutoRules = computed(() => {
 });
 
 const selectedAutoRuleId = ref('');
+const customStartTeamIndex = ref('');
+const customStartWeekdayMember = ref('');
+const customStartWeekendMember = ref('');
 
 const currentSelectedAutoRule = computed(() => {
   return availableAutoRules.value.find(r => r.id === selectedAutoRuleId.value) || availableAutoRules.value[0] || null;
@@ -1108,13 +1199,76 @@ const currentSelectedAutoRuleQuota = computed(() => {
   return getRuleQuota(currentSelectedAutoRule.value);
 });
 
+// 動態推算當前星期整組輪替規則所擁有的組別選項清單
+const availableStartTeams = computed(() => {
+  if (!currentSelectedAutoRule.value?.weekdayTeams) return [];
+  const teamsObj = currentSelectedAutoRule.value.weekdayTeams;
+  let maxCount = 0;
+  const sampleNames = [];
+
+  for (const day in teamsObj) {
+    const dayTeams = teamsObj[day];
+    if (Array.isArray(dayTeams)) {
+      if (dayTeams.length > maxCount) {
+        maxCount = dayTeams.length;
+      }
+      dayTeams.forEach((t, idx) => {
+        if (!sampleNames[idx] && t.teamName) {
+          sampleNames[idx] = t.teamName;
+        }
+      });
+    }
+  }
+
+  const count = Math.max(maxCount, 5);
+  const chineseNums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十'];
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    const defaultName = i < chineseNums.length ? `第${chineseNums[i]}組` : `第 ${i + 1} 組`;
+    const name = sampleNames[i] || defaultName;
+    list.push({
+      index: i,
+      label: `${name} (第 ${i + 1} 組)`
+    });
+  }
+  return list;
+});
+
+const availableWeekdayMembers = computed(() => {
+  return currentSelectedAutoRule.value?.weekdayMembers || [];
+});
+
+const availableWeekendMembers = computed(() => {
+  return currentSelectedAutoRule.value?.weekendMembers || [];
+});
+
+const currentWeekdayPointerMember = computed(() => {
+  const members = availableWeekdayMembers.value;
+  if (!members.length) return '';
+  const ptr = currentSelectedAutoRule.value?.rotationPointers?.weekday || 0;
+  return members[ptr % members.length] || '';
+});
+
+const currentWeekendPointerMember = computed(() => {
+  const members = availableWeekendMembers.value;
+  if (!members.length) return '';
+  const ptr = currentSelectedAutoRule.value?.rotationPointers?.weekend || 0;
+  return members[ptr % members.length] || '';
+});
+
 // 監聽道場切換，自動匹配當前道場適用的排班規則
 watch(selectedLocation, (newLoc) => {
   const validRule = (dutyRulesStore.rules || []).find(r => r.location === newLoc && r.enabled !== false);
   selectedAutoRuleId.value = validRule ? validRule.id : '';
+  customStartTeamIndex.value = '';
+  customStartWeekdayMember.value = '';
+  customStartWeekendMember.value = '';
 });
 
 function onAutoRuleChange() {
+  customStartTeamIndex.value = '';
+  customStartWeekdayMember.value = '';
+  customStartWeekendMember.value = '';
   runAutoPreview();
 }
 
@@ -1123,6 +1277,9 @@ function openAutoScheduleModal() {
   if (!selectedAutoRuleId.value || !availableAutoRules.value.some(r => r.id === selectedAutoRuleId.value)) {
     selectedAutoRuleId.value = availableAutoRules.value[0]?.id || '';
   }
+  customStartTeamIndex.value = '';
+  customStartWeekdayMember.value = '';
+  customStartWeekendMember.value = '';
 
   if (selectedLocation.value === '東港聯絡處') {
     if (selectedMonth.value) {
@@ -1163,7 +1320,10 @@ function runAutoPreview() {
       allMembers: allMembers.value,
       ruleId: selectedAutoRuleId.value || null,
       mode: autoScheduleMode.value,
-      overwriteStrategy: overwriteStrategy.value
+      overwriteStrategy: overwriteStrategy.value,
+      customStartTeamIndex: customStartTeamIndex.value !== '' ? Number(customStartTeamIndex.value) : null,
+      startWeekdayMember: customStartWeekdayMember.value || null,
+      startWeekendMember: customStartWeekendMember.value || null
     });
   } catch (err) {
     console.error('runAutoPreview error:', err);
