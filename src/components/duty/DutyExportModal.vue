@@ -31,7 +31,7 @@
             </div>
           </div>
 
-          <div class="form-group mb-0">
+          <div class="form-group mb-3">
             <label class="form-label font-bold text-xs">3. 選擇和氣組別：</label>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <label 
@@ -47,6 +47,26 @@
                   class="cursor-pointer"
                 />
                 <span>{{ hq.label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group mb-0">
+            <label class="form-label font-bold text-xs">4. 選擇志工眾別：</label>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label 
+                v-for="g in genderOptions" 
+                :key="g.value" 
+                class="flex items-center gap-1.5 p-2 rounded border bg-white cursor-pointer text-xs transition-colors"
+                :class="selectedGender === g.value ? 'border-primary bg-blue-50/40 font-bold text-primary' : 'hover:bg-gray-100'"
+              >
+                <input 
+                  v-model="selectedGender" 
+                  type="radio" 
+                  :value="g.value" 
+                  class="cursor-pointer"
+                />
+                <span>{{ g.icon }} {{ g.label }}</span>
               </label>
             </div>
           </div>
@@ -137,6 +157,7 @@ const toast = useToast();
 const selectedLocation = ref(props.defaultLocation || '宜蘭園區');
 const selectedMonth = ref(props.defaultMonth || new Date().toISOString().substring(0, 7));
 const selectedHeqi = ref('all');
+const selectedGender = ref('all');
 const loading = ref(false);
 const exporting = ref(false);
 
@@ -151,6 +172,12 @@ const heqiOptions = [
   { value: '和氣三', label: '和氣三' },
   { value: '和氣四', label: '和氣四' },
   { value: '全區/未指定', label: '全區 / 其他' }
+];
+
+const genderOptions = [
+  { value: 'all', label: '全部志工 (不限)', icon: '👥' },
+  { value: '男', label: '僅男眾 (男眾班)', icon: '👨' },
+  { value: '女', label: '僅女眾 (女眾班)', icon: '👩' }
 ];
 
 async function loadData() {
@@ -190,8 +217,14 @@ const enrichedList = computed(() => {
 });
 
 const filteredDuties = computed(() => {
-  if (selectedHeqi.value === 'all') return enrichedList.value;
-  return enrichedList.value.filter(d => d.heqi === selectedHeqi.value);
+  let list = enrichedList.value;
+  if (selectedHeqi.value !== 'all') {
+    list = list.filter(d => d.heqi === selectedHeqi.value);
+  }
+  if (selectedGender.value !== 'all') {
+    list = list.filter(d => d.genderType === selectedGender.value);
+  }
+  return list;
 });
 
 const filteredDutiesCount = computed(() => filteredDuties.value.length);
@@ -215,7 +248,8 @@ function handleExportExcel() {
       duties: internalDuties.value,
       members: internalMembers.value,
       orgs: internalOrgs.value,
-      targetHeqi: selectedHeqi.value
+      targetHeqi: selectedHeqi.value,
+      targetGender: selectedGender.value
     });
     toast.success(`🎉 Excel 匯出成功！共產出 ${res.totalCount} 席次、${res.groupCount} 個協力工作頁。`);
   } catch (err) {
@@ -235,7 +269,8 @@ function handleBatchHeqi() {
       month,
       duties: internalDuties.value,
       members: internalMembers.value,
-      orgs: internalOrgs.value
+      orgs: internalOrgs.value,
+      targetGender: selectedGender.value
     });
     toast.success(`🎉 已啟動批次下載！正在為各和氣分別產出專屬 Excel 檔案（共 ${count} 份）。`);
   } catch (err) {
@@ -256,7 +291,8 @@ function handlePrintPdf() {
       duties: internalDuties.value,
       members: internalMembers.value,
       orgs: internalOrgs.value,
-      targetHeqi: selectedHeqi.value
+      targetHeqi: selectedHeqi.value,
+      targetGender: selectedGender.value
     });
     toast.info('📄 已啟動列印預覽！請於列印視窗中選擇「另存為 PDF」或實體印表機。');
   } catch (err) {
