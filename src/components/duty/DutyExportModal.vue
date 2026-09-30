@@ -130,7 +130,7 @@
             <span>💡 輸出結構特色：</span>
           </div>
           <ul class="text-gray-700 pl-4 list-disc space-y-1 leading-relaxed">
-            <li><strong>Excel 檔 (.xlsx)</strong>：第 1 頁為值班總表，第 2 頁起自動依<strong>「各互愛及各協力」建立獨立工作表 (Worksheet)</strong>，包含組員電話與出勤簽章欄。</li>
+            <li><strong>Excel 檔 (.xlsx)</strong>：第 1 頁為值班總表，第 2 頁起自動依<strong>「各互愛及各協力」建立獨立工作表 (Worksheet)</strong>，包含出勤簽章與備註欄。</li>
             <li><strong>PDF 檔 (.pdf)</strong>：依各協力分頁排版，每頁頂部皆具備和氣、互愛、協力名稱與簽章欄，<strong>可直接於預覽列印視窗中「另存為 PDF」</strong>。</li>
           </ul>
         </div>

@@ -146,7 +146,7 @@ export function exportDutyScheduleToExcel({
     ? (genderSuffix ? `全區總表${genderSuffix}` : '全道場值班總表') 
     : `${targetHeqi}總表${genderSuffix ? genderSuffix : ''}`;
   const totalHeaders = [
-    '序號', '值班日期', '星期', '班次名稱', '值班時段', '眾別', '志工姓名', '聯絡電話', '和氣', '互愛', '協力', '出勤簽章'
+    '序號', '值班日期', '星期', '班次名稱', '值班時段', '眾別', '志工姓名', '和氣', '互愛', '協力', '出勤簽章'
   ];
   const totalRows = filteredList.map((item, idx) => [
     idx + 1,
@@ -156,7 +156,6 @@ export function exportDutyScheduleToExcel({
     item.timeRange || '',
     item.genderType,
     item.memberName,
-    item.memberPhone,
     item.heqi,
     item.huai,
     item.xieli,
@@ -169,7 +168,7 @@ export function exportDutyScheduleToExcel({
     [],
     totalHeaders,
     ...totalRows,
-    ['合計', `共 ${filteredList.length} 席次`, '', '', '', '', '', '', '', '', '', '']
+    ['合計', `共 ${filteredList.length} 席次`, '', '', '', '', '', '', '', '', '']
   ];
 
   const wsTotal = XLSX.utils.aoa_to_sheet(totalAoa);
@@ -180,12 +179,11 @@ export function exportDutyScheduleToExcel({
     { wch: 14 }, // 班次名稱
     { wch: 16 }, // 值班時段
     { wch: 8 },  // 眾別
-    { wch: 12 }, // 志工姓名
-    { wch: 16 }, // 聯絡電話
+    { wch: 14 }, // 志工姓名
     { wch: 12 }, // 和氣
     { wch: 14 }, // 互愛
     { wch: 16 }, // 協力
-    { wch: 14 }  // 出勤簽章
+    { wch: 16 }  // 出勤簽章
   ];
   XLSX.utils.book_append_sheet(wb, wsTotal, totalSheetTitle.slice(0, 30));
 
@@ -221,7 +219,7 @@ export function exportDutyScheduleToExcel({
     }
     usedSheetNames.add(uniqueName);
 
-    const grpHeaders = ['序號', '值班日期', '星期', '班次名稱', '值班時段', '眾別', '志工姓名', '聯絡電話', '出勤簽章 / 備註'];
+    const grpHeaders = ['序號', '值班日期', '星期', '班次名稱', '值班時段', '眾別', '志工姓名', '出勤簽章 / 備註'];
     const grpRows = grp.list.map((item, idx) => [
       idx + 1,
       item.dutyDate,
@@ -230,7 +228,6 @@ export function exportDutyScheduleToExcel({
       item.timeRange || '',
       item.genderType,
       item.memberName,
-      item.memberPhone,
       ''
     ]);
 
@@ -240,7 +237,7 @@ export function exportDutyScheduleToExcel({
       [],
       grpHeaders,
       ...grpRows,
-      ['合計', `共 ${grp.list.length} 席次`, '', '', '', '', '', '', '']
+      ['合計', `共 ${grp.list.length} 席次`, '', '', '', '', '', '']
     ];
 
     const wsGrp = XLSX.utils.aoa_to_sheet(grpAoa);
@@ -252,8 +249,7 @@ export function exportDutyScheduleToExcel({
       { wch: 16 }, // 值班時段
       { wch: 8 },  // 眾別
       { wch: 14 }, // 志工姓名
-      { wch: 16 }, // 聯絡電話
-      { wch: 20 }  // 出勤簽章
+      { wch: 22 }  // 出勤簽章
     ];
     XLSX.utils.book_append_sheet(wb, wsGrp, uniqueName);
   });
@@ -405,15 +401,14 @@ export function printDutySchedulePdf({
   groupsMap.forEach((grp, key) => {
     const rowsHtml = grp.list.map((item, idx) => `
       <tr>
-        <td style="width: 40px; text-align: center;">${idx + 1}</td>
-        <td style="width: 95px; text-align: center; font-weight: bold;">${item.dutyDate}</td>
-        <td style="width: 50px; text-align: center;">${item.dayOfWeek}</td>
-        <td style="width: 100px; text-align: center;">${item.shiftLabel}</td>
-        <td style="width: 110px; text-align: center;">${item.timeRange || ''}</td>
-        <td style="width: 50px; text-align: center;">${item.genderType}眾</td>
-        <td style="width: 90px; text-align: center; font-weight: bold;">${item.memberName}</td>
-        <td style="width: 110px; text-align: center;">${item.memberPhone || '-'}</td>
-        <td style="width: 120px; text-align: center;"></td>
+        <td style="width: 45px; text-align: center;">${idx + 1}</td>
+        <td style="width: 100px; text-align: center; font-weight: bold;">${item.dutyDate}</td>
+        <td style="width: 55px; text-align: center;">${item.dayOfWeek}</td>
+        <td style="width: 115px; text-align: center;">${item.shiftLabel}</td>
+        <td style="width: 125px; text-align: center;">${item.timeRange || ''}</td>
+        <td style="width: 55px; text-align: center;">${item.genderType}眾</td>
+        <td style="width: 105px; text-align: center; font-weight: bold;">${item.memberName}</td>
+        <td style="text-align: center;"></td>
       </tr>
     `).join('');
 
@@ -432,14 +427,13 @@ export function printDutySchedulePdf({
         <table class="duty-table">
           <thead>
             <tr>
-              <th>序號</th>
-              <th>值班日期</th>
-              <th>星期</th>
-              <th>班次名稱</th>
-              <th>值班時段</th>
-              <th>眾別</th>
-              <th>志工姓名</th>
-              <th>聯絡電話</th>
+              <th style="width: 45px;">序號</th>
+              <th style="width: 100px;">值班日期</th>
+              <th style="width: 55px;">星期</th>
+              <th style="width: 115px;">班次名稱</th>
+              <th style="width: 125px;">值班時段</th>
+              <th style="width: 55px;">眾別</th>
+              <th style="width: 105px;">志工姓名</th>
               <th>出勤簽名 / 備註</th>
             </tr>
           </thead>
