@@ -7,7 +7,7 @@
             📤 匯出志工值班排班名單
           </h3>
           <p class="text-xs text-muted mt-1">
-            可指定整月份或自訂區間，依和氣/眾別篩選並自動依「互愛及協力」拆分獨立工作表 (Excel / PDF)
+            可指定整月份或自訂區間，依和氣/眾別篩選，支援<strong>依日期順序總清冊</strong>或<strong>依互愛協力分頁</strong>匯出 (Excel / PDF)
           </p>
         </div>
         <button class="modal-close" @click="$emit('close')">×</button>
@@ -103,7 +103,7 @@
             </div>
           </div>
 
-          <div class="form-group mb-0">
+          <div class="form-group mb-3">
             <label class="form-label font-bold text-xs">4. 選擇志工眾別：</label>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <label 
@@ -122,14 +122,52 @@
               </label>
             </div>
           </div>
+
+          <div class="form-group mb-0">
+            <label class="form-label font-bold text-xs">5. 匯出排序與版面方式：</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label 
+                class="flex items-center gap-1.5 p-2 rounded border bg-white cursor-pointer text-xs transition-colors"
+                :class="exportOrderMode === 'date' ? 'border-primary bg-blue-50/40 font-bold text-primary' : 'hover:bg-gray-100'"
+              >
+                <input 
+                  v-model="exportOrderMode" 
+                  type="radio" 
+                  value="date" 
+                  class="cursor-pointer"
+                />
+                <span>📅 依日期順序排列 (不分組織別，排程總清冊)</span>
+              </label>
+
+              <label 
+                class="flex items-center gap-1.5 p-2 rounded border bg-white cursor-pointer text-xs transition-colors"
+                :class="exportOrderMode === 'org' ? 'border-primary bg-blue-50/40 font-bold text-primary' : 'hover:bg-gray-100'"
+              >
+                <input 
+                  v-model="exportOrderMode" 
+                  type="radio" 
+                  value="org" 
+                  class="cursor-pointer"
+                />
+                <span>🏢 依互愛及協力分組 (分頁工作表)</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <!-- 2. 分頁結構說明提示 -->
         <div class="card p-3 border border-blue-200 bg-blue-50/30 text-xs">
-          <div class="font-bold text-primary mb-1 flex items-center gap-1.5">
+          <div class="font-bold text-primary mb-1 flex items-center justify-between">
             <span>💡 輸出結構特色：</span>
+            <span class="text-[11px] font-normal text-muted">
+              目前模式：<span class="text-primary font-bold">{{ exportOrderMode === 'date' ? '📅 依日期順序排列 (不論組織別)' : '🏢 依互愛協力分組' }}</span>
+            </span>
           </div>
-          <ul class="text-gray-700 pl-4 list-disc space-y-1 leading-relaxed">
+          <ul v-if="exportOrderMode === 'date'" class="text-gray-700 pl-4 list-disc space-y-1 leading-relaxed">
+            <li><strong>Excel 檔 (.xlsx)</strong>：不論組織別，完全依照<strong>「值班日期」</strong>由先至後排列匯出單一完整排班總名冊，包含班次、時段、眾別、姓名、所屬組織與簽章欄，適合現場櫃台每日出勤核對。</li>
+            <li><strong>PDF 檔 (.pdf)</strong>：依日期先後排程連續產出出勤簽到清冊，不按組織拆頁，支援自動跨頁表頭重現，便於整份列印張貼於公佈欄。</li>
+          </ul>
+          <ul v-else class="text-gray-700 pl-4 list-disc space-y-1 leading-relaxed">
             <li><strong>Excel 檔 (.xlsx)</strong>：第 1 頁為值班總表，第 2 頁起自動依<strong>「各互愛及各協力」建立獨立工作表 (Worksheet)</strong>，包含出勤簽章與備註欄。</li>
             <li><strong>PDF 檔 (.pdf)</strong>：依各協力分頁排版，每頁頂部皆具備和氣、互愛、協力名稱與簽章欄，<strong>可直接於預覽列印視窗中「另存為 PDF」</strong>。</li>
           </ul>
@@ -217,6 +255,7 @@ const exportEndDate = ref('');
 
 const selectedHeqi = ref('all');
 const selectedGender = ref('all');
+const exportOrderMode = ref('date'); // 'date' (依日期順序，不分組織別) | 'org' (依互愛協力分組)
 const loading = ref(false);
 const exporting = ref(false);
 
@@ -391,9 +430,14 @@ function handleExportExcel() {
       members: internalMembers.value,
       orgs: internalOrgs.value,
       targetHeqi: selectedHeqi.value,
-      targetGender: selectedGender.value
+      targetGender: selectedGender.value,
+      mode: exportOrderMode.value
     });
-    toast.success(`🎉 Excel 匯出成功！共產出 ${res.totalCount} 席次、${res.groupCount} 個協力工作頁 (${exportStartDate.value} ~ ${exportEndDate.value})。`);
+    if (exportOrderMode.value === 'date') {
+      toast.success(`🎉 Excel 匯出成功！已依照日期順序產出 ${res.totalCount} 席次排班名冊 (${exportStartDate.value} ~ ${exportEndDate.value})。`);
+    } else {
+      toast.success(`🎉 Excel 匯出成功！共產出 ${res.totalCount} 席次、${res.groupCount} 個協力工作頁 (${exportStartDate.value} ~ ${exportEndDate.value})。`);
+    }
   } catch (err) {
     toast.error('匯出 Excel 失敗：' + err.message);
   } finally {
@@ -414,9 +458,11 @@ function handleBatchHeqi() {
       duties: internalDuties.value,
       members: internalMembers.value,
       orgs: internalOrgs.value,
-      targetGender: selectedGender.value
+      targetGender: selectedGender.value,
+      mode: exportOrderMode.value
     });
-    toast.success(`🎉 已啟動批次下載！正在為各和氣分別產出專屬 Excel 檔案（共 ${count} 份，區間：${exportStartDate.value} ~ ${exportEndDate.value}）。`);
+    const modeDesc = exportOrderMode.value === 'date' ? '依日期順序' : '依協力分頁';
+    toast.success(`🎉 已啟動批次下載！正在為各和氣分別產出${modeDesc}專屬 Excel 檔案（共 ${count} 份，區間：${exportStartDate.value} ~ ${exportEndDate.value}）。`);
   } catch (err) {
     toast.error('批次匯出失敗：' + err.message);
   } finally {
@@ -438,9 +484,11 @@ function handlePrintPdf() {
       members: internalMembers.value,
       orgs: internalOrgs.value,
       targetHeqi: selectedHeqi.value,
-      targetGender: selectedGender.value
+      targetGender: selectedGender.value,
+      mode: exportOrderMode.value
     });
-    toast.info('📄 已啟動列印預覽！請於列印視窗中選擇「另存為 PDF」或實體印表機。');
+    const modeDesc = exportOrderMode.value === 'date' ? '依日期順序' : '依協力分頁';
+    toast.info(`📄 已啟動列印預覽（${modeDesc}）！請於列印視窗中選擇「另存為 PDF」或實體印表機。`);
   } catch (err) {
     toast.error('啟動列印失敗：' + err.message);
   } finally {

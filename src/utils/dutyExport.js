@@ -85,7 +85,8 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
  * 匯出志工值班排班表至 Excel (.xlsx)
  * - 支援整月或自訂日期區間
  * - 依所選和氣過濾（或全部和氣）
- * - 自動依「互愛及協力」建立獨立分頁工作表 (Worksheet)
+ * - mode = 'date'：不論組織別，完全依日期順序匯出單一完整排程總清冊
+ * - mode = 'org'：依「互愛及協力」建立獨立分頁工作表 (Worksheet)
  */
 export function exportDutyScheduleToExcel({
   location = '宜蘭園區',
@@ -97,7 +98,8 @@ export function exportDutyScheduleToExcel({
   members = [],
   orgs = [],
   targetHeqi = 'all', // 'all' | '和氣一' | '和氣二' | '和氣三' | '和氣四' ...
-  targetGender = 'all' // 'all' | '男' | '女'
+  targetGender = 'all', // 'all' | '男' | '女'
+  mode = 'date' // 'date' (依日期順序) | 'org' (依互愛協力分組)
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
 
@@ -137,18 +139,91 @@ export function exportDutyScheduleToExcel({
     throw new Error(`在【${location}】${dateRangeLabel} (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供匯出`);
   }
 
+  // 確保依照日期 -> 班次 -> 眾別 -> 志工姓名完整升冪排序
+  const sortedList = [...filteredList].sort((a, b) => {
+    const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
+    if (cmpDate !== 0) return cmpDate;
+    const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
+    if (cmpShift !== 0) return cmpShift;
+    const cmpGender = (a.genderType || '').localeCompare(b.genderType || '');
+    if (cmpGender !== 0) return cmpGender;
+    return (a.memberName || '').localeCompare(b.memberName || '');
+  });
+
   const wb = XLSX.utils.book_new();
   const nowStr = new Date().toLocaleString('zh-TW', { hour12: false });
-
-  // ───── 1. 建立「總表」工作頁 ─────
   const genderSuffix = targetGender === 'all' ? '' : `(${genderLabel})`;
+  const scopeLabel = targetHeqi === 'all' ? '全區' : targetHeqi;
+  const genderTag = targetGender === 'all' ? '' : `_${genderLabel}`;
+
+  // ───── 模式一：依日期順序排列（不分組織別，單一完整清冊） ─────
+  if (mode === 'date') {
+    const sheetTitle = targetHeqi === 'all' 
+      ? (genderSuffix ? `值班名冊(日期序)${genderSuffix}` : '值班名冊(依日期順序)') 
+      : `${targetHeqi}_日期序${genderSuffix ? genderSuffix : ''}`;
+
+    const headers = [
+      '序號', '值班日期', '星期', '班次名稱', '值班時段', '眾別', '志工姓名', '所屬和氣', '所屬互愛', '所屬協力', '出勤簽章 / 備註'
+    ];
+    const rows = sortedList.map((item, idx) => [
+      idx + 1,
+      item.dutyDate,
+      item.dayOfWeek,
+      item.shiftLabel,
+      item.timeRange || '',
+      item.genderType,
+      item.memberName,
+      item.heqi,
+      item.huai,
+      item.xieli,
+      ''
+    ]);
+
+    const aoa = [
+      [`【慈濟 ${location}】${dateRangeLabel} 志工值班排班表 (依日期順序)`],
+      [`輸出範圍：${heqiLabel} ｜ 眾別：${genderLabel} ｜ 區間：${dateRangeLabel} ｜ 總席次：${sortedList.length} 席 ｜ 產表時間：${nowStr}`],
+      [],
+      headers,
+      ...rows,
+      ['合計', `共 ${sortedList.length} 席次`, '', '', '', '', '', '', '', '', '']
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [
+      { wch: 6 },  // 序號
+      { wch: 13 }, // 值班日期
+      { wch: 8 },  // 星期
+      { wch: 14 }, // 班次名稱
+      { wch: 16 }, // 值班時段
+      { wch: 8 },  // 眾別
+      { wch: 14 }, // 志工姓名
+      { wch: 14 }, // 所屬和氣
+      { wch: 14 }, // 所屬互愛
+      { wch: 16 }, // 所屬協力
+      { wch: 22 }  // 出勤簽章 / 備註
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitle.slice(0, 30));
+
+    const filename = `${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊(依日期順序).xlsx`;
+    XLSX.writeFile(wb, filename);
+
+    return {
+      filename,
+      totalCount: sortedList.length,
+      groupCount: 1,
+      mode: 'date'
+    };
+  }
+
+  // ───── 模式二：依「互愛及協力」分組建立獨立工作頁 ─────
+  // 1. 建立「總表」工作頁
   const totalSheetTitle = targetHeqi === 'all' 
     ? (genderSuffix ? `全區總表${genderSuffix}` : '全道場值班總表') 
     : `${targetHeqi}總表${genderSuffix ? genderSuffix : ''}`;
   const totalHeaders = [
     '序號', '值班日期', '星期', '班次名稱', '值班時段', '眾別', '志工姓名', '和氣', '互愛', '協力', '出勤簽章'
   ];
-  const totalRows = filteredList.map((item, idx) => [
+  const totalRows = sortedList.map((item, idx) => [
     idx + 1,
     item.dutyDate,
     item.dayOfWeek,
@@ -164,11 +239,11 @@ export function exportDutyScheduleToExcel({
 
   const totalAoa = [
     [`【慈濟 ${location}】${dateRangeLabel} 志工值班排班表 - ${totalSheetTitle}`],
-    [`輸出範圍：${heqiLabel} ｜ 眾別：${genderLabel} ｜ 區間：${dateRangeLabel} ｜ 總席次：${filteredList.length} 席 ｜ 產表時間：${nowStr}`],
+    [`輸出範圍：${heqiLabel} ｜ 眾別：${genderLabel} ｜ 區間：${dateRangeLabel} ｜ 總席次：${sortedList.length} 席 ｜ 產表時間：${nowStr}`],
     [],
     totalHeaders,
     ...totalRows,
-    ['合計', `共 ${filteredList.length} 席次`, '', '', '', '', '', '', '', '', '']
+    ['合計', `共 ${sortedList.length} 席次`, '', '', '', '', '', '', '', '', '']
   ];
 
   const wsTotal = XLSX.utils.aoa_to_sheet(totalAoa);
@@ -187,9 +262,9 @@ export function exportDutyScheduleToExcel({
   ];
   XLSX.utils.book_append_sheet(wb, wsTotal, totalSheetTitle.slice(0, 30));
 
-  // ───── 2. 依「互愛及協力」分組建立獨立工作頁 ─────
+  // 2. 依「互愛及協力」分組建立獨立工作頁
   const groupsMap = new Map();
-  filteredList.forEach(item => {
+  sortedList.forEach(item => {
     const groupKey = `${item.huai} - ${item.xieli}`;
     if (!groupsMap.has(groupKey)) {
       groupsMap.set(groupKey, {
@@ -205,7 +280,6 @@ export function exportDutyScheduleToExcel({
   const usedSheetNames = new Set([totalSheetTitle.slice(0, 30)]);
 
   groupsMap.forEach((grp, key) => {
-    // 檔名消毒與長度限制 (Excel Sheet 名稱上限 31 字元且不可含特殊字元)
     let sheetName = `${grp.huai}-${grp.xieli}`.replace(/[\/\\?*\[\]:]/g, '_').trim();
     if (genderSuffix) {
       sheetName = `${sheetName}_${genderLabel}`;
@@ -254,15 +328,14 @@ export function exportDutyScheduleToExcel({
     XLSX.utils.book_append_sheet(wb, wsGrp, uniqueName);
   });
 
-  const scopeLabel = targetHeqi === 'all' ? '全區' : targetHeqi;
-  const genderTag = targetGender === 'all' ? '' : `_${genderLabel}`;
   const filename = `${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊(依協力分頁).xlsx`;
   XLSX.writeFile(wb, filename);
 
   return {
     filename,
-    totalCount: filteredList.length,
-    groupCount: groupsMap.size
+    totalCount: sortedList.length,
+    groupCount: groupsMap.size,
+    mode: 'org'
   };
 }
 
@@ -278,7 +351,8 @@ export function exportBatchHeqiExcel({
   duties = [],
   members = [],
   orgs = [],
-  targetGender = 'all'
+  targetGender = 'all',
+  mode = 'date'
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
   const dateFiltered = enrichedList.filter(item => {
@@ -314,7 +388,8 @@ export function exportBatchHeqiExcel({
           members,
           orgs,
           targetHeqi: hq,
-          targetGender
+          targetGender,
+          mode
         });
       } catch (err) {
         console.warn(`匯出 ${hq} 失敗:`, err);
@@ -340,7 +415,8 @@ export function printDutySchedulePdf({
   members = [],
   orgs = [],
   targetHeqi = 'all',
-  targetGender = 'all'
+  targetGender = 'all',
+  mode = 'date' // 'date' (依日期順序) | 'org' (依互愛協力分組)
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
   const filteredList = enrichedList.filter(item => {
@@ -378,62 +454,63 @@ export function printDutySchedulePdf({
     throw new Error(`在【${location}】${dateRangeLabel} (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供列印 PDF`);
   }
 
-  const printDateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
-  const genderSuffix = targetGender === 'all' ? '' : `（${genderLabel}）`;
-
-  // 依「互愛及協力」分組
-  const groupsMap = new Map();
-  filteredList.forEach(item => {
-    const groupKey = `${item.huai} - ${item.xieli}`;
-    if (!groupsMap.has(groupKey)) {
-      groupsMap.set(groupKey, {
-        heqi: item.heqi,
-        huai: item.huai,
-        xieli: item.xieli,
-        list: []
-      });
-    }
-    groupsMap.get(groupKey).list.push(item);
+  // 確保依照日期 -> 班次 -> 眾別 -> 志工姓名完整升冪排序
+  const sortedList = [...filteredList].sort((a, b) => {
+    const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
+    if (cmpDate !== 0) return cmpDate;
+    const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
+    if (cmpShift !== 0) return cmpShift;
+    const cmpGender = (a.genderType || '').localeCompare(b.genderType || '');
+    if (cmpGender !== 0) return cmpGender;
+    return (a.memberName || '').localeCompare(b.memberName || '');
   });
 
-  const pagesHtml = [];
+  const printDateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const genderSuffix = targetGender === 'all' ? '' : `（${genderLabel}）`;
+  const scopeLabel = targetHeqi === 'all' ? '全區' : targetHeqi;
+  const genderTag = targetGender === 'all' ? '' : `_${genderLabel}`;
 
-  groupsMap.forEach((grp, key) => {
-    const rowsHtml = grp.list.map((item, idx) => `
+  let bodyContentHtml = '';
+
+  if (mode === 'date') {
+    // 依日期順序模式：不分組織別拆頁，整份連續排程清冊
+    const rowsHtml = sortedList.map((item, idx) => `
       <tr>
         <td style="width: 45px; text-align: center;">${idx + 1}</td>
-        <td style="width: 100px; text-align: center; font-weight: bold;">${item.dutyDate}</td>
-        <td style="width: 55px; text-align: center;">${item.dayOfWeek}</td>
-        <td style="width: 115px; text-align: center;">${item.shiftLabel}</td>
-        <td style="width: 125px; text-align: center;">${item.timeRange || ''}</td>
-        <td style="width: 55px; text-align: center;">${item.genderType}眾</td>
-        <td style="width: 105px; text-align: center; font-weight: bold;">${item.memberName}</td>
+        <td style="width: 95px; text-align: center; font-weight: bold;">${item.dutyDate}</td>
+        <td style="width: 50px; text-align: center;">${item.dayOfWeek}</td>
+        <td style="width: 105px; text-align: center;">${item.shiftLabel}</td>
+        <td style="width: 115px; text-align: center;">${item.timeRange || ''}</td>
+        <td style="width: 50px; text-align: center;">${item.genderType}眾</td>
+        <td style="width: 95px; text-align: center; font-weight: bold;">${item.memberName}</td>
+        <td style="width: 160px; text-align: center; font-size: 11px;">${item.heqi} / ${item.huai} / ${item.xieli}</td>
         <td style="text-align: center;"></td>
       </tr>
     `).join('');
 
-    pagesHtml.push(`
-      <div class="print-page">
+    bodyContentHtml = `
+      <div class="print-container">
         <div class="header">
-          <h1 class="title">慈濟【${location}】志工值班排班名冊${genderSuffix}</h1>
-          <p class="subtitle">${dateRangeLabel} 值班表 ｜ 範圍：${heqiLabel} ｜ 眾別：${genderLabel}</p>
+          <h1 class="title">慈濟【${location}】志工值班排班名冊（依日期順序）${genderSuffix}</h1>
+          <p class="subtitle">${dateRangeLabel} 值班表 ｜ 範圍：${heqiLabel} ｜ 眾別：${genderLabel} ｜ 總席次：${sortedList.length} 席</p>
         </div>
 
         <div class="meta-box">
-          <div><strong>所屬組織：</strong>${grp.heqi} ➔ ${grp.huai} ➔ <span class="highlight">${grp.xieli}</span></div>
-          <div><strong>眾別：</strong>${genderLabel} ｜ <strong>區間值班總人次：</strong>${grp.list.length} 席</div>
+          <div><strong>排版模式：</strong>全道場值班時間軸清冊（不論組織別，完全依日期先後排列）</div>
+          <div><strong>統計總數：</strong>共 ${sortedList.length} 席次 ｜ <strong>列印時間：</strong>${printDateStr}</div>
         </div>
 
         <table class="duty-table">
           <thead>
             <tr>
               <th style="width: 45px;">序號</th>
-              <th style="width: 100px;">值班日期</th>
-              <th style="width: 55px;">星期</th>
-              <th style="width: 115px;">班次名稱</th>
-              <th style="width: 125px;">值班時段</th>
-              <th style="width: 55px;">眾別</th>
-              <th style="width: 105px;">志工姓名</th>
+              <th style="width: 95px;">值班日期</th>
+              <th style="width: 50px;">星期</th>
+              <th style="width: 105px;">班次名稱</th>
+              <th style="width: 115px;">值班時段</th>
+              <th style="width: 50px;">眾別</th>
+              <th style="width: 95px;">志工姓名</th>
+              <th style="width: 160px;">所屬組織 (和氣/互愛/協力)</th>
               <th>出勤簽名 / 備註</th>
             </tr>
           </thead>
@@ -443,23 +520,96 @@ export function printDutySchedulePdf({
         </table>
 
         <div class="footer-sign">
-          <div class="footer-col">協力隊長/組長簽署：____________________</div>
+          <div class="footer-col">道場執事/主管簽署：____________________</div>
           <div class="footer-col">印表日期：${printDateStr}</div>
           <div class="footer-col" style="text-align: right;">慈濟小祕書系統 2.0</div>
         </div>
       </div>
-    `);
-  });
+    `;
+  } else {
+    // 依「互愛及協力」分組模式
+    const groupsMap = new Map();
+    sortedList.forEach(item => {
+      const groupKey = `${item.huai} - ${item.xieli}`;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          heqi: item.heqi,
+          huai: item.huai,
+          xieli: item.xieli,
+          list: []
+        });
+      }
+      groupsMap.get(groupKey).list.push(item);
+    });
 
-  const scopeLabel = targetHeqi === 'all' ? '全區' : targetHeqi;
-  const genderTag = targetGender === 'all' ? '' : `_${genderLabel}`;
+    const pagesHtml = [];
+
+    groupsMap.forEach((grp, key) => {
+      const rowsHtml = grp.list.map((item, idx) => `
+        <tr>
+          <td style="width: 45px; text-align: center;">${idx + 1}</td>
+          <td style="width: 100px; text-align: center; font-weight: bold;">${item.dutyDate}</td>
+          <td style="width: 55px; text-align: center;">${item.dayOfWeek}</td>
+          <td style="width: 115px; text-align: center;">${item.shiftLabel}</td>
+          <td style="width: 125px; text-align: center;">${item.timeRange || ''}</td>
+          <td style="width: 55px; text-align: center;">${item.genderType}眾</td>
+          <td style="width: 105px; text-align: center; font-weight: bold;">${item.memberName}</td>
+          <td style="text-align: center;"></td>
+        </tr>
+      `).join('');
+
+      pagesHtml.push(`
+        <div class="print-page">
+          <div class="header">
+            <h1 class="title">慈濟【${location}】志工值班排班名冊${genderSuffix}</h1>
+            <p class="subtitle">${dateRangeLabel} 值班表 ｜ 範圍：${heqiLabel} ｜ 眾別：${genderLabel}</p>
+          </div>
+
+          <div class="meta-box">
+            <div><strong>所屬組織：</strong>${grp.heqi} ➔ ${grp.huai} ➔ <span class="highlight">${grp.xieli}</span></div>
+            <div><strong>眾別：</strong>${genderLabel} ｜ <strong>區間值班總人次：</strong>${grp.list.length} 席</div>
+          </div>
+
+          <table class="duty-table">
+            <thead>
+              <tr>
+                <th style="width: 45px;">序號</th>
+                <th style="width: 100px;">值班日期</th>
+                <th style="width: 55px;">星期</th>
+                <th style="width: 115px;">班次名稱</th>
+                <th style="width: 125px;">值班時段</th>
+                <th style="width: 55px;">眾別</th>
+                <th style="width: 105px;">志工姓名</th>
+                <th>出勤簽名 / 備註</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+
+          <div class="footer-sign">
+            <div class="footer-col">協力隊長/組長簽署：____________________</div>
+            <div class="footer-col">印表日期：${printDateStr}</div>
+            <div class="footer-col" style="text-align: right;">慈濟小祕書系統 2.0</div>
+          </div>
+        </div>
+      `);
+    });
+
+    bodyContentHtml = pagesHtml.join('');
+  }
+
+  const docTitle = mode === 'date'
+    ? `${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊(依日期順序)`
+    : `${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊(依協力分頁)`;
 
   const fullHtml = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
-      <title>${location}_${filenameDateTag}_${scopeLabel}${genderTag}_志工值班名冊</title>
+      <title>${docTitle}</title>
       <style>
         @page {
           size: A4 portrait;
@@ -474,6 +624,9 @@ export function printDutySchedulePdf({
           background: #ffffff;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
+        }
+        .print-container {
+          padding-bottom: 10px;
         }
         .print-page {
           page-break-after: always;
@@ -507,7 +660,7 @@ export function printDutySchedulePdf({
           display: flex;
           justify-content: space-between;
           align-items: center;
-          font-size: 13px;
+          font-size: 12px;
           background-color: #f8fafc;
           border: 1px solid #e2e8f0;
           border-radius: 4px;
@@ -524,6 +677,9 @@ export function printDutySchedulePdf({
           font-size: 12px;
           margin-bottom: 14px;
         }
+        .duty-table thead {
+          display: table-header-group;
+        }
         .duty-table th, .duty-table td {
           border: 1px solid #94a3b8;
           padding: 6px 4px;
@@ -534,6 +690,10 @@ export function printDutySchedulePdf({
           font-weight: 700;
           color: #1e293b;
           text-align: center;
+        }
+        .duty-table tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
         .duty-table tr:nth-child(even) {
           background-color: #f8fafc;
@@ -547,11 +707,13 @@ export function printDutySchedulePdf({
           border-top: 1px dashed #cbd5e1;
           font-size: 12px;
           color: #64748b;
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
       </style>
     </head>
     <body>
-      ${pagesHtml.join('')}
+      ${bodyContentHtml}
     </body>
     </html>
   `;
@@ -582,7 +744,7 @@ export function printDutySchedulePdf({
   }, 400);
 
   return {
-    totalCount: filteredList.length,
-    groupCount: groupsMap.size
+    totalCount: sortedList.length,
+    mode
   };
 }
