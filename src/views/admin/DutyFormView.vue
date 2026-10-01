@@ -549,21 +549,30 @@
           </div>
 
           <!-- 衝突檢測與備用人員提示 -->
-          <div v-if="autoPreviewResult?.conflicts?.length > 0" class="card conflict-banner p-3">
-            <h4 class="font-bold text-danger text-sm mb-1 flex items-center gap-1">
+          <div v-if="autoPreviewResult?.conflicts?.length > 0" class="card conflict-banner p-3 border-amber-300 bg-amber-50/70">
+            <h4 class="font-bold text-amber-900 text-sm mb-1 flex items-center gap-1">
               <span>⚠️ 偵測到 {{ autoPreviewResult.conflicts.length }} 筆跨場地排班衝突：</span>
             </h4>
-            <p class="text-xs text-danger mb-2">
-              依排班衝突處理原則：<strong>以園區排班為優先</strong>{{ selectedLocation === '東港聯絡處' ? '，東港已自動為衝突日期順延由下一位志工接替！' : '，建議於套用後前往東港聯絡處調動志工！' }}
+            <p class="text-xs text-amber-800 mb-2">
+              依排班衝突處理原則：<strong>以園區排班為優先</strong>{{ selectedLocation === '東港聯絡處' ? '，東港已依規則自動調換組別或由順延志工接替！' : '，建議於套用後前往東港聯絡處調動志工！' }}
             </p>
-            <ul class="text-xs text-gray-700 pl-4 list-disc space-y-1">
+            <ul class="text-xs text-gray-800 pl-4 list-disc space-y-1.5">
               <li v-for="(c, idx) in autoPreviewResult.conflicts" :key="idx">
-                <strong>{{ c.dateStr }}</strong>：志工「<strong class="text-primary">{{ c.memberName }}</strong>」原已排在【{{ c.otherLocation }} - {{ c.otherShift }}】
-                <span v-if="c.replaceName" class="text-emerald-700 font-bold ml-1">
-                  ➔ 東港已自動改由「{{ c.replaceName }}」接替
+                <span class="font-bold text-gray-900 mr-1">【{{ c.dateStr }}】</span>
+                <span v-if="c.isSwapped" class="text-amber-900 font-bold">
+                  ⚠️ 【跨場地衝突自動調換】原定{{ c.originalTeamName }}之成員（{{ c.memberName }}）與{{ c.otherLocation }}排班衝突，已依規則與同星期後續【{{ c.swappedTeamName }}】對換值班
                 </span>
-                <span v-else-if="c.suggestAction" class="text-emerald-700 font-bold ml-1">
-                  ➔ {{ c.suggestAction }}
+                <span v-else>
+                  志工「<strong class="text-primary">{{ c.memberName }}</strong>」原已排在【{{ c.otherLocation }} - {{ c.otherShift }}】
+                  <span v-if="c.replaceName" class="text-emerald-700 font-bold ml-1">
+                    ➔ 東港已自動改由「{{ c.replaceName }}」接替
+                  </span>
+                  <span v-else-if="c.notice" class="text-red-700 font-bold ml-1">
+                    ➔ {{ c.notice }}
+                  </span>
+                  <span v-else-if="c.suggestAction" class="text-emerald-700 font-bold ml-1">
+                    ➔ {{ c.suggestAction }}
+                  </span>
                 </span>
               </li>
             </ul>
@@ -592,7 +601,7 @@
                 📋 排班預覽明細（預計排定 {{ autoPreviewResult?.scheduledDetails?.length || 0 }} 天）：
               </strong>
               <span class="text-xs text-muted">
-                {{ selectedLocation === '東港聯絡處' ? '平日/假日雙軌輪替' : (autoScheduleMode === 'heqi_only' ? '僅和氣二週次' : '全月模式') }} / {{ overwriteStrategy === 'overwrite' ? '覆蓋全部' : '僅填空白' }}
+                {{ selectedLocation === '東港聯絡處' ? (currentSelectedAutoRule?.ruleType === 'weekday_weekend_sequential' ? '平日/假日雙軌輪替' : '星期整組循環輪替') : (autoScheduleMode === 'heqi_only' ? '僅和氣二週次' : '全月模式') }} / {{ overwriteStrategy === 'overwrite' ? '覆蓋全部' : '僅填空白' }}
               </span>
             </div>
 
@@ -608,8 +617,11 @@
                   <span class="badge badge-info">{{ item.dayOfWeek === '0' ? '週日' : '週' + ['日','一','二','三','四','五','六'][Number(item.dayOfWeek)] }}</span>
                   <span class="badge badge-gray">{{ item.heqi }}</span>
                   <strong class="text-gray-700 ml-1">{{ item.teamName }}</strong>
-                  <span v-if="item.adjustedNotice" class="badge badge-warning text-[10px]" :title="item.adjustedNotice">
-                    🔄 已調解
+                  <span v-if="item.swapNotice" class="badge badge-warning text-[11px] font-bold py-0.5 px-2 text-amber-900 border border-amber-300 bg-amber-100" :title="item.swapNotice">
+                    ⚠️ 【跨場地衝突自動調換】已與同星期後續【{{ item.swappedTeamName || item.teamName }}】對換
+                  </span>
+                  <span v-else-if="item.adjustedNotice" class="badge badge-warning text-[10px]" :title="item.adjustedNotice">
+                    🔄 {{ item.adjustedNotice }}
                   </span>
                   <span v-else-if="item.adjustedFrom" class="badge badge-warning text-[10px]" title="因園區排班衝突順延接替">
                     🔄 順延接替 {{ item.adjustedFrom }}
@@ -1330,10 +1342,28 @@ function openAutoScheduleModal() {
   runAutoPreview();
 }
 
-function runAutoPreview() {
+async function runAutoPreview() {
   if (!selectedMonth.value) return;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
+    const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
+
+    // 若有自訂排班起訖區間，非同步動態載入涵蓋該區間之所有另一場地排班資料，徹底解決跨月衝突檢測盲區
+    let previewOtherDuties = otherLocationDuties.value || [];
+    if (autoStartDate.value && autoEndDate.value) {
+      const rangeDuties = await dutiesStore.getDutyScheduleByRange(
+        otherLocationName,
+        autoStartDate.value,
+        autoEndDate.value
+      );
+      if (Array.isArray(rangeDuties) && rangeDuties.length > 0) {
+        const map = new Map();
+        previewOtherDuties.forEach(d => { if (d.id) map.set(d.id, d); });
+        rangeDuties.forEach(d => { if (d.id) map.set(d.id, d); });
+        previewOtherDuties = Array.from(map.values());
+      }
+    }
+
     autoPreviewResult.value = dutyRulesStore.generateAutoSchedule({
       location: selectedLocation.value,
       year,
@@ -1341,7 +1371,7 @@ function runAutoPreview() {
       startDate: autoStartDate.value || null,
       endDate: autoEndDate.value || null,
       currentMatrix: matrixList.value,
-      otherLocationDuties: otherLocationDuties.value,
+      otherLocationDuties: previewOtherDuties,
       allMembers: allMembers.value,
       ruleId: selectedAutoRuleId.value || null,
       mode: autoScheduleMode.value,

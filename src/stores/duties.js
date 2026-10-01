@@ -47,29 +47,29 @@ export const useDutiesStore = defineStore('duties', () => {
       const list = await getCollectionDocs('dutyShifts', [
         where('location', '==', location)
       ]);
-      duties.value = list
+      const mapped = list
         .filter(d => (d.dutyDate || '').startsWith(prefix))
         .map(d => ({
           ...d,
           timeRange: d.timeRange || getShiftTimeRange(location, d.shiftId, d.shiftLabel)
         }))
         .sort((a, b) => (a.dutyDate + a.id).localeCompare(b.dutyDate + b.id));
-      return duties.value;
+      duties.value = mapped;
+      return mapped;
     } finally {
       loading.value = false;
     }
   }
 
   /**
-   * 依自訂日期區間 (startDate ~ endDate) 載入指定道場排班清單
+   * 取得指定道場在指定日期區間之排班清單 (純讀取，不覆蓋 duties 狀態，避免並行衝突)
    */
-  async function fetchDutyScheduleByRange(location, startDate, endDate) {
-    loading.value = true;
+  async function getDutyScheduleByRange(location, startDate, endDate) {
     try {
       const list = await getCollectionDocs('dutyShifts', [
         where('location', '==', location)
       ]);
-      duties.value = list
+      return list
         .filter(d => {
           if (!d.dutyDate) return false;
           if (startDate && d.dutyDate < startDate) return false;
@@ -85,7 +85,21 @@ export const useDutiesStore = defineStore('duties', () => {
           if (cmp !== 0) return cmp;
           return (a.id || '').localeCompare(b.id || '');
         });
-      return duties.value;
+    } catch (err) {
+      console.error('getDutyScheduleByRange error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * 依自訂日期區間 (startDate ~ endDate) 載入指定道場排班清單
+   */
+  async function fetchDutyScheduleByRange(location, startDate, endDate) {
+    loading.value = true;
+    try {
+      const mapped = await getDutyScheduleByRange(location, startDate, endDate);
+      duties.value = mapped;
+      return mapped;
     } finally {
       loading.value = false;
     }
@@ -159,6 +173,7 @@ export const useDutiesStore = defineStore('duties', () => {
     getShiftTimeRange,
     fetchDutySchedule,
     fetchDutyScheduleByRange,
+    getDutyScheduleByRange,
     saveMonthlyDuties,
     generateMonthlyTemplate
   };
