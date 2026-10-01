@@ -45,7 +45,28 @@ export function parseOrgHierarchy(orgId, orgsList = []) {
 }
 
 /**
- * 整合與豐富排班資料（補充志工電話與所屬組織階層）
+ * 取得特定日期在宜蘭園區排班下歸屬的值週和氣
+ * 基準：2027-01-04 週一為和氣一，每週輪替
+ */
+export function getCampusDutyHeqiForDate(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const target = new Date(y, m - 1, d, 0, 0, 0, 0);
+  const base = new Date(2027, 0, 4, 0, 0, 0, 0);
+
+  const targetDay = target.getDay();
+  const diffToStart = (targetDay - 1 + 7) % 7;
+  const targetWeekStart = new Date(target.getTime() - diffToStart * 86400000);
+
+  const diffWeeks = Math.round((targetWeekStart.getTime() - base.getTime()) / (7 * 86400000));
+  const order = ['和氣一', '和氣二', '和氣三', '和氣四'];
+  let index = diffWeeks % order.length;
+  if (index < 0) index = (index + order.length) % order.length;
+  return order[index];
+}
+
+/**
+ * 整合與豐富排班資料（補充志工電話與所屬組織階層，自動綁定園區值週和氣）
  */
 export function enrichDutyList(duties = [], members = [], orgs = []) {
   const memberMapById = new Map();
@@ -53,21 +74,43 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
 
   members.forEach(m => {
     if (m.id) memberMapById.set(m.id, m);
-    if (m.name) memberMapByName.set(m.name.trim(), m);
+    if (m.name) {
+      const trimmed = m.name.trim();
+      memberMapByName.set(trimmed, m);
+      const clean = trimmed.replace(/^[★*☆\s]+/, '').trim();
+      if (clean) memberMapByName.set(clean, m);
+    }
   });
 
   return duties
     .filter(d => !!d.memberName)
     .map(d => {
-      const m = memberMapById.get(d.memberId) || memberMapByName.get(d.memberName.trim()) || null;
+      const rawName = (d.memberName || '').trim();
+      const cleanName = rawName.replace(/^[★*☆\s]+/, '').trim();
+      const m = memberMapById.get(d.memberId) || memberMapByName.get(cleanName) || memberMapByName.get(rawName) || null;
       const orgId = m?.orgId || d.orgId || '';
       const orgInfo = parseOrgHierarchy(orgId, orgs);
 
+      // 計算值週和氣（宜蘭園區排班具備明確的輪值和氣）
+      const isCampus = (d.location === '宜蘭園區' || !d.location);
+      const campusDutyHeqi = isCampus ? getCampusDutyHeqiForDate(d.dutyDate) : '';
+      const dutyHeqi = campusDutyHeqi || orgInfo.heqi || '全區通用';
+
+      // 志工有效執勤和氣：若個人未登記組織，在園區排班中自動對應當日值週和氣，避免匯出時被濾除
+      const effectiveHeqi = (orgInfo.heqi && orgInfo.heqi !== '未指定和氣' && orgInfo.heqi !== '全區/未指定')
+        ? orgInfo.heqi
+        : (dutyHeqi || '全區/未指定');
+
       return {
         ...d,
+        rawMemberName: rawName,
+        cleanMemberName: cleanName,
+        displayName: cleanName || rawName,
         memberPhone: m?.phone || '',
         memberCode: m?.volunteerCode || '',
-        heqi: orgInfo.heqi,
+        dutyHeqi, // 該班次值週和氣
+        heqi: effectiveHeqi, // 志工有效執勤和氣
+        personalHeqi: orgInfo.heqi, // 志工原始登記和氣
         huai: orgInfo.huai,
         xieli: orgInfo.xieli,
         orgPath: orgInfo.fullPath,
@@ -77,7 +120,9 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
     .sort((a, b) => {
       const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
       if (cmpDate !== 0) return cmpDate;
-      return (a.shiftId || '').localeCompare(b.shiftId || '');
+      const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
+      if (cmpShift !== 0) return cmpShift;
+      return (a.slotIndex || 0) - (b.slotIndex || 0);
     });
 }
 
@@ -103,12 +148,16 @@ export function exportDutyScheduleToExcel({
 }) {
   const enrichedList = enrichDutyList(duties, members, orgs);
 
-  // 依和氣、眾別與日期區間過濾
+  // 依和氣、眾別與日期區間過濾（只要該值週和氣負責，或志工所屬和氣符合均納入，避免遺漏）
   const filteredList = enrichedList.filter(item => {
     if (startDate && item.dutyDate < startDate) return false;
     if (endDate && item.dutyDate > endDate) return false;
-    const matchHeqi = (targetHeqi === 'all' || !targetHeqi) ? true : (item.heqi === targetHeqi);
-    const matchGender = (targetGender === 'all' || !targetGender) ? true : (item.genderType === targetGender);
+    const matchHeqi = (targetHeqi === 'all' || !targetHeqi) 
+      ? true 
+      : (item.dutyHeqi === targetHeqi || item.heqi === targetHeqi);
+    const matchGender = (targetGender === 'all' || !targetGender) 
+      ? true 
+      : (item.genderType === targetGender);
     return matchHeqi && matchGender;
   });
 
@@ -139,7 +188,7 @@ export function exportDutyScheduleToExcel({
     throw new Error(`在【${location}】${dateRangeLabel} (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供匯出`);
   }
 
-  // 確保依照日期 -> 班次 -> 眾別 -> 志工姓名完整升冪排序
+  // 確保依照日期 -> 班次 -> 眾別 -> 席位順序升冪排序
   const sortedList = [...filteredList].sort((a, b) => {
     const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
     if (cmpDate !== 0) return cmpDate;
@@ -147,7 +196,7 @@ export function exportDutyScheduleToExcel({
     if (cmpShift !== 0) return cmpShift;
     const cmpGender = (a.genderType || '').localeCompare(b.genderType || '');
     if (cmpGender !== 0) return cmpGender;
-    return (a.memberName || '').localeCompare(b.memberName || '');
+    return (a.slotIndex || 0) - (b.slotIndex || 0);
   });
 
   const wb = XLSX.utils.book_new();
@@ -172,7 +221,7 @@ export function exportDutyScheduleToExcel({
       item.shiftLabel,
       item.timeRange || '',
       item.genderType,
-      item.memberName,
+      item.displayName || item.cleanMemberName || item.memberName,
       item.heqi,
       item.huai,
       item.xieli,
@@ -422,8 +471,12 @@ export function printDutySchedulePdf({
   const filteredList = enrichedList.filter(item => {
     if (startDate && item.dutyDate < startDate) return false;
     if (endDate && item.dutyDate > endDate) return false;
-    const matchHeqi = (targetHeqi === 'all' || !targetHeqi) ? true : (item.heqi === targetHeqi);
-    const matchGender = (targetGender === 'all' || !targetGender) ? true : (item.genderType === targetGender);
+    const matchHeqi = (targetHeqi === 'all' || !targetHeqi) 
+      ? true 
+      : (item.dutyHeqi === targetHeqi || item.heqi === targetHeqi);
+    const matchGender = (targetGender === 'all' || !targetGender) 
+      ? true 
+      : (item.genderType === targetGender);
     return matchHeqi && matchGender;
   });
 
@@ -454,7 +507,7 @@ export function printDutySchedulePdf({
     throw new Error(`在【${location}】${dateRangeLabel} (${heqiLabel} / ${genderLabel}) 尚無已排班的名冊可供列印 PDF`);
   }
 
-  // 確保依照日期 -> 班次 -> 眾別 -> 志工姓名完整升冪排序
+  // 確保依照日期 -> 班次 -> 眾別 -> 席位順序完整升冪排序
   const sortedList = [...filteredList].sort((a, b) => {
     const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
     if (cmpDate !== 0) return cmpDate;
@@ -462,7 +515,7 @@ export function printDutySchedulePdf({
     if (cmpShift !== 0) return cmpShift;
     const cmpGender = (a.genderType || '').localeCompare(b.genderType || '');
     if (cmpGender !== 0) return cmpGender;
-    return (a.memberName || '').localeCompare(b.memberName || '');
+    return (a.slotIndex || 0) - (b.slotIndex || 0);
   });
 
   const printDateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -482,7 +535,7 @@ export function printDutySchedulePdf({
         <td style="width: 105px; text-align: center;">${item.shiftLabel}</td>
         <td style="width: 115px; text-align: center;">${item.timeRange || ''}</td>
         <td style="width: 50px; text-align: center;">${item.genderType}眾</td>
-        <td style="width: 95px; text-align: center; font-weight: bold;">${item.memberName}</td>
+        <td style="width: 95px; text-align: center; font-weight: bold;">${item.displayName || item.cleanMemberName || item.memberName}</td>
         <td style="width: 160px; text-align: center; font-size: 11px;">${item.heqi} / ${item.huai} / ${item.xieli}</td>
         <td style="text-align: center;"></td>
       </tr>
@@ -553,7 +606,7 @@ export function printDutySchedulePdf({
           <td style="width: 115px; text-align: center;">${item.shiftLabel}</td>
           <td style="width: 125px; text-align: center;">${item.timeRange || ''}</td>
           <td style="width: 55px; text-align: center;">${item.genderType}眾</td>
-          <td style="width: 105px; text-align: center; font-weight: bold;">${item.memberName}</td>
+          <td style="width: 105px; text-align: center; font-weight: bold;">${item.displayName || item.cleanMemberName || item.memberName}</td>
           <td style="text-align: center;"></td>
         </tr>
       `).join('');

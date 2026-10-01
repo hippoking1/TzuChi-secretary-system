@@ -562,6 +562,9 @@
                 <span v-if="c.replaceName" class="text-emerald-700 font-bold ml-1">
                   ➔ 東港已自動改由「{{ c.replaceName }}」接替
                 </span>
+                <span v-else-if="c.suggestAction" class="text-emerald-700 font-bold ml-1">
+                  ➔ {{ c.suggestAction }}
+                </span>
               </li>
             </ul>
           </div>
@@ -600,12 +603,15 @@
                 class="card p-2.5 flex items-center justify-between border text-xs"
                 :class="item.heqi === '和氣二' || item.heqi === '假日組' ? 'bg-pink-50/30' : 'bg-gray-50/50'"
               >
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <span class="font-bold text-primary text-sm">{{ item.dateStr }}</span>
                   <span class="badge badge-info">{{ item.dayOfWeek === '0' ? '週日' : '週' + ['日','一','二','三','四','五','六'][Number(item.dayOfWeek)] }}</span>
                   <span class="badge badge-gray">{{ item.heqi }}</span>
                   <strong class="text-gray-700 ml-1">{{ item.teamName }}</strong>
-                  <span v-if="item.adjustedFrom" class="badge badge-warning text-[10px]" title="因園區排班衝突順延接替">
+                  <span v-if="item.adjustedNotice" class="badge badge-warning text-[10px]" :title="item.adjustedNotice">
+                    🔄 已調解
+                  </span>
+                  <span v-else-if="item.adjustedFrom" class="badge badge-warning text-[10px]" title="因園區排班衝突順延接替">
                     🔄 順延接替 {{ item.adjustedFrom }}
                   </span>
                 </div>
