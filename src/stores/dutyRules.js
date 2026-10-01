@@ -331,12 +331,6 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       startWeekendMember = null      // 自訂假日輪值起始志工姓名
     } = options;
 
-    // 建立姓名與志工 ID 對應字典
-    const nameToMember = new Map();
-    allMembers.forEach(m => {
-      if (m.name) nameToMember.set(m.name.trim(), m);
-    });
-
     // 尋找目標規則：依據傳入 targetRule、ruleId、場地自選或自動配對
     let rule = targetRule;
     if (!rule && ruleId) {
@@ -351,6 +345,39 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     }
     if (!rule) {
       rule = DEFAULT_HEQI2_CAMPUS_FEMALE_RULE;
+    }
+
+    // 建立姓名與志工物件對應字典 (若有同名同姓，優先配對符合當前規則眾別與所屬和氣之志工)
+    const nameToMembers = new Map();
+    allMembers.forEach(m => {
+      const name = (m.name || '').trim();
+      if (!name) return;
+      if (!nameToMembers.has(name)) nameToMembers.set(name, []);
+      nameToMembers.get(name).push(m);
+    });
+
+    function findMemberObj(name) {
+      if (!name) return null;
+      const clean = name.replace(/^[★*☆\s]+/, '').trim();
+      const list = nameToMembers.get(clean) || nameToMembers.get(name);
+      if (!list || list.length === 0) return null;
+      if (list.length === 1) return list[0];
+
+      // 若同名同姓，優先配對眾別相符者
+      const targetGender = rule?.genderType;
+      const genderMatches = targetGender ? list.filter(m => m.gender === targetGender) : list;
+      if (genderMatches.length === 1) return genderMatches[0];
+
+      // 若仍有多位，優先配對與規則所屬和氣相符者
+      const ruleHeqi = rule?.heqiGroup;
+      if (ruleHeqi && ruleHeqi !== '全區通用') {
+        const heqiMatch = (genderMatches.length > 0 ? genderMatches : list).find(m => {
+          return (m.orgName && m.orgName.includes(ruleHeqi)) || (m.orgPath && m.orgPath.includes(ruleHeqi));
+        });
+        if (heqiMatch) return heqiMatch;
+      }
+
+      return (genderMatches.length > 0 ? genderMatches[0] : list[0]);
     }
 
     const rotationPointers = { ...(rule?.rotationPointers || {}) };
@@ -530,7 +557,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         }
 
         const slotNumber = 1;
-        const memberObj = chosenMember ? nameToMember.get(chosenMember) : null;
+        const memberObj = chosenMember ? findMemberObj(chosenMember) : null;
         const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'DG_M'));
         const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
 
@@ -785,7 +812,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
         const slotNumber = slotIdx + 1;
         const memberName = selectedMembers[slotIdx] || '';
-        const memberObj = memberName ? nameToMember.get(memberName) : null;
+        const memberObj = memberName ? findMemberObj(memberName) : null;
 
         const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
         if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {

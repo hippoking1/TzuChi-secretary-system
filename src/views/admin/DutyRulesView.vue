@@ -260,6 +260,57 @@
           </div>
         </div>
 
+        <!-- 志工候選清單組織與關鍵字過濾列 (支援所屬組織和氣/互愛/協力篩選，避免同名同姓混淆) -->
+        <div class="card p-3 mb-4 bg-sky-50/70 border border-sky-200 rounded-lg">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div class="flex items-center gap-2 flex-wrap flex-1">
+              <span class="text-xs font-bold text-gray-800 flex items-center gap-1 whitespace-nowrap">
+                <span>🏢 建立名冊之組織篩選：</span>
+              </span>
+              <select v-model="filterMemberOrgId" class="form-select form-select-sm" style="max-width: 280px;">
+                <option value="">-- 全部組織架構 (不限) --</option>
+                <option v-for="opt in formattedOrgOptions" :key="opt.id" :value="opt.id">
+                  {{ opt.label }}
+                </option>
+              </select>
+
+              <input 
+                v-model="memberSearchKeyword" 
+                type="text" 
+                class="form-input form-input-sm" 
+                placeholder="搜尋姓名/法號/電話..." 
+                style="max-width: 170px;"
+              />
+              <button 
+                v-if="filterMemberOrgId || memberSearchKeyword" 
+                type="button" 
+                class="btn btn-xs btn-outline" 
+                @click="clearMemberFilters"
+              >
+                重設篩選
+              </button>
+              <button 
+                v-if="activeRule.heqiGroup && activeRule.heqiGroup !== '全區通用' && matchingHeqiOrg && filterMemberOrgId !== matchingHeqiOrg.id"
+                type="button"
+                class="btn btn-xs btn-outline border-sky-300 text-sky-800 hover:bg-sky-100"
+                @click="filterMemberOrgId = matchingHeqiOrg.id"
+                title="快速切換至目前規則設定之和氣"
+              >
+                🌸 快速切換至【{{ activeRule.heqiGroup }}】
+              </button>
+            </div>
+
+            <div class="text-xs text-gray-600 flex items-center gap-2">
+              <span>
+                候選志工：<strong class="text-primary">{{ filteredRuleMembers.length }}</strong> 位 ({{ activeRule.genderType === '男' ? '男眾' : '女眾' }})
+              </span>
+              <span class="text-muted text-[11px]">
+                (選單顯示所屬組織，避免同名同姓混淆)
+              </span>
+            </div>
+          </div>
+        </div>
+
         <!-- ─── 類型 A：東港聯絡處男眾班 (平日/假日雙軌循序輪替) ─── -->
         <div v-if="activeRule.ruleType === 'weekday_weekend_sequential'" class="sequential-rule-container">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -284,9 +335,13 @@
                   v-for="(member, idx) in activeRule.weekdayMembers" 
                   :key="idx" 
                   class="member-order-chip"
+                  :title="getMemberTooltipByName(member)"
                 >
                   <span class="chip-idx">{{ idx + 1 }}.</span>
                   <span class="chip-name font-bold">{{ member }}</span>
+                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
+                    {{ getMemberOrgBadgeByName(member) }}
+                  </span>
                   <div class="chip-actions">
                     <button 
                       type="button" 
@@ -326,12 +381,12 @@
               <div class="add-member-form flex items-center gap-2 flex-wrap">
                 <select 
                   v-model="quickSelectedWeekdayMember" 
-                  class="form-select form-select-sm flex-1 min-w-[160px]"
+                  class="form-select form-select-sm flex-1 min-w-[200px]"
                   @change="onSelectMemberToList(activeRule.weekdayMembers, quickSelectedWeekdayMember, () => quickSelectedWeekdayMember = '')"
                 >
-                  <option value="">-- 從男眾名冊選擇加入 --</option>
-                  <option v-for="m in maleMembers" :key="m.id" :value="m.name">
-                    {{ m.name }}
+                  <option value="">-- 從{{ activeRule.genderType === '女' ? '女' : '男' }}眾名冊選擇加入 (共 {{ filteredRuleMembers.length }} 人) --</option>
+                  <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
+                    {{ m.name }} {{ getMemberOrgPathText(m.id) }}
                   </option>
                 </select>
 
@@ -376,9 +431,13 @@
                   v-for="(member, idx) in activeRule.weekendMembers" 
                   :key="idx" 
                   class="member-order-chip chip-weekend"
+                  :title="getMemberTooltipByName(member)"
                 >
                   <span class="chip-idx">{{ idx + 1 }}.</span>
                   <span class="chip-name font-bold">{{ member }}</span>
+                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
+                    {{ getMemberOrgBadgeByName(member) }}
+                  </span>
                   <div class="chip-actions">
                     <button 
                       type="button" 
@@ -418,12 +477,12 @@
               <div class="add-member-form flex items-center gap-2 flex-wrap">
                 <select 
                   v-model="quickSelectedWeekendMember" 
-                  class="form-select form-select-sm flex-1 min-w-[160px]"
+                  class="form-select form-select-sm flex-1 min-w-[200px]"
                   @change="onSelectMemberToList(activeRule.weekendMembers, quickSelectedWeekendMember, () => quickSelectedWeekendMember = '')"
                 >
-                  <option value="">-- 從男眾名冊選擇加入 --</option>
-                  <option v-for="m in maleMembers" :key="m.id" :value="m.name">
-                    {{ m.name }}
+                  <option value="">-- 從{{ activeRule.genderType === '女' ? '女' : '男' }}眾名冊選擇加入 (共 {{ filteredRuleMembers.length }} 人) --</option>
+                  <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
+                    {{ m.name }} {{ getMemberOrgPathText(m.id) }}
                   </option>
                 </select>
 
@@ -527,9 +586,13 @@
                   :key="mIdx"
                   class="member-chip"
                   :class="{ 'chip-overflow': mIdx >= activeRuleQuota }"
+                  :title="getMemberTooltipByName(member)"
                 >
                   <span class="chip-index">{{ mIdx + 1 }}.</span>
                   <span class="chip-text">{{ member }}</span>
+                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
+                    {{ getMemberOrgBadgeByName(member) }}
+                  </span>
                   <span v-if="mIdx >= activeRuleQuota" class="chip-badge">備用輪替</span>
                   <button 
                     type="button" 
@@ -546,12 +609,12 @@
                 <select 
                   v-model="quickSelectedTeamMember[teamIdx]" 
                   class="form-select form-select-sm" 
-                  style="max-width: 220px;"
+                  style="max-width: 260px;"
                   @change="onSelectMemberToTeam(team, quickSelectedTeamMember[teamIdx], () => quickSelectedTeamMember[teamIdx] = '')"
                 >
-                  <option value="">-- 從女眾名冊選擇加入 --</option>
-                  <option v-for="m in femaleMembers" :key="m.id" :value="m.name">
-                    {{ m.name }}
+                  <option value="">-- 從{{ activeRule.genderType === '男' ? '男' : '女' }}眾名冊選擇加入 (共 {{ filteredRuleMembers.length }} 人) --</option>
+                  <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
+                    {{ m.name }} {{ getMemberOrgPathText(m.id) }}
                   </option>
                 </select>
 
@@ -691,10 +754,12 @@ import {
 } from '@/stores/dutyRules';
 import { getStandardShiftQuota } from '@/stores/duties';
 import { useMembersStore } from '@/stores/members';
+import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
 
 const dutyRulesStore = useDutyRulesStore();
 const membersStore = useMembersStore();
+const orgsStore = useOrgsStore();
 const toast = useToast();
 
 const showRotationCard = ref(true);
@@ -786,6 +851,133 @@ function selectRule(ruleId) {
 function isCoreRule(id) {
   return id === 'rule_heqi2_campus_female' || id === 'rule_donggang_male';
 }
+
+// ─── 志工名冊組織過濾與同名同姓識別 ───
+const filterMemberOrgId = ref('');
+const memberSearchKeyword = ref('');
+
+function clearMemberFilters() {
+  filterMemberOrgId.value = '';
+  memberSearchKeyword.value = '';
+}
+
+const formattedOrgOptions = computed(() => {
+  const options = [];
+  orgsStore.orgTree.forEach(heqi => {
+    options.push({ id: heqi.id, label: `🌸 ${heqi.name} (全體)` });
+    (heqi.children || []).forEach(huai => {
+      options.push({ id: huai.id, label: `　├ ${huai.name} (全體)` });
+      (huai.children || []).forEach(xieli => {
+        options.push({ id: xieli.id, label: `　│　└ ${xieli.name}` });
+      });
+    });
+  });
+  return options;
+});
+
+const memberOrgPathMap = computed(() => {
+  const map = new Map();
+  const all = [...maleMembers.value, ...femaleMembers.value];
+  for (let i = 0; i < all.length; i++) {
+    const m = all[i];
+    if (m.id && m.orgId) {
+      const p = orgsStore.getOrgPath(m.orgId);
+      if (p) map.set(m.id, `(${p})`);
+    }
+  }
+  return map;
+});
+
+function getMemberOrgPathText(memberId) {
+  if (!memberId) return '';
+  return memberOrgPathMap.value.get(memberId) || '';
+}
+
+const memberByNameMap = computed(() => {
+  const map = new Map();
+  const all = [...maleMembers.value, ...femaleMembers.value];
+  all.forEach(m => {
+    const name = (m.name || '').trim();
+    if (!name) return;
+    if (!map.has(name)) map.set(name, []);
+    map.get(name).push(m);
+  });
+  return map;
+});
+
+function getMemberOrgBadgeByName(name) {
+  if (!name) return '';
+  const list = memberByNameMap.value.get(name.trim());
+  if (!list || list.length === 0) return '';
+  const target = (activeRule.value?.heqiGroup && activeRule.value.heqiGroup !== '全區通用')
+    ? list.find(m => {
+        const p = orgsStore.getOrgPath(m.orgId);
+        return p && p.includes(activeRule.value.heqiGroup);
+      }) || list[0]
+    : list[0];
+  if (target && target.orgId) {
+    const p = orgsStore.getOrgPath(target.orgId);
+    if (p) {
+      const parts = p.split('/').map(s => s.trim());
+      return `(${parts[0]})`;
+    }
+  }
+  return '';
+}
+
+function getMemberTooltipByName(name) {
+  if (!name) return '';
+  const list = memberByNameMap.value.get(name.trim());
+  if (!list || list.length === 0) return name;
+  const target = (activeRule.value?.heqiGroup && activeRule.value.heqiGroup !== '全區通用')
+    ? list.find(m => {
+        const p = orgsStore.getOrgPath(m.orgId);
+        return p && p.includes(activeRule.value.heqiGroup);
+      }) || list[0]
+    : list[0];
+  if (target && target.orgId) {
+    const p = orgsStore.getOrgPath(target.orgId);
+    return p ? `${name} (${p})` : name;
+  }
+  return name;
+}
+
+const matchingHeqiOrg = computed(() => {
+  if (!activeRule.value?.heqiGroup || activeRule.value.heqiGroup === '全區通用') return null;
+  return (orgsStore.orgTree || []).find(h => h.name === activeRule.value.heqiGroup) || null;
+});
+
+// 切換規則時，若該規則有特定和氣，智慧預設為該和氣組織篩選
+watch(activeRule, (newRule) => {
+  if (newRule && newRule.heqiGroup && newRule.heqiGroup !== '全區通用') {
+    const match = (orgsStore.orgTree || []).find(h => h.name === newRule.heqiGroup);
+    if (match) {
+      filterMemberOrgId.value = match.id;
+    }
+  }
+}, { immediate: true });
+
+function filterCandidateVolunteers(baseList) {
+  const allowedOrgIds = filterMemberOrgId.value ? orgsStore.getDescendantOrgIds(filterMemberOrgId.value) : null;
+  const kw = memberSearchKeyword.value ? memberSearchKeyword.value.toLowerCase().trim() : null;
+
+  return baseList.filter(m => {
+    if (allowedOrgIds && !allowedOrgIds.includes(m.orgId)) return false;
+    if (kw) {
+      const matchName = (m.name || '').toLowerCase().includes(kw);
+      const matchPhone = (m.phone || '').includes(kw);
+      const matchCode = (m.volunteerCode || '').includes(kw);
+      const matchDharma = (m.dharmaName || '').toLowerCase().includes(kw);
+      if (!matchName && !matchPhone && !matchCode && !matchDharma) return false;
+    }
+    return true;
+  });
+}
+
+const filteredRuleMembers = computed(() => {
+  const isMale = (activeRule.value?.genderType === '男');
+  return filterCandidateVolunteers(isMale ? maleMembers.value : femaleMembers.value);
+});
 
 // ─── 平日/假日循序清單操作 ───
 function moveSequentialMember(list, idx, dir) {
@@ -1004,7 +1196,8 @@ onMounted(async () => {
     dutyRulesStore.fetchWeekRotation('宜蘭園區'),
     membersStore.fetchMembers({ gender: '男' }),
     membersStore.fetchMembers({ gender: '女' }),
-    dutyRulesStore.fetchRules()
+    dutyRulesStore.fetchRules(),
+    orgsStore.fetchOrgs()
   ]);
 
   if (rot) {
