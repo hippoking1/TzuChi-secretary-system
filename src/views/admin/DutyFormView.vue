@@ -14,6 +14,17 @@
           </p>
         </div>
         <div class="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            class="btn btn-outline border-teal-600 text-teal-800 hover:bg-teal-50 flex items-center gap-1"
+            @click="showHospitalModal = true"
+            title="預排醫院志工及日期（最高優先權：醫院志工 > 宜蘭園區 > 東港聯絡處）"
+          >
+            <span>🏥 預排醫院志工</span>
+            <span v-if="hospitalLocationDuties.length > 0" class="badge badge-primary text-xs ml-0.5">
+              {{ hospitalLocationDuties.length }}
+            </span>
+          </button>
           <router-link to="/admin/duty-rules" class="btn btn-outline" title="設定組別名冊與週輪值">
             ⚙️ 規則設定
           </router-link>
@@ -59,7 +70,7 @@
         <div class="flex items-start gap-3">
           <span class="text-2xl">⚠️</span>
           <div class="flex-1">
-            <h4 class="font-bold text-danger mb-1 text-sm">檢測到重複排班衝突（不可同一人在同日排在不同場地）：</h4>
+            <h4 class="font-bold text-danger mb-1 text-sm">檢測到重複排班衝突（優先順序：醫院志工 ＞ 宜蘭園區值班 ＞ 東港聯絡處值班）：</h4>
             <ul class="text-xs text-gray-700 pl-4 list-disc space-y-0.5">
               <li v-for="(c, idx) in conflictList" :key="idx">
                 <strong>{{ c.dateStr }}</strong>：志工「<strong class="text-primary">{{ c.memberName }}</strong>」已在【<strong>{{ c.otherLocation }}</strong> - {{ c.otherShiftLabel }}】排班，不可重複排入當前場地！
@@ -159,11 +170,19 @@
             :class="{ 'weekend-highlight': day.isWeekend, 'has-conflict': dayHasConflict(day.dateStr) }"
           >
             <!-- 日期標題欄 -->
-            <div class="day-block-header flex items-center justify-between">
-              <div class="flex items-center gap-2">
+            <div class="day-block-header flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-primary font-bold text-lg">🗓️ {{ day.dateStr }}</span>
                 <span class="badge" :class="day.isWeekend ? 'badge-warning' : 'badge-gray'">
                   {{ day.dayOfWeek }}
+                </span>
+                <span
+                  v-if="getDayHospitalMembersText(day.dateStr)"
+                  class="badge badge-info text-xs cursor-pointer"
+                  title="點擊管理預排醫院志工"
+                  @click="showHospitalModal = true"
+                >
+                  🏥 醫院志工：{{ getDayHospitalMembersText(day.dateStr) }}
                 </span>
                 <span v-if="dayHasConflict(day.dateStr)" class="badge badge-danger">
                   ⚠️ 此日期有衝突
@@ -217,7 +236,7 @@
                           :key="m.id" 
                           :value="m.id"
                         >
-                          {{ m.name }} {{ getMemberOrgPathText(m.id) }} [本月: {{ getMemberShiftCount(m.name) }}班]
+                          {{ m.name }} {{ getMemberOrgPathText(m.id) }}{{ isMemberInHospitalOnDate(slot.dutyDate, m.name) ? ' [🏥當日醫院志工]' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
                         </option>
                       </select>
                       <span v-if="slotConflictInfo(slot)" class="text-xs text-danger font-bold block mt-1">
@@ -548,24 +567,41 @@
             </div>
           </div>
 
+          <!-- 醫院志工預排狀態與快速管理橫條 -->
+          <div class="card p-3 border border-teal-200 bg-teal-50/40 flex items-center justify-between flex-wrap gap-2">
+            <div class="text-xs text-teal-900">
+              <strong>🏥 排班優先順序：醫院志工 ＞ 宜蘭園區值班 ＞ 東港聯絡處值班</strong>
+              <span class="block text-muted mt-0.5">
+                本月已預排 <strong>{{ hospitalLocationDuties.length }}</strong> 人次醫院志工。若排班日期與醫院志工衝突，系統將自動與同星期後一組對換或順延接替。
+              </span>
+            </div>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline border-teal-600 text-teal-800 hover:bg-teal-100"
+              @click="showHospitalModal = true"
+            >
+              🏥 編輯預排醫院志工及日期
+            </button>
+          </div>
+
           <!-- 衝突檢測與備用人員提示 -->
           <div v-if="autoPreviewResult?.conflicts?.length > 0" class="card conflict-banner p-3 border-amber-300 bg-amber-50/70">
             <h4 class="font-bold text-amber-900 text-sm mb-1 flex items-center gap-1">
-              <span>⚠️ 偵測到 {{ autoPreviewResult.conflicts.length }} 筆跨場地排班衝突：</span>
+              <span>⚠️ 偵測到 {{ autoPreviewResult.conflicts.length }} 筆排班衝突與自動調換：</span>
             </h4>
             <p class="text-xs text-amber-800 mb-2">
-              依排班衝突處理原則：<strong>以園區排班為優先</strong>{{ selectedLocation === '東港聯絡處' ? '，東港已依規則自動調換組別或由順延志工接替！' : '，建議於套用後前往東港聯絡處調動志工！' }}
+              依排班衝突處理原則（<strong>優先順序：醫院志工 ＞ 宜蘭園區值班 ＞ 東港聯絡處值班</strong>），已自動與同星期後續組別對換或由順延志工接替！
             </p>
             <ul class="text-xs text-gray-800 pl-4 list-disc space-y-1.5">
               <li v-for="(c, idx) in autoPreviewResult.conflicts" :key="idx">
                 <span class="font-bold text-gray-900 mr-1">【{{ c.dateStr }}】</span>
                 <span v-if="c.isSwapped" class="text-amber-900 font-bold">
-                  ⚠️ 【跨場地衝突自動調換】原定{{ c.originalTeamName }}之成員（{{ c.memberName }}）與{{ c.otherLocation }}排班衝突，已依規則與同星期後續【{{ c.swappedTeamName }}】對換值班
+                  ⚠️ 【{{ (c.otherLocation || '').includes('醫院志工') ? '醫院志工' : '跨場地' }}衝突自動調換】原定{{ c.originalTeamName }}之成員（{{ c.memberName }}）與{{ c.otherLocation }}排班衝突，已依規則與同星期後續【{{ c.swappedTeamName }}】對換值班
                 </span>
                 <span v-else>
                   志工「<strong class="text-primary">{{ c.memberName }}</strong>」原已排在【{{ c.otherLocation }} - {{ c.otherShift }}】
                   <span v-if="c.replaceName" class="text-emerald-700 font-bold ml-1">
-                    ➔ 東港已自動改由「{{ c.replaceName }}」接替
+                    ➔ {{ selectedLocation }}已自動改由「{{ c.replaceName }}」接替
                   </span>
                   <span v-else-if="c.notice" class="text-red-700 font-bold ml-1">
                     ➔ {{ c.notice }}
@@ -618,12 +654,12 @@
                   <span class="badge badge-gray">{{ item.heqi }}</span>
                   <strong class="text-gray-700 ml-1">{{ item.teamName }}</strong>
                   <span v-if="item.swapNotice" class="badge badge-warning text-[11px] font-bold py-0.5 px-2 text-amber-900 border border-amber-300 bg-amber-100" :title="item.swapNotice">
-                    ⚠️ 【跨場地衝突自動調換】已與同星期後續【{{ item.swappedTeamName || item.teamName }}】對換
+                    ⚠️ 【{{ (item.conflictLocation || '').includes('醫院志工') ? '醫院志工' : '跨場地' }}衝突自動調換】已與同星期後續【{{ item.swappedTeamName || item.teamName }}】對換
                   </span>
                   <span v-else-if="item.adjustedNotice" class="badge badge-warning text-[10px]" :title="item.adjustedNotice">
                     🔄 {{ item.adjustedNotice }}
                   </span>
-                  <span v-else-if="item.adjustedFrom" class="badge badge-warning text-[10px]" title="因園區排班衝突順延接替">
+                  <span v-else-if="item.adjustedFrom" class="badge badge-warning text-[10px]" title="因高優先級排班衝突順延接替">
                     🔄 順延接替 {{ item.adjustedFrom }}
                   </span>
                 </div>
@@ -763,12 +799,21 @@
       :default-month="selectedMonth" 
       @close="showExportModal = false" 
     />
+
+    <!-- 預排醫院志工及日期 Modal -->
+    <HospitalVolunteerModal
+      :show="showHospitalModal"
+      :default-month="selectedMonth"
+      @close="showHospitalModal = false"
+      @updated="onHospitalScheduleUpdated"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import DutyExportModal from '@/components/duty/DutyExportModal.vue';
+import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
 import { useDutiesStore } from '@/stores/duties';
 import { useDutyRulesStore, getRuleQuota } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
@@ -777,6 +822,7 @@ import { useToast } from '@/composables/useToast';
 import { batchWriteItems } from '@/firebase/db';
 
 const showExportModal = ref(false);
+const showHospitalModal = ref(false);
 
 const dutiesStore = useDutiesStore();
 const dutyRulesStore = useDutyRulesStore();
@@ -795,6 +841,7 @@ const showClearModal = ref(false);
 
 const matrixList = ref([]);
 const otherLocationDuties = ref([]);
+const hospitalLocationDuties = ref([]);
 const allMembers = ref([]);
 const maleMembers = ref([]);
 const femaleMembers = ref([]);
@@ -827,7 +874,31 @@ function clearFilters() {
   searchKeyword.value = '';
 }
 
-// 衝突檢測計算與 Map 快取 (O(1) 快速讀取)
+// 每日預排醫院志工快取 Map: dateStr -> Map(memberName -> item)
+const hospitalByDateMap = computed(() => {
+  const map = new Map();
+  hospitalLocationDuties.value.forEach(d => {
+    if (d.memberName && d.dutyDate) {
+      if (!map.has(d.dutyDate)) map.set(d.dutyDate, new Map());
+      map.get(d.dutyDate).set(d.memberName.trim(), d);
+    }
+  });
+  return map;
+});
+
+function getDayHospitalMembersText(dateStr) {
+  const dayMap = hospitalByDateMap.value.get(dateStr);
+  if (!dayMap || dayMap.size === 0) return '';
+  return Array.from(dayMap.keys()).join('、');
+}
+
+function isMemberInHospitalOnDate(dateStr, memberName) {
+  if (!dateStr || !memberName) return false;
+  const dayMap = hospitalByDateMap.value.get(dateStr);
+  return dayMap ? dayMap.has(memberName.trim()) : false;
+}
+
+// 衝突檢測計算與 Map 快取 (O(1) 快速讀取，含醫院志工與跨場地檢測)
 const conflictList = computed(() => {
   const conflicts = [];
   const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
@@ -836,15 +907,32 @@ const conflictList = computed(() => {
   otherLocationDuties.value.forEach(d => {
     if (d.memberName && d.dutyDate) {
       if (!otherMap.has(d.dutyDate)) otherMap.set(d.dutyDate, new Map());
-      otherMap.get(d.dutyDate).set(d.memberName, d);
+      otherMap.get(d.dutyDate).set(d.memberName.trim(), d);
     }
   });
 
   matrixList.value.forEach(slot => {
     if (slot.memberName && slot.dutyDate) {
+      const cleanName = slot.memberName.trim();
+      // 1. 最優先檢查：是否與預排醫院志工衝突
+      const hospDayMap = hospitalByDateMap.value.get(slot.dutyDate);
+      if (hospDayMap && hospDayMap.has(cleanName)) {
+        const hospItem = hospDayMap.get(cleanName);
+        conflicts.push({
+          dateStr: slot.dutyDate,
+          memberName: slot.memberName,
+          slotId: slot.id,
+          currentShiftLabel: slot.shiftLabel,
+          otherLocation: '醫院志工',
+          otherShiftLabel: hospItem.shiftLabel || '醫院志工'
+        });
+        return;
+      }
+
+      // 2. 次優先檢查：是否與另一道場排班衝突
       const dayMap = otherMap.get(slot.dutyDate);
-      if (dayMap && dayMap.has(slot.memberName)) {
-        const otherShift = dayMap.get(slot.memberName);
+      if (dayMap && dayMap.has(cleanName)) {
+        const otherShift = dayMap.get(cleanName);
         conflicts.push({
           dateStr: slot.dutyDate,
           memberName: slot.memberName,
@@ -1000,13 +1088,15 @@ async function initMatrix() {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
 
-    const [template, existing, otherExisting] = await Promise.all([
+    const [template, existing, otherExisting, hospitalExisting] = await Promise.all([
       Promise.resolve(dutiesStore.generateMonthlyTemplate(selectedLocation.value, year, month)),
       dutiesStore.fetchDutySchedule(selectedLocation.value, year, month),
-      dutiesStore.fetchDutySchedule(otherLocationName, year, month)
+      dutiesStore.fetchDutySchedule(otherLocationName, year, month),
+      dutiesStore.fetchHospitalVolunteerSchedule(year, month)
     ]);
 
     otherLocationDuties.value = otherExisting || [];
+    hospitalLocationDuties.value = hospitalExisting || [];
 
     // 以唯一 ID 建立對照表
     const existingMap = {};
@@ -1342,25 +1432,48 @@ function openAutoScheduleModal() {
   runAutoPreview();
 }
 
+async function onHospitalScheduleUpdated() {
+  if (!selectedMonth.value) return;
+  const [year, month] = selectedMonth.value.split('-').map(Number);
+  hospitalLocationDuties.value = await dutiesStore.fetchHospitalVolunteerSchedule(year, month);
+  if (showAutoModal.value) {
+    await runAutoPreview();
+  }
+}
+
 async function runAutoPreview() {
   if (!selectedMonth.value) return;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
 
-    // 若有自訂排班起訖區間，非同步動態載入涵蓋該區間之所有另一場地排班資料，徹底解決跨月衝突檢測盲區
+    // 若有自訂排班起訖區間，非同步動態載入涵蓋該區間之所有另一場地與預排醫院志工資料，徹底解決跨月衝突檢測盲區
     let previewOtherDuties = otherLocationDuties.value || [];
+    let previewHospitalDuties = hospitalLocationDuties.value || [];
+
     if (autoStartDate.value && autoEndDate.value) {
-      const rangeDuties = await dutiesStore.getDutyScheduleByRange(
-        otherLocationName,
-        autoStartDate.value,
-        autoEndDate.value
-      );
+      const [rangeDuties, rangeHospDuties] = await Promise.all([
+        dutiesStore.getDutyScheduleByRange(
+          otherLocationName,
+          autoStartDate.value,
+          autoEndDate.value
+        ),
+        dutiesStore.getHospitalVolunteerScheduleByRange(
+          autoStartDate.value,
+          autoEndDate.value
+        )
+      ]);
       if (Array.isArray(rangeDuties) && rangeDuties.length > 0) {
         const map = new Map();
         previewOtherDuties.forEach(d => { if (d.id) map.set(d.id, d); });
         rangeDuties.forEach(d => { if (d.id) map.set(d.id, d); });
         previewOtherDuties = Array.from(map.values());
+      }
+      if (Array.isArray(rangeHospDuties) && rangeHospDuties.length > 0) {
+        const hMap = new Map();
+        previewHospitalDuties.forEach(d => { if (d.id) hMap.set(d.id, d); });
+        rangeHospDuties.forEach(d => { if (d.id) hMap.set(d.id, d); });
+        previewHospitalDuties = Array.from(hMap.values());
       }
     }
 
@@ -1372,6 +1485,7 @@ async function runAutoPreview() {
       endDate: autoEndDate.value || null,
       currentMatrix: matrixList.value,
       otherLocationDuties: previewOtherDuties,
+      hospitalDuties: previewHospitalDuties,
       allMembers: allMembers.value,
       ruleId: selectedAutoRuleId.value || null,
       mode: autoScheduleMode.value,

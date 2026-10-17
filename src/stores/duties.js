@@ -33,6 +33,7 @@ export function getStandardShiftQuota(location, shiftId, genderType = '女') {
 
 export const useDutiesStore = defineStore('duties', () => {
   const duties = ref([]);
+  const hospitalDuties = ref([]);
   const loading = ref(false);
 
   function getShiftTimeRange(location, shiftId, label) {
@@ -54,7 +55,11 @@ export const useDutiesStore = defineStore('duties', () => {
           timeRange: d.timeRange || getShiftTimeRange(location, d.shiftId, d.shiftLabel)
         }))
         .sort((a, b) => (a.dutyDate + a.id).localeCompare(b.dutyDate + b.id));
-      duties.value = mapped;
+      if (location === '醫院志工') {
+        hospitalDuties.value = mapped;
+      } else {
+        duties.value = mapped;
+      }
       return mapped;
     } finally {
       loading.value = false;
@@ -98,10 +103,97 @@ export const useDutiesStore = defineStore('duties', () => {
     loading.value = true;
     try {
       const mapped = await getDutyScheduleByRange(location, startDate, endDate);
-      duties.value = mapped;
+      if (location === '醫院志工') {
+        hospitalDuties.value = mapped;
+      } else {
+        duties.value = mapped;
+      }
       return mapped;
     } finally {
       loading.value = false;
+    }
+  }
+
+  /**
+   * 讀取指定年月之預排醫院志工清單
+   */
+  async function fetchHospitalVolunteerSchedule(year, month) {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    const list = await getCollectionDocs('dutyShifts', [
+      where('location', '==', '醫院志工')
+    ]);
+    const mapped = list
+      .filter(d => (d.dutyDate || '').startsWith(prefix) && !!d.memberName)
+      .sort((a, b) => (a.dutyDate + (a.memberName || '')).localeCompare(b.dutyDate + (b.memberName || '')));
+    hospitalDuties.value = mapped;
+    return mapped;
+  }
+
+  /**
+   * 讀取指定日期區間之預排醫院志工清單
+   */
+  async function getHospitalVolunteerScheduleByRange(startDate, endDate) {
+    const list = await getDutyScheduleByRange('醫院志工', startDate, endDate);
+    return list.filter(d => !!d.memberName);
+  }
+
+  /**
+   * 批次新增預排醫院志工及日期
+   * @param {Object} payload { dates: string[], members: Array<{id, name, gender}>, hospitalName: string, note: string }
+   */
+  async function addHospitalVolunteerSchedules({ dates = [], members = [], hospitalName = '醫院志工', note = '' }) {
+    if (!dates.length || !members.length) return [];
+    const items = [];
+    const cleanLabel = (hospitalName || '醫院志工').trim() || '醫院志工';
+
+    dates.forEach(dateStr => {
+      if (!dateStr) return;
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+
+      members.forEach(mem => {
+        const memberName = (mem.name || '').trim();
+        if (!memberName) return;
+        const memberId = mem.id || memberName;
+        const safeKey = String(memberId).replace(/[\/\s.#$[\]]/g, '_');
+        items.push({
+          id: `醫院志工_${dateStr}_HOSP_${safeKey}`,
+          location: '醫院志工',
+          dutyDate: dateStr,
+          shiftId: 'HOSP_VOL',
+          shiftLabel: cleanLabel,
+          hospitalName: cleanLabel,
+          shiftStart: '08:00',
+          shiftEnd: '17:00',
+          timeRange: '全天',
+          slotIndex: 1,
+          genderType: mem.gender || '女',
+          isWeekend,
+          memberId: mem.id || '',
+          memberName,
+          note: (note || '').trim(),
+          status: '已排班'
+        });
+      });
+    });
+
+    if (items.length > 0) {
+      await batchWriteItems('dutyShifts', items, 'set');
+    }
+    return items;
+  }
+
+  /**
+   * 批次刪除預排醫院志工紀錄
+   */
+  async function deleteHospitalVolunteerSchedules(itemsOrIds = []) {
+    if (!itemsOrIds || itemsOrIds.length === 0) return;
+    const toDelete = itemsOrIds
+      .map(x => (typeof x === 'string' ? { id: x } : { id: x.id }))
+      .filter(x => !!x.id);
+    if (toDelete.length > 0) {
+      await batchWriteItems('dutyShifts', toDelete, 'delete');
     }
   }
 
@@ -168,12 +260,17 @@ export const useDutiesStore = defineStore('duties', () => {
 
   return {
     duties,
+    hospitalDuties,
     loading,
     DUTY_SHIFTS_CONFIG,
     getShiftTimeRange,
     fetchDutySchedule,
     fetchDutyScheduleByRange,
     getDutyScheduleByRange,
+    fetchHospitalVolunteerSchedule,
+    getHospitalVolunteerScheduleByRange,
+    addHospitalVolunteerSchedules,
+    deleteHospitalVolunteerSchedules,
     saveMonthlyDuties,
     generateMonthlyTemplate
   };

@@ -11,6 +11,9 @@
         </p>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
+        <button class="btn btn-outline border-teal-600 text-teal-800 hover:bg-teal-50" @click="showHospitalModal = true">
+          🏥 預排醫院志工
+        </button>
         <button class="btn btn-primary" @click="openCreateRuleModal">
           ➕ 新增排班規則
         </button>
@@ -740,11 +743,18 @@
         </div>
       </div>
     </div>
+
+    <!-- 預排醫院志工及日期 Modal -->
+    <HospitalVolunteerModal
+      :show="showHospitalModal"
+      @close="showHospitalModal = false"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
 import { 
   useDutyRulesStore, 
   DEFAULT_HEQI2_CAMPUS_FEMALE_RULE, 
@@ -766,6 +776,7 @@ const showRotationCard = ref(true);
 const savingRotation = ref(false);
 const savingRule = ref(false);
 const showCreateModal = ref(false);
+const showHospitalModal = ref(false);
 
 // 志工名冊
 const maleMembers = ref([]);

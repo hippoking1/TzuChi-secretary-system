@@ -321,6 +321,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       endDate = null,   // 自訂區間訖 'YYYY-MM-DD'
       currentMatrix = [],
       otherLocationDuties = [],
+      hospitalDuties = [], // 預排醫院志工清單 (第一優先級：醫院志工 > 宜蘭園區 > 東港聯絡處)
       allMembers = [],
       ruleId = null,    // 目標規則 ID
       mode = 'heqi_only', // 'heqi_only' | 'force_heqi2'
@@ -427,7 +428,16 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     const standbyList = []; // 備用名單紀錄
     const skippedSlots = [];
 
-    // 另一場地現有排班對照表：date -> list of duties
+    // 1. 醫院志工預排對照表 (最高優先權：醫院志工 > 宜蘭園區 > 東港聯絡處)
+    const hospitalMap = new Map();
+    hospitalDuties.forEach(d => {
+      if (d.dutyDate && d.memberName) {
+        if (!hospitalMap.has(d.dutyDate)) hospitalMap.set(d.dutyDate, []);
+        hospitalMap.get(d.dutyDate).push(d);
+      }
+    });
+
+    // 2. 另一場地現有排班對照表：date -> list of duties
     const otherMap = new Map();
     otherLocationDuties.forEach(d => {
       if (d.dutyDate && d.memberName) {
@@ -436,8 +446,22 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       }
     });
 
-    // 跨場地衝突同星期組別互換映射表：dayOfWeek -> { [originalTeamIdx]: swappedTeamIdx }
+    // 跨場地/醫院志工衝突同星期組別互換映射表：dayOfWeek -> { [swappedTeamIdx]: { paybackIdx, sinceDate } }
+    // 支援跨週次與跨月份記憶（若重跑相同或更早區間則自動忽略該區間之後的互換紀錄以維持冪等性）
     const pendingTeamSwaps = {};
+    if (rotationPointers._pendingTeamSwaps && typeof rotationPointers._pendingTeamSwaps === 'object') {
+      for (const [dKey, dayObj] of Object.entries(rotationPointers._pendingTeamSwaps)) {
+        if (dayObj && typeof dayObj === 'object') {
+          pendingTeamSwaps[dKey] = {};
+          for (const [tKey, entry] of Object.entries(dayObj)) {
+            const since = typeof entry === 'object' ? (entry.sinceDate || '') : '';
+            if (!since || since < startDateStr) {
+              pendingTeamSwaps[dKey][tKey] = typeof entry === 'object' ? { ...entry } : { paybackIdx: Number(entry), sinceDate: '' };
+            }
+          }
+        }
+      }
+    }
 
     function getTeamCandidates(team, q, startIdx = 0) {
       if (!team || !Array.isArray(team.members)) return { selected: [], standbys: [] };
@@ -463,25 +487,62 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       return name.replace(/[★*☆\s]/g, '').trim();
     }
 
-    function checkMembersCampusConflict(memberList, dStr) {
-      if (!otherMap.has(dStr)) return [];
-      const dayOther = otherMap.get(dStr);
-      const res = [];
-      memberList.forEach(name => {
-        const clean = cleanMemberName(name);
-        if (!clean) return;
+    const isCampusDuty = (location === '宜蘭園區');
+
+    /**
+     * 依排班優先順序（醫院志工 > 宜蘭園區值班 > 東港聯絡處值班）檢查單一志工於指定日期是否與高優先級排班衝突
+     */
+    function checkSingleMemberHigherPriorityConflict(name, dStr) {
+      const clean = cleanMemberName(name);
+      if (!clean) return null;
+
+      // 第一優先：醫院志工 (宜蘭園區與東港聯絡處遇到醫院志工皆須迴避調換)
+      if (hospitalMap.has(dStr)) {
+        const dayHosp = hospitalMap.get(dStr);
+        const hospHit = dayHosp.find(h => {
+          const hName = cleanMemberName(h.memberName);
+          return hName === clean || h.memberName === name;
+        });
+        if (hospHit) {
+          return {
+            memberName: name,
+            cleanName: clean,
+            conflictType: 'hospital',
+            conflictLocation: '醫院志工',
+            conflictShift: hospHit.hospitalName || hospHit.shiftLabel || '醫院志工'
+          };
+        }
+      }
+
+      // 第二優先：宜蘭園區值班 (當排定東港聯絡處等非園區班表時，遇到宜蘭園區值班須迴避調換)
+      if (!isCampusDuty && otherMap.has(dStr)) {
+        const dayOther = otherMap.get(dStr);
         const hit = dayOther.find(o => {
           const oName = cleanMemberName(o.memberName);
           return oName === clean || o.memberName === name;
         });
         if (hit) {
-          res.push({
+          return {
             memberName: name,
             cleanName: clean,
+            conflictType: 'campus',
             conflictLocation: hit.location || '宜蘭園區',
             conflictShift: hit.shiftLabel || '值班'
-          });
+          };
         }
+      }
+
+      return null;
+    }
+
+    /**
+     * 檢查組別候選名單是否與更高優先級排班（醫院志工 / 宜蘭園區）衝突
+     */
+    function checkMembersHigherPriorityConflict(memberList, dStr) {
+      const res = [];
+      memberList.forEach(name => {
+        const hit = checkSingleMemberHigherPriorityConflict(name, dStr);
+        if (hit) res.push(hit);
       });
       return res;
     }
@@ -494,7 +555,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const dateStr = `${y}-${m}-${d}`;
       const dayOfWeek = String(curr.getDay()); // '0' ~ '6'
 
-      // ─── 模式 A：平日/假日雙軌循序循環輪替（依據規則類型判定，不再硬編碼道場） ───
+      // ─── 模式 A：平日/假日雙軌循序循環輪替（依據規則類型判定，支援醫院志工 > 宜蘭園區 > 東港聯絡處） ───
       if (rule.ruleType === 'weekday_weekend_sequential') {
         const isWeekend = (dayOfWeek === '0' || dayOfWeek === '6');
         const pool = isWeekend ? (rule.weekendMembers || []) : (rule.weekdayMembers || []);
@@ -507,7 +568,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         const pointerKey = isWeekend ? 'weekend' : 'weekday';
         let curPointer = rotationPointers[pointerKey] || 0;
 
-        // 挑選志工（支援宜蘭園區衝突時優先保留園區，東港自動調動順延接替）
+        // 挑選志工（支援「醫院志工 > 宜蘭園區 > 東港聯絡處」衝突時自動調動順延接替）
         let chosenMember = null;
         let conflictAdjustedInfo = null;
 
@@ -516,21 +577,20 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           const candidateName = (pool[candidateIdx] || '').trim();
           if (!candidateName) continue;
 
-          // 檢查該候選志工當日是否已排在宜蘭園區 (以園區為優先)
-          const hasCampusConflict = otherMap.has(dateStr) && otherMap.get(dateStr).some(o => o.memberName === candidateName);
+          // 檢查該候選志工當日是否已排在更高優先級之勤務（醫院志工 或 宜蘭園區）
+          const conflictHit = checkSingleMemberHigherPriorityConflict(candidateName, dateStr);
           
-          if (!hasCampusConflict) {
+          if (!conflictHit) {
             chosenMember = candidateName;
             curPointer = (candidateIdx + 1) % pool.length;
             break;
           } else {
             if (!conflictAdjustedInfo) {
-              const conflictShift = otherMap.get(dateStr).find(o => o.memberName === candidateName);
               conflictAdjustedInfo = {
                 dateStr,
                 originalMember: candidateName,
-                conflictLocation: conflictShift?.location || '宜蘭園區',
-                conflictShiftLabel: conflictShift?.shiftLabel || '值班'
+                conflictLocation: conflictHit.conflictLocation,
+                conflictShiftLabel: conflictHit.conflictShift
               };
             }
           }
@@ -544,6 +604,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         rotationPointers[pointerKey] = curPointer;
 
         if (conflictAdjustedInfo) {
+          const priorityTarget = conflictAdjustedInfo.conflictLocation === '醫院志工' ? '醫院志工' : `${conflictAdjustedInfo.conflictLocation}排班`;
           conflicts.push({
             dateStr,
             memberName: conflictAdjustedInfo.originalMember,
@@ -552,7 +613,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             currentShift: rule.shiftLabel || '男眾班',
             otherLocation: conflictAdjustedInfo.conflictLocation,
             otherShift: conflictAdjustedInfo.conflictShiftLabel,
-            suggestAction: `已優先保留園區排班，東港排班由「${chosenMember}」接替輪值`
+            suggestAction: `已優先保留${priorityTarget}，${location}排班由「${chosenMember}」接替輪值`
           });
         }
 
@@ -600,7 +661,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           assignedCount: 1,
           assignedMembers: [chosenMember],
           standbys: [],
-          adjustedFrom: conflictAdjustedInfo?.originalMember || null
+          adjustedFrom: conflictAdjustedInfo?.originalMember || null,
+          adjustedNotice: conflictAdjustedInfo
+            ? `⚠️ 原定「${conflictAdjustedInfo.originalMember}」因參與【${conflictAdjustedInfo.conflictLocation}】優先，已自動由「${chosenMember}」接替`
+            : null
         });
 
         curr.setDate(curr.getDate() + 1);
@@ -611,7 +675,6 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const weekdayTeams = rule.weekdayTeams || DEFAULT_HEQI2_FEMALE_TEAMS;
 
       // 和氣週輪值判定：僅在宜蘭園區且特定和氣規則時生效，非園區道場（如東港聯絡處）或全區通用規則採常態輪替
-      const isCampusDuty = (location === '宜蘭園區');
       const targetHeqi = rule.heqiGroup || '全區通用';
       const assignedHeqi = getHeqiForDate(dateStr);
       
@@ -659,19 +722,23 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         }
       }
 
-      // 檢查是否先前曾對換過組別（如先前的週一第一組與第二組對換，則後續輪到第二組時優先對調回第一組）
-      if (!isCampusDuty && pendingTeamSwaps[dayOfWeek] && pendingTeamSwaps[dayOfWeek][teamIndex] !== undefined) {
-        const paybackIdx = pendingTeamSwaps[dayOfWeek][teamIndex];
-        const paybackTeam = teams[paybackIdx];
-        if (paybackTeam && Array.isArray(paybackTeam.members) && paybackTeam.members.length > 0) {
-          const quota = getRuleQuota(rule);
-          const pKey = `${dayOfWeek}_${paybackIdx}`;
-          const pStart = rotationPointers[pKey] || 0;
-          const pTest = getTeamCandidates(paybackTeam, quota, pStart);
-          const pConflicts = checkMembersCampusConflict(pTest.selected, dateStr);
-          if (pConflicts.length === 0) {
-            teamIndex = paybackIdx;
-            delete pendingTeamSwaps[dayOfWeek][teamIndex];
+      // 檢查是否先前曾對換過組別（如先前的週一第一組與第二組對換，則後續輪到第二組時優先對調回第一組，適用宜蘭園區與東港聯絡處）
+      if (pendingTeamSwaps[dayOfWeek] && pendingTeamSwaps[dayOfWeek][teamIndex] !== undefined) {
+        const swapEntry = pendingTeamSwaps[dayOfWeek][teamIndex];
+        const paybackIdx = typeof swapEntry === 'object' ? swapEntry.paybackIdx : Number(swapEntry);
+        const sinceDate = typeof swapEntry === 'object' ? (swapEntry.sinceDate || '') : '';
+        if (!sinceDate || dateStr > sinceDate) {
+          const paybackTeam = teams[paybackIdx];
+          if (paybackTeam && Array.isArray(paybackTeam.members) && paybackTeam.members.length > 0) {
+            const quota = getRuleQuota(rule);
+            const pKey = `${dayOfWeek}_${paybackIdx}`;
+            const pStart = rotationPointers[pKey] || 0;
+            const pTest = getTeamCandidates(paybackTeam, quota, pStart);
+            const pConflicts = checkMembersHigherPriorityConflict(pTest.selected, dateStr);
+            if (pConflicts.length === 0) {
+              delete pendingTeamSwaps[dayOfWeek][teamIndex];
+              teamIndex = paybackIdx;
+            }
           }
         }
       }
@@ -696,19 +763,19 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       let standbys = [];
       let swapConflictNotice = null;
 
-      // 檢查跨場地（園區優先）衝突並執行同星期後一組對換機制
-      // 規則：東港聯絡處排班時，若有人與園區值班衝突，與同星期的後一組對換；若後一組也有衝突，換成與再後一組對換，以此類推直到沒有衝突為止
+      // 檢查更高優先級排班衝突（優先順序：醫院志工 > 宜蘭園區值班 > 東港聯絡處值班）並執行同星期後一組對換機制
+      // 規則：無論宜蘭園區或東港聯絡處，若當日組別成員與更高優先級排班衝突，與同星期的後一組對換；若後一組也有衝突，換成與再後一組對換，以此類推直到沒有衝突為止
       const pointerKey = `${dayOfWeek}_${effectiveTeamIndex}`;
       const startIdx = rotationPointers[pointerKey] || 0;
       const initialCandidates = getTeamCandidates(assignedTeam, quota, startIdx);
-      const initialConflicts = (!isCampusDuty && otherMap.has(dateStr)) 
-        ? checkMembersCampusConflict(initialCandidates.selected, dateStr) 
-        : [];
+      const initialConflicts = checkMembersHigherPriorityConflict(initialCandidates.selected, dateStr);
 
-      if (!isCampusDuty && otherMap.has(dateStr) && initialConflicts.length > 0) {
+      if (initialConflicts.length > 0) {
         let swappedSuccess = false;
         const originalTeamName = assignedTeam.teamName || `第${effectiveTeamIndex + 1}組`;
         const conflictMembersText = initialConflicts.map(c => c.memberName).join('、');
+        const conflictLocNames = [...new Set(initialConflicts.map(c => c.conflictLocation))].join('、');
+        const conflictBadgeTitle = conflictLocNames.includes('醫院志工') ? '醫院志工衝突自動調換' : '跨場地衝突自動調換';
 
         for (let step = 1; step < teams.length; step++) {
           const candidateTeamIdx = (effectiveTeamIndex + step) % teams.length;
@@ -718,7 +785,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           const candPointerKey = `${dayOfWeek}_${candidateTeamIdx}`;
           const candStartIdx = rotationPointers[candPointerKey] || 0;
           const candCandidates = getTeamCandidates(candidateTeam, quota, candStartIdx);
-          const candConflicts = checkMembersCampusConflict(candCandidates.selected, dateStr);
+          const candConflicts = checkMembersHigherPriorityConflict(candCandidates.selected, dateStr);
 
           if (candConflicts.length === 0) {
             // 找到無衝突的同星期後續組別！
@@ -735,15 +802,19 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
             // 記錄組別對換互償映射
             if (!pendingTeamSwaps[dayOfWeek]) pendingTeamSwaps[dayOfWeek] = {};
-            pendingTeamSwaps[dayOfWeek][candidateTeamIdx] = teamIndex;
+            pendingTeamSwaps[dayOfWeek][candidateTeamIdx] = {
+              paybackIdx: teamIndex,
+              sinceDate: dateStr
+            };
 
             const swappedTeamName = candidateTeam.teamName || `第${candidateTeamIdx + 1}組`;
-            const alertNotice = `⚠️ 【跨場地衝突自動調換】原定${originalTeamName}之成員與${initialConflicts[0].conflictLocation}排班衝突，已依規則與同星期後續【${swappedTeamName}】對換值班`;
+            const alertNotice = `⚠️ 【${conflictBadgeTitle}】原定${originalTeamName}之成員（${conflictMembersText}）與${conflictLocNames}排班衝突，已依規則與同星期後續【${swappedTeamName}】對換值班`;
             swapConflictNotice = {
               dateStr,
               originalTeamName,
               swappedTeamName,
               conflictMembersText,
+              conflictLocation: conflictLocNames,
               reason: alertNotice
             };
 
@@ -756,10 +827,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
               slotId: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_1`,
               currentLocation: location,
               currentShift: rule.shiftLabel || '女眾班',
-              otherLocation: initialConflicts[0].conflictLocation,
-              otherShift: initialConflicts[0].conflictShift,
+              otherLocation: conflictLocNames,
+              otherShift: initialConflicts.map(c => c.conflictShift).filter(Boolean).join(' / ') || '值班',
               notice: alertNotice,
-              suggestAction: `原定【${originalTeamName}】成員與園區衝突，已自動與同星期後續【${swappedTeamName}】對換值班`
+              suggestAction: `原定【${originalTeamName}】成員與${conflictLocNames}衝突，已自動與同星期後續【${swappedTeamName}】對換值班`
             });
             break;
           }
@@ -779,10 +850,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             slotId: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_1`,
             currentLocation: location,
             currentShift: rule.shiftLabel || '女眾班',
-            otherLocation: initialConflicts[0].conflictLocation,
+            otherLocation: conflictLocNames,
             otherShift: initialConflicts[0].conflictShift,
-            notice: `⚠️ 【跨場地排班衝突未解】原定${originalTeamName}之成員（${conflictMembersText}）與${initialConflicts[0].conflictLocation}排班衝突，且同星期後續組別均無法對換，請手動調整！`,
-            suggestAction: `優先保留園區排班，請手動調動東港值班人員`
+            notice: `⚠️ 【排班衝突未解】原定${originalTeamName}之成員（${conflictMembersText}）與${conflictLocNames}排班衝突，且同星期後續組別均無法對換，請手動調整！`,
+            suggestAction: `優先保留${conflictLocNames}排班，請手動調動${location}值班人員`
           });
         }
       } else {
@@ -845,21 +916,20 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         };
         allGeneratedSlots.push(slotItem);
 
-        // 若依然有衝突則記錄（若無對換成功）
-        if (memberName && otherMap.has(dateStr)) {
-          const cleanCur = cleanMemberName(memberName);
-          const otherConflicts = otherMap.get(dateStr).filter(o => cleanMemberName(o.memberName) === cleanCur);
-          if (otherConflicts.length > 0 && !swapConflictNotice) {
+        // 若依然有高優先級衝突則記錄（若無對換成功）
+        if (memberName && !swapConflictNotice) {
+          const remainConflict = checkSingleMemberHigherPriorityConflict(memberName, dateStr);
+          if (remainConflict) {
             conflicts.push({
               dateStr,
               memberName,
               slotId: slotItem.id,
               currentLocation: location,
               currentShift: slotItem.shiftLabel,
-              otherLocation: otherConflicts[0].location || '宜蘭園區',
-              otherShift: otherConflicts[0].shiftLabel || '值班',
-              notice: `⚠️ 【跨場地重複排班】志工「${memberName}」與${otherConflicts[0].location || '宜蘭園區'}同日值班衝突`,
-              suggestAction: '優先保留園區排班，建議調動東港值班人員'
+              otherLocation: remainConflict.conflictLocation,
+              otherShift: remainConflict.conflictShift,
+              notice: `⚠️ 【重複排班衝突】志工「${memberName}」與${remainConflict.conflictLocation}同日排班衝突`,
+              suggestAction: `優先保留${remainConflict.conflictLocation}排班，建議調動${location}值班人員`
             });
           }
         }
@@ -873,6 +943,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         teamName: swapConflictNotice ? `${assignedTeam.teamName} (與${swapConflictNotice.originalTeamName}對換)` : assignedTeam.teamName,
         originalTeamName: swapConflictNotice ? swapConflictNotice.originalTeamName : null,
         swappedTeamName: swapConflictNotice ? swapConflictNotice.swappedTeamName : null,
+        conflictLocation: swapConflictNotice ? swapConflictNotice.conflictLocation : null,
         assignedCount: Math.min(selectedMembers.length, quota),
         assignedMembers: selectedMembers.slice(0, quota),
         standbys,
@@ -882,6 +953,9 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
       curr.setDate(curr.getDate() + 1);
     }
+
+    // 同步保存組別對換互償狀態至 rotationPointers
+    rotationPointers._pendingTeamSwaps = pendingTeamSwaps;
 
     return {
       matrixList: newMatrix,

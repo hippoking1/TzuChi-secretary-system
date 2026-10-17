@@ -11,6 +11,12 @@
           <option value="東港聯絡處">東港聯絡處</option>
         </select>
         <input v-model="selectedMonth" type="month" class="form-input" style="min-width: 150px;" @change="loadSchedule" />
+        <button class="btn btn-outline flex items-center gap-1.5" @click="showHospitalModal = true">
+          <span>🏥 預排醫院志工</span>
+          <span v-if="dutiesStore.hospitalDuties.length > 0" class="badge badge-primary text-xs">
+            {{ dutiesStore.hospitalDuties.length }}
+          </span>
+        </button>
         <button class="btn btn-outline flex items-center gap-1.5" @click="showExportModal = true">
           📤 匯出排班名冊
         </button>
@@ -38,9 +44,14 @@
             <div v-if="cell.date" class="cell-inner">
               <div class="cell-top-bar flex items-center justify-between mb-1">
                 <span class="cell-day-num" :class="{ 'text-gold': cell.isWeekend }">{{ cell.day }}</span>
-                <span v-if="cell.shifts.length > 0" class="shift-count-badge">
-                  {{ cell.shifts.filter(s => !!s.memberName).length }}/{{ cell.shifts.length }}
-                </span>
+                <div class="flex items-center gap-1">
+                  <span v-if="cell.hospitalShifts?.length > 0" class="hosp-count-badge" :title="'當日醫院志工：' + cell.hospitalShifts.map(h => h.memberName).join('、')">
+                    🏥{{ cell.hospitalShifts.length }}
+                  </span>
+                  <span v-if="cell.shifts.length > 0" class="shift-count-badge">
+                    {{ cell.shifts.filter(s => !!s.memberName).length }}/{{ cell.shifts.length }}
+                  </span>
+                </div>
               </div>
 
               <!-- 班次清單 (緊湊俐落設計，不爆版) -->
@@ -54,6 +65,16 @@
                 >
                   <span class="chip-label">{{ shift.shiftLabel.replace('班', '') }}</span>
                   <span class="chip-name font-bold">{{ shift.memberName || '未指派' }}</span>
+                </div>
+
+                <!-- 若當日有預排醫院志工，顯示提示條 -->
+                <div
+                  v-if="cell.hospitalShifts?.length > 0"
+                  class="shift-chip chip-hospital"
+                  :title="'醫院志工: ' + cell.hospitalShifts.map(h => h.memberName).join('、')"
+                >
+                  <span class="chip-label">🏥醫院</span>
+                  <span class="chip-name font-bold">{{ cell.hospitalShifts.map(h => h.memberName).join('、') }}</span>
                 </div>
 
                 <!-- 若超過 5 席，顯示 +N 更多按鈕 -->
@@ -78,6 +99,16 @@
           <button class="modal-close" @click="showDayModal = false">×</button>
         </div>
         <div class="modal-body">
+          <!-- 若當日有醫院志工，置頂顯示 -->
+          <div v-if="selectedDayCell?.hospitalShifts?.length > 0" class="card p-3 mb-3 border border-teal-200 bg-teal-50/40">
+            <div class="text-xs font-bold text-teal-900 mb-1">🏥 當日預排醫院志工（最高優先權，不參與道場值班）：</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span v-for="h in selectedDayCell.hospitalShifts" :key="h.id" class="badge badge-info text-xs">
+                {{ h.memberName }} ({{ h.shiftLabel || '醫院志工' }})
+              </span>
+            </div>
+          </div>
+
           <div class="flex flex-col gap-3">
             <div 
               v-for="s in selectedDayCell?.shifts" 
@@ -101,6 +132,7 @@
           </div>
         </div>
         <div class="modal-footer">
+          <button class="btn btn-outline btn-sm" @click="showDayModal = false; showHospitalModal = true">🏥 管理醫院志工</button>
           <router-link to="/admin/duty-form" class="btn btn-primary btn-sm">前往維護排班</router-link>
           <button class="btn btn-outline btn-sm" @click="showDayModal = false">關閉</button>
         </div>
@@ -114,6 +146,14 @@
       :default-month="selectedMonth" 
       @close="showExportModal = false" 
     />
+
+    <!-- 預排醫院志工及日期 Modal -->
+    <HospitalVolunteerModal
+      :show="showHospitalModal"
+      :default-month="selectedMonth"
+      @close="showHospitalModal = false"
+      @updated="loadSchedule"
+    />
   </div>
 </template>
 
@@ -121,6 +161,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
 import DutyExportModal from '@/components/duty/DutyExportModal.vue';
+import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
 
 const dutiesStore = useDutiesStore();
 
@@ -128,6 +169,7 @@ const selectedLocation = ref('宜蘭園區');
 const selectedMonth = ref(new Date().toISOString().substring(0, 7));
 const showDayModal = ref(false);
 const showExportModal = ref(false);
+const showHospitalModal = ref(false);
 const selectedDayCell = ref(null);
 
 const calendarCells = computed(() => {
@@ -144,7 +186,8 @@ const calendarCells = computed(() => {
     const dateObj = new Date(year, month - 1, day);
     const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
     const dayShifts = dutiesStore.duties.filter(d => d.dutyDate === dateStr);
-    cells.push({ day, date: dateStr, isWeekend, shifts: dayShifts });
+    const hospitalShifts = dutiesStore.hospitalDuties.filter(d => d.dutyDate === dateStr && !!d.memberName);
+    cells.push({ day, date: dateStr, isWeekend, shifts: dayShifts, hospitalShifts });
   }
 
   return cells;
@@ -157,7 +200,10 @@ function openDayDetails(cell) {
 
 async function loadSchedule() {
   const [year, month] = selectedMonth.value.split('-').map(Number);
-  await dutiesStore.fetchDutySchedule(selectedLocation.value, year, month);
+  await Promise.all([
+    dutiesStore.fetchDutySchedule(selectedLocation.value, year, month),
+    dutiesStore.fetchHospitalVolunteerSchedule(year, month)
+  ]);
 }
 
 onMounted(() => {
@@ -186,6 +232,7 @@ onMounted(() => {
 .cell-day-num { font-weight: 800; font-size: 0.95rem; color: var(--gray-700); }
 .text-gold { color: #b8922f; }
 .shift-count-badge { font-size: 0.65rem; background: var(--gray-100); color: var(--gray-600); padding: 0.1rem 0.35rem; border-radius: 9999px; font-weight: 600; }
+.hosp-count-badge { font-size: 0.65rem; background: #ccfbf1; color: #0f766e; padding: 0.1rem 0.35rem; border-radius: 9999px; font-weight: 700; }
 .cell-shifts-list { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.25rem; }
 
 .shift-chip {
@@ -193,6 +240,7 @@ onMounted(() => {
 }
 .chip-female { background: #fdf2f8; color: #be185d; border-left: 2px solid #db2777; }
 .chip-male { background: #eff6ff; color: #1d4ed8; border-left: 2px solid #2563eb; }
+.chip-hospital { background: #f0fdfa; color: #0f766e; border-left: 2px solid #0d9488; }
 .chip-label { font-size: 0.68rem; opacity: 0.85; }
 .chip-name { overflow: hidden; text-overflow: ellipsis; }
 
