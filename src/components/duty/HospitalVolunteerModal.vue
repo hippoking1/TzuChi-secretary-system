@@ -105,6 +105,83 @@
 
           <!-- 2. 組織篩選與選擇醫院志工人員 -->
           <div class="p-3 bg-white rounded border mb-3">
+            <!-- 📋 快速複製批次名單區（歷月梯次複製 & 常用固定批次模板） -->
+            <div class="mb-3 p-2.5 rounded border border-amber-200 bg-amber-50/40">
+              <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <span class="text-xs font-bold text-amber-900 flex items-center gap-1">
+                  <span>📋 快速複製批次名單（直接帶入歷史梯次或常用固定名單）：</span>
+                </span>
+                <span class="text-[11px] text-muted">
+                  帶入名單後仍可自由增刪個別志工，再設定新月份日期區間
+                </span>
+              </div>
+
+              <!-- A. 常用固定批次名單模板膠囊按鈕列 -->
+              <div v-if="batchTemplates.length > 0" class="flex items-center gap-1.5 flex-wrap mb-2">
+                <span class="text-xs font-bold text-gray-700">⭐ 常用批次：</span>
+                <div
+                  v-for="tpl in batchTemplates"
+                  :key="tpl.id"
+                  class="inline-flex items-center gap-1 bg-white border border-amber-300 rounded-full px-2.5 py-0.5 text-xs shadow-2xs"
+                >
+                  <button
+                    type="button"
+                    class="font-bold text-amber-900 hover:text-primary cursor-pointer bg-transparent border-0 p-0"
+                    :title="'點擊套用名單：' + (tpl.members || []).map(m => m.name).join('、')"
+                    @click="applyBatchRoster(tpl.members, tpl.hospitalName, 'replace', `常用批次「${tpl.templateName}」`)"
+                  >
+                    📋 {{ tpl.templateName }} ({{ (tpl.members || []).length }}人)
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-rm-btn text-gray-400 hover:text-danger ml-0.5"
+                    title="刪除此常用批次模板"
+                    @click="handleDeleteBatchTemplate(tpl)"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <!-- B. 從歷史已排月份 / 梯次下拉選擇複製 -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <select
+                  v-model="selectedHistoryBatchKey"
+                  class="form-select form-select-sm flex-1 min-w-[240px]"
+                >
+                  <option value="">
+                    -- 從歷月已排醫院志工梯次選擇複製 (共 {{ historicalBatchOptions.length }} 批可用) --
+                  </option>
+                  <option
+                    v-for="opt in historicalBatchOptions"
+                    :key="opt.key"
+                    :value="opt.key"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+
+                <button
+                  type="button"
+                  class="btn btn-xs btn-primary"
+                  :disabled="!selectedHistoryBatchKey"
+                  @click="handleCopySelectedHistoryBatch('replace')"
+                >
+                  📋 複製帶入名單
+                </button>
+                <button
+                  v-if="selectedMembersToAdd.length > 0"
+                  type="button"
+                  class="btn btn-xs btn-outline"
+                  :disabled="!selectedHistoryBatchKey"
+                  @click="handleCopySelectedHistoryBatch('append')"
+                  title="保留目前已選人員並合併加入"
+                >
+                  ➕ 合併加入
+                </button>
+              </div>
+            </div>
+
             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
               <span class="text-xs font-bold text-gray-800">🏢 篩選並選擇參與醫院志工之人員（可多選）：</span>
               <button
@@ -172,28 +249,68 @@
             </div>
 
             <!-- 已選待加入之志工膠囊列表 -->
-            <div class="mt-3 pt-2.5 border-t flex items-center gap-2 flex-wrap">
-              <span class="text-xs font-bold text-gray-700">待加入志工 ({{ selectedMembersToAdd.length }} 人)：</span>
-              <span v-if="selectedMembersToAdd.length === 0" class="text-xs text-muted">
-                請由上方選單點選或輸入志工姓名...
-              </span>
-              <span
-                v-for="(m, idx) in selectedMembersToAdd"
-                :key="m.id || m.name"
-                class="selected-vol-chip"
-              >
-                <strong>{{ m.name }}</strong>
-                <small v-if="m.orgText" class="text-gray-500 ml-1">{{ m.orgText }}</small>
-                <button type="button" class="chip-rm-btn" @click="selectedMembersToAdd.splice(idx, 1)">×</button>
-              </span>
-              <button
-                v-if="selectedMembersToAdd.length > 1"
-                type="button"
-                class="btn btn-xs btn-outline text-danger ml-auto"
-                @click="selectedMembersToAdd = []"
-              >
-                清空已選人員
-              </button>
+            <div class="mt-3 pt-2.5 border-t">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-bold text-gray-700">待加入志工 ({{ selectedMembersToAdd.length }} 人)：</span>
+                <span v-if="selectedMembersToAdd.length === 0" class="text-xs text-muted">
+                  請由上方「快速複製批次名單」帶入，或從選單點選志工姓名...
+                </span>
+                <span
+                  v-for="(m, idx) in selectedMembersToAdd"
+                  :key="m.id || m.name"
+                  class="selected-vol-chip"
+                >
+                  <strong>{{ m.name }}</strong>
+                  <small v-if="m.orgText" class="text-gray-500 ml-1">{{ m.orgText }}</small>
+                  <button type="button" class="chip-rm-btn" @click="selectedMembersToAdd.splice(idx, 1)">×</button>
+                </span>
+
+                <div v-if="selectedMembersToAdd.length > 0" class="ml-auto flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline border-amber-500 text-amber-800 hover:bg-amber-50"
+                    @click="openSaveTemplateInput"
+                    title="將目前這批名單儲存為常用固定批次，方便往後每月一鍵套用"
+                  >
+                    ⭐ 存為常用批次名單
+                  </button>
+                  <button
+                    v-if="selectedMembersToAdd.length > 1"
+                    type="button"
+                    class="btn btn-xs btn-outline text-danger"
+                    @click="selectedMembersToAdd = []"
+                  >
+                    清空已選人員
+                  </button>
+                </div>
+              </div>
+
+              <!-- 儲存為常用批次名單之內嵌輸入列 -->
+              <div v-if="showSaveTemplateBar" class="mt-2 p-2 bg-amber-50 border border-amber-200 rounded flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-bold text-amber-900">批次名稱：</span>
+                <input
+                  v-model="newTemplateName"
+                  type="text"
+                  class="form-input form-input-sm flex-1 min-w-[180px]"
+                  placeholder="例：和氣二固定醫院志工團"
+                  @keyup.enter="handleSaveBatchTemplate"
+                />
+                <button
+                  type="button"
+                  class="btn btn-xs btn-primary"
+                  :disabled="submitting || !newTemplateName.trim()"
+                  @click="handleSaveBatchTemplate"
+                >
+                  確認儲存模板
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline"
+                  @click="showSaveTemplateBar = false"
+                >
+                  取消
+                </button>
+              </div>
             </div>
           </div>
 
@@ -248,11 +365,21 @@
                 @change="loadMonthData"
               />
               <span class="badge badge-info text-xs">
-                本月共 {{ monthHospitalList.length }} 人次
+                本月共 {{ monthHospitalList.length }} 人次 ({{ groupedByMember.length }} 位志工)
               </span>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              <button
+                v-if="groupedByMember.length > 0"
+                type="button"
+                class="btn btn-xs btn-outline border-teal-600 text-teal-800 hover:bg-teal-50"
+                @click="copyCurrentMonthRoster"
+                title="將此月份所有醫院志工複製到上方「待加入志工」清單，以便快速排入其他月份"
+              >
+                📋 複製本月全體名單 ({{ groupedByMember.length }}人)
+              </button>
+
               <div class="flex items-center gap-1 bg-gray-100 p-0.5 rounded border">
                 <button
                   type="button"
@@ -289,7 +416,7 @@
           </div>
 
           <div v-else-if="monthHospitalList.length === 0" class="text-center py-8 text-muted text-sm border rounded bg-gray-50/50">
-            {{ activeMonth }} 尚無預排醫院志工紀錄，請由上方表單新增。
+            {{ activeMonth }} 尚無預排醫院志工紀錄，請由上方表單新增（可從「快速複製批次名單」直接帶入上月名單）。
           </div>
 
           <!-- 視角 A：依日期分組檢視 -->
@@ -303,6 +430,14 @@
                 <strong class="text-primary text-sm">{{ group.dateStr }}</strong>
                 <span class="badge badge-gray text-xs">{{ group.dayOfWeek }}</span>
                 <span class="text-xs text-muted">({{ group.items.length }} 人)</span>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline py-0 px-1.5 text-[11px]"
+                  title="複製此日名單至上方待加入區"
+                  @click="copyDateGroupRoster(group)"
+                >
+                  📋 複製此日名單
+                </button>
               </div>
 
               <div class="flex items-center gap-2 flex-wrap flex-1 justify-end">
@@ -424,6 +559,14 @@ const manualMemberName = ref('');
 const selectedMembersToAdd = ref([]);
 const hospitalLabel = ref('醫院志工');
 
+// 複製批次名單與常用批次模板狀態
+const allHistoricalHospitalList = ref([]);
+const selectedHistoryBatchKey = ref('');
+const showSaveTemplateBar = ref(false);
+const newTemplateName = ref('');
+
+const batchTemplates = computed(() => dutiesStore.hospitalBatchTemplates || []);
+
 const listViewMode = ref('byDate'); // 'byDate' | 'byMember'
 const loadingList = ref(false);
 const submitting = ref(false);
@@ -460,16 +603,19 @@ function initDefaultRange(monthStr) {
 }
 
 async function ensureBaseData() {
-  const tasks = [];
+  const tasks = [
+    dutiesStore.fetchHospitalBatchTemplates(),
+    dutiesStore.fetchAllHospitalVolunteerSchedules().then(res => {
+      allHistoricalHospitalList.value = res || [];
+    })
+  ];
   if (!orgsStore.orgs || orgsStore.orgs.length === 0) {
     tasks.push(orgsStore.fetchOrgs());
   }
   if (!membersStore.members || membersStore.members.length === 0) {
     tasks.push(membersStore.fetchMembers());
   }
-  if (tasks.length > 0) {
-    await Promise.all(tasks);
-  }
+  await Promise.all(tasks);
   allMembers.value = membersStore.members || [];
 }
 
@@ -478,14 +624,16 @@ async function loadMonthData() {
   loadingList.value = true;
   try {
     const [year, month] = activeMonth.value.split('-').map(Number);
-    const [hosp, yl, dg] = await Promise.all([
+    const [hosp, yl, dg, allHosp] = await Promise.all([
       dutiesStore.fetchHospitalVolunteerSchedule(year, month),
       dutiesStore.getDutyScheduleByRange('宜蘭園區', `${activeMonth.value}-01`, `${activeMonth.value}-31`),
-      dutiesStore.getDutyScheduleByRange('東港聯絡處', `${activeMonth.value}-01`, `${activeMonth.value}-31`)
+      dutiesStore.getDutyScheduleByRange('東港聯絡處', `${activeMonth.value}-01`, `${activeMonth.value}-31`),
+      dutiesStore.fetchAllHospitalVolunteerSchedules()
     ]);
     monthHospitalList.value = hosp || [];
     monthYilanList.value = yl || [];
     monthDonggangList.value = dg || [];
+    allHistoricalHospitalList.value = allHosp || [];
   } finally {
     loadingList.value = false;
   }
@@ -527,6 +675,202 @@ function getMemberShortOrg(item) {
   const p = orgsStore.getOrgPath(found.orgId);
   if (!p) return '';
   return `(${p.split('/')[0].trim()})`;
+}
+
+// ─── 自動聚合歷史月份與連續梯次之批次名單選項 ───
+function buildMemberObjFromRecord(rec) {
+  const name = (rec.memberName || rec.name || '').trim();
+  const found = allMembers.value.find(m => (rec.memberId && m.id === rec.memberId) || (rec.id && m.id === rec.id) || (m.name || '').trim() === name);
+  return {
+    id: found ? found.id : (rec.memberId || rec.id || ''),
+    name,
+    gender: found ? (found.gender || '女') : (rec.genderType || rec.gender || '女'),
+    orgText: found ? getMemberOrgPathText(found.id) : (rec.orgText || '')
+  };
+}
+
+const historicalBatchOptions = computed(() => {
+  const options = [];
+  const rawList = allHistoricalHospitalList.value || [];
+  if (rawList.length === 0) return options;
+
+  // 1. 依月份聚合全月不重複名單 (由新到舊)
+  const monthMap = new Map();
+  rawList.forEach(item => {
+    if (!item.dutyDate || !item.memberName) return;
+    const ym = item.dutyDate.substring(0, 7);
+    if (!monthMap.has(ym)) {
+      monthMap.set(ym, {
+        ym,
+        hospitalName: item.shiftLabel || '醫院志工',
+        membersMap: new Map(),
+        dates: new Set()
+      });
+    }
+    const entry = monthMap.get(ym);
+    entry.dates.add(item.dutyDate);
+    const cleanName = item.memberName.trim();
+    if (!entry.membersMap.has(cleanName)) {
+      entry.membersMap.set(cleanName, buildMemberObjFromRecord(item));
+    }
+  });
+
+  const sortedMonths = Array.from(monthMap.values()).sort((a, b) => b.ym.localeCompare(a.ym));
+  sortedMonths.forEach(mEntry => {
+    const membersArr = Array.from(mEntry.membersMap.values());
+    const previewNames = membersArr.slice(0, 6).map(x => x.name).join('、') + (membersArr.length > 6 ? '...' : '');
+    const sortedDates = Array.from(mEntry.dates).sort();
+    const dateSpanText = sortedDates.length > 1
+      ? `${sortedDates[0].substring(5)}~${sortedDates[sortedDates.length - 1].substring(5)}`
+      : sortedDates[0]?.substring(5) || '';
+
+    options.push({
+      key: `month_${mEntry.ym}`,
+      label: `📅 【${mEntry.ym} 整批名單】(${dateSpanText}・共 ${membersArr.length} 人：${previewNames})`,
+      hospitalName: mEntry.hospitalName,
+      members: membersArr
+    });
+  });
+
+  // 2. 依單日或特定梯次聚合 (若某月內有多個不同名單梯次)
+  const dateMap = new Map();
+  rawList.forEach(item => {
+    if (!item.dutyDate || !item.memberName) return;
+    if (!dateMap.has(item.dutyDate)) {
+      dateMap.set(item.dutyDate, {
+        dateStr: item.dutyDate,
+        hospitalName: item.shiftLabel || '醫院志工',
+        membersMap: new Map()
+      });
+    }
+    const dEntry = dateMap.get(item.dutyDate);
+    const cleanName = item.memberName.trim();
+    if (!dEntry.membersMap.has(cleanName)) {
+      dEntry.membersMap.set(cleanName, buildMemberObjFromRecord(item));
+    }
+  });
+
+  // 將連續且成員相同的日期合併成「梯次」
+  const sortedDatesAsc = Array.from(dateMap.values()).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+  const batches = [];
+  sortedDatesAsc.forEach(dEntry => {
+    const memberKey = Array.from(dEntry.membersMap.keys()).sort().join('|');
+    const prev = batches[batches.length - 1];
+    if (prev && prev.memberKey === memberKey && prev.hospitalName === dEntry.hospitalName) {
+      prev.endDate = dEntry.dateStr;
+      prev.dayCount++;
+    } else {
+      batches.push({
+        startDate: dEntry.dateStr,
+        endDate: dEntry.dateStr,
+        dayCount: 1,
+        hospitalName: dEntry.hospitalName,
+        memberKey,
+        members: Array.from(dEntry.membersMap.values())
+      });
+    }
+  });
+
+  batches.reverse().forEach((b, idx) => {
+    const previewNames = b.members.slice(0, 5).map(x => x.name).join('、') + (b.members.length > 5 ? '...' : '');
+    const rangeLabel = b.startDate === b.endDate
+      ? b.startDate
+      : `${b.startDate} ~ ${b.endDate.substring(5)} (${b.dayCount}天)`;
+    options.push({
+      key: `batch_${idx}_${b.startDate}`,
+      label: `🏥 梯次【${rangeLabel}】${b.hospitalName} (共 ${b.members.length} 人：${previewNames})`,
+      hospitalName: b.hospitalName,
+      members: b.members
+    });
+  });
+
+  return options;
+});
+
+function applyBatchRoster(members = [], targetHospitalName = '', mode = 'replace', sourceTitle = '批次名單') {
+  if (!Array.isArray(members) || members.length === 0) return;
+  const normalized = members.map(m => buildMemberObjFromRecord(m)).filter(m => !!m.name);
+
+  if (mode === 'replace') {
+    selectedMembersToAdd.value = normalized;
+  } else {
+    const existingNames = new Set(selectedMembersToAdd.value.map(x => x.name));
+    normalized.forEach(m => {
+      if (!existingNames.has(m.name)) {
+        selectedMembersToAdd.value.push(m);
+        existingNames.add(m.name);
+      }
+    });
+  }
+
+  if (targetHospitalName) {
+    hospitalLabel.value = targetHospitalName;
+  }
+
+  toast.success(`📋 已從${sourceTitle}帶入 ${normalized.length} 位醫院志工！請確認上方預排日期後點擊確認新增。`);
+}
+
+function handleCopySelectedHistoryBatch(mode = 'replace') {
+  if (!selectedHistoryBatchKey.value) return;
+  const found = historicalBatchOptions.value.find(o => o.key === selectedHistoryBatchKey.value);
+  if (!found) return;
+  applyBatchRoster(found.members, found.hospitalName, mode, found.label.split('(')[0]);
+}
+
+function copyCurrentMonthRoster() {
+  if (monthHospitalList.value.length === 0) return;
+  const uniqueMap = new Map();
+  let label = hospitalLabel.value;
+  monthHospitalList.value.forEach(item => {
+    if (item.memberName && !uniqueMap.has(item.memberName.trim())) {
+      uniqueMap.set(item.memberName.trim(), buildMemberObjFromRecord(item));
+      if (item.shiftLabel) label = item.shiftLabel;
+    }
+  });
+  applyBatchRoster(Array.from(uniqueMap.values()), label, 'replace', `${activeMonth.value} 全月名單`);
+}
+
+function copyDateGroupRoster(group) {
+  if (!group?.items?.length) return;
+  const label = group.items[0]?.shiftLabel || hospitalLabel.value;
+  applyBatchRoster(group.items, label, 'replace', `${group.dateStr} 名單`);
+}
+
+function openSaveTemplateInput() {
+  showSaveTemplateBar.value = true;
+  if (!newTemplateName.value) {
+    newTemplateName.value = `${hospitalLabel.value || '醫院志工'}固定批次名單 (${selectedMembersToAdd.value.length}人)`;
+  }
+}
+
+async function handleSaveBatchTemplate() {
+  if (!newTemplateName.value.trim() || selectedMembersToAdd.value.length === 0) return;
+  submitting.value = true;
+  try {
+    await dutiesStore.saveHospitalBatchTemplate({
+      templateName: newTemplateName.value.trim(),
+      hospitalName: hospitalLabel.value,
+      members: selectedMembersToAdd.value
+    });
+    toast.success(`⭐ 已儲存常用批次名單「${newTemplateName.value.trim()}」！往後每月可一鍵點擊套用。`);
+    showSaveTemplateBar.value = false;
+    newTemplateName.value = '';
+  } catch (err) {
+    toast.error('儲存常用批次失敗：' + err.message);
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function handleDeleteBatchTemplate(tpl) {
+  if (!tpl?.id) return;
+  if (!confirm(`確定要刪除常用批次模板「${tpl.templateName}」嗎？`)) return;
+  try {
+    await dutiesStore.deleteHospitalBatchTemplate(tpl.id);
+    toast.success(`已刪除常用批次模板「${tpl.templateName}」`);
+  } catch (err) {
+    toast.error('刪除模板失敗：' + err.message);
+  }
 }
 
 function resetMemberFilter() {

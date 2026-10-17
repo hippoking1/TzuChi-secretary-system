@@ -184,6 +184,66 @@ export const useDutiesStore = defineStore('duties', () => {
     return items;
   }
 
+  const hospitalBatchTemplates = ref([]);
+
+  /**
+   * 讀取所有歷史預排醫院志工紀錄（供跨月份複製歷史批次名單使用）
+   */
+  async function fetchAllHospitalVolunteerSchedules() {
+    const list = await getCollectionDocs('dutyShifts', [
+      where('location', '==', '醫院志工')
+    ]);
+    return list
+      .filter(d => !!d.dutyDate && !!d.memberName)
+      .sort((a, b) => (b.dutyDate + (a.memberName || '')).localeCompare(a.dutyDate + (b.memberName || '')));
+  }
+
+  /**
+   * 讀取常用醫院志工批次名單模板
+   */
+  async function fetchHospitalBatchTemplates() {
+    const list = await getCollectionDocs('dutyShifts', [
+      where('location', '==', '醫院志工模板')
+    ]);
+    const sorted = list
+      .filter(t => Array.isArray(t.members) && t.members.length > 0)
+      .sort((a, b) => (a.templateName || '').localeCompare(b.templateName || ''));
+    hospitalBatchTemplates.value = sorted;
+    return sorted;
+  }
+
+  /**
+   * 儲存常用醫院志工批次名單模板
+   */
+  async function saveHospitalBatchTemplate({ id = '', templateName = '', hospitalName = '醫院志工', members = [] }) {
+    const cleanName = (templateName || '').trim() || '常用醫院志工批次名單';
+    const docId = id || `醫院志工模板_${Date.now()}`;
+    const item = {
+      id: docId,
+      location: '醫院志工模板',
+      templateName: cleanName,
+      hospitalName: (hospitalName || '醫院志工').trim() || '醫院志工',
+      members: members.map(m => ({
+        id: m.id || '',
+        name: (m.name || '').trim(),
+        gender: m.gender || '女',
+        orgText: m.orgText || ''
+      })).filter(m => !!m.name)
+    };
+    await batchWriteItems('dutyShifts', [item], 'set');
+    await fetchHospitalBatchTemplates();
+    return item;
+  }
+
+  /**
+   * 刪除常用醫院志工批次名單模板
+   */
+  async function deleteHospitalBatchTemplate(templateId) {
+    if (!templateId) return;
+    await batchWriteItems('dutyShifts', [{ id: templateId }], 'delete');
+    await fetchHospitalBatchTemplates();
+  }
+
   /**
    * 批次刪除預排醫院志工紀錄
    */
@@ -261,6 +321,7 @@ export const useDutiesStore = defineStore('duties', () => {
   return {
     duties,
     hospitalDuties,
+    hospitalBatchTemplates,
     loading,
     DUTY_SHIFTS_CONFIG,
     getShiftTimeRange,
@@ -268,9 +329,13 @@ export const useDutiesStore = defineStore('duties', () => {
     fetchDutyScheduleByRange,
     getDutyScheduleByRange,
     fetchHospitalVolunteerSchedule,
+    fetchAllHospitalVolunteerSchedules,
     getHospitalVolunteerScheduleByRange,
     addHospitalVolunteerSchedules,
     deleteHospitalVolunteerSchedules,
+    fetchHospitalBatchTemplates,
+    saveHospitalBatchTemplate,
+    deleteHospitalBatchTemplate,
     saveMonthlyDuties,
     generateMonthlyTemplate
   };
