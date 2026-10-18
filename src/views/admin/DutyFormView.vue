@@ -527,10 +527,10 @@
               <label class="form-label font-bold text-sm mb-2">1. 女眾整組輪替方式：</label>
               <div class="text-xs text-gray-700 space-y-1.5">
                 <div class="flex items-center gap-1.5 font-bold text-emerald-700">
-                  <span>📅 星期整組循序輪替（每班 {{ currentSelectedAutoRuleQuota }} 席）</span>
+                  <span>📅 星期整組循序輪替（整組人員全員值班，不設人數上限）</span>
                 </div>
                 <div class="text-muted leading-relaxed">
-                  系統將依指定排班區間內之星期，自動自該星期的組別名冊循序排入整組志工。組員超額時自動啟用備用輪替並推進指標。
+                  系統將依指定排班區間內之星期，自動自該星期的組別名冊排入整組志工。依組別人數動態排入所有成員，不設人數上限。
                 </div>
               </div>
             </div>
@@ -1075,13 +1075,19 @@ const groupedDays = computed(() => {
     daysMap[slot.dutyDate].shiftGroupsMap[slot.shiftId].slots.push(slot);
   });
 
-  return Object.values(daysMap).map(d => ({
-    ...d,
-    shiftGroups: Object.values(d.shiftGroupsMap)
-  }));
+  return Object.values(daysMap).map(d => {
+    const shiftGroups = Object.values(d.shiftGroupsMap).map(sg => ({
+      ...sg,
+      quota: sg.slots.length // 動態自適應實際席位數量
+    }));
+    return {
+      ...d,
+      shiftGroups
+    };
+  });
 });
 
-// 初始化排班矩陣：精確以標準 Slot ID (例如 宜蘭園區_2026-08-26_YL_M1_1) 進行 1-to-1 匹配
+// 初始化排班矩陣：精確以標準 Slot ID 進行 1-to-1 匹配，並自動納入超出預設 quota 的動態組員席位
 async function initMatrix() {
   loading.value = true;
   try {
@@ -1109,7 +1115,8 @@ async function initMatrix() {
       if (m.name) nameToMemberMap[m.name] = m;
     });
 
-    matrixList.value = template.map(t => {
+    const templateIdSet = new Set(template.map(t => t.id));
+    const mergedList = template.map(t => {
       const existingItem = existingMap[t.id];
 
       if (existingItem) {
@@ -1126,12 +1133,42 @@ async function initMatrix() {
           ...t,
           memberId,
           memberName,
+          quota: existingItem.quota || t.quota,
           timeRange: t.timeRange || existingItem.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, t.shiftId, t.shiftLabel)
         };
       }
 
       return t;
     });
+
+    // 納入 existing 中超越預設 template quota 的席位 (例如組員有 5 人以上時之 slot 5, slot 6...)
+    existing.forEach(item => {
+      if (item.id && !templateIdSet.has(item.id)) {
+        let memberId = item.memberId || '';
+        const memberName = item.memberName || '';
+        if (memberName && nameToMemberMap[memberName]) {
+          memberId = nameToMemberMap[memberName].id;
+        } else if (!memberId && memberName) {
+          memberId = memberName;
+        }
+        mergedList.push({
+          ...item,
+          memberId,
+          memberName,
+          timeRange: item.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, item.shiftId, item.shiftLabel)
+        });
+      }
+    });
+
+    mergedList.sort((a, b) => {
+      const cmp = (a.dutyDate || '').localeCompare(b.dutyDate || '');
+      if (cmp !== 0) return cmp;
+      const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
+      if (cmpShift !== 0) return cmpShift;
+      return (a.slotIndex || 0) - (b.slotIndex || 0);
+    });
+
+    matrixList.value = mergedList;
   } finally {
     loading.value = false;
   }
@@ -1509,9 +1546,10 @@ async function applyAutoSchedule() {
     const slots = autoPreviewResult.value.allGeneratedSlots || [];
     const pointers = autoPreviewResult.value.updatedRotationPointers || null;
     const ruleId = autoPreviewResult.value.ruleId || null;
+    const deletedSlots = autoPreviewResult.value.deletedSlots || [];
 
-    // 直接批次儲存至 Firestore 資料庫
-    await dutyRulesStore.saveAutoScheduleToDb(slots, pointers, ruleId);
+    // 直接批次儲存至 Firestore 資料庫 (含刪除多餘席位)
+    await dutyRulesStore.saveAutoScheduleToDb(slots, pointers, ruleId, deletedSlots);
 
     // 同步更新當前月畫面矩陣並重新自資料庫載入
     await initMatrix();

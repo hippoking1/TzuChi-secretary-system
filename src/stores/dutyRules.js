@@ -119,6 +119,29 @@ export const DEFAULT_DONGGANG_MALE_RULE = {
   enabled: true
 };
 
+export const DEFAULT_DONGGANG_FEMALE_RULE = {
+  id: 'rule_donggang_female',
+  ruleName: '東港聯絡處女眾值班規則',
+  heqiGroup: '全區通用',
+  location: '東港聯絡處',
+  shiftId: 'DG_F',
+  shiftLabel: '女眾班',
+  genderType: '女',
+  quota: 2,
+  ruleType: 'weekday_group_rotation', // 星期 × 整組循環輪替 (依組別人員數全員排班，不限人數上限)
+  weekdayTeams: {
+    '1': [{ teamName: '第一組', members: [] }],
+    '2': [{ teamName: '第一組', members: [] }],
+    '3': [{ teamName: '第一組', members: [] }],
+    '4': [{ teamName: '第一組', members: [] }],
+    '5': [{ teamName: '第一組', members: [] }],
+    '6': [{ teamName: '第一組', members: [] }],
+    '0': [{ teamName: '第一組', members: [] }]
+  },
+  rotationPointers: {},
+  enabled: true
+};
+
 // 預設和氣週輪值設定（宜蘭園區）
 export const DEFAULT_WEEK_ROTATION = {
   id: 'campus_week_rotation',
@@ -225,6 +248,12 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const hasDonggangMale = all.some(r => r.location === '東港聯絡處' && r.shiftId === 'DG_M');
       if (!hasDonggangMale) {
         all.push({ ...DEFAULT_DONGGANG_MALE_RULE });
+      }
+
+      // 若東港聯絡處女眾規則尚未存在，以預設規則呈現
+      const hasDonggangFemale = all.some(r => r.location === '東港聯絡處' && r.shiftId === 'DG_F');
+      if (!hasDonggangFemale) {
+        all.push({ ...DEFAULT_DONGGANG_FEMALE_RULE });
       }
 
       const filtered = location ? all.filter(r => r.location === location) : all;
@@ -421,6 +450,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     // 複製目前矩陣
     const newMatrix = currentMatrix.map(slot => ({ ...slot }));
     const allGeneratedSlots = [];
+    const deletedSlots = [];
 
     // 紀錄各項資訊
     const scheduledDetails = [];
@@ -463,10 +493,13 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       }
     }
 
-    function getTeamCandidates(team, q, startIdx = 0) {
+    function getTeamCandidates(team, q, startIdx = 0, isWholeTeam = false) {
       if (!team || !Array.isArray(team.members)) return { selected: [], standbys: [] };
       const raw = team.members.map(n => (n || '').trim()).filter(Boolean);
       if (raw.length === 0) return { selected: [], standbys: [] };
+      if (isWholeTeam) {
+        return { selected: [...raw], standbys: [] };
+      }
       const selected = [];
       const standbys = [];
       if (raw.length > q) {
@@ -723,6 +756,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       }
 
       // 檢查是否先前曾對換過組別（如先前的週一第一組與第二組對換，則後續輪到第二組時優先對調回第一組，適用宜蘭園區與東港聯絡處）
+      const isWholeTeam = (rule.ruleType === 'weekday_group_rotation') || (rule.genderType === '女');
+
       if (pendingTeamSwaps[dayOfWeek] && pendingTeamSwaps[dayOfWeek][teamIndex] !== undefined) {
         const swapEntry = pendingTeamSwaps[dayOfWeek][teamIndex];
         const paybackIdx = typeof swapEntry === 'object' ? swapEntry.paybackIdx : Number(swapEntry);
@@ -730,10 +765,9 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         if (!sinceDate || dateStr > sinceDate) {
           const paybackTeam = teams[paybackIdx];
           if (paybackTeam && Array.isArray(paybackTeam.members) && paybackTeam.members.length > 0) {
-            const quota = getRuleQuota(rule);
             const pKey = `${dayOfWeek}_${paybackIdx}`;
-            const pStart = rotationPointers[pKey] || 0;
-            const pTest = getTeamCandidates(paybackTeam, quota, pStart);
+            const pStart = isWholeTeam ? 0 : (rotationPointers[pKey] || 0);
+            const pTest = getTeamCandidates(paybackTeam, paybackTeam.members.length, pStart, isWholeTeam);
             const pConflicts = checkMembersHigherPriorityConflict(pTest.selected, dateStr);
             if (pConflicts.length === 0) {
               delete pendingTeamSwaps[dayOfWeek][teamIndex];
@@ -756,8 +790,9 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         continue;
       }
 
-      // 自適應取得該道場與班次所需人數（例如東港女眾班為 2，園區女眾班為 4）
-      const quota = getRuleQuota(rule);
+      // 女眾整組輪替依組別實際人員數進行排班，以整組人員進行排班而不限定一班別的人員上限
+      const baseQuota = getRuleQuota(rule);
+      let quota = isWholeTeam ? Math.max(1, rawMembers.length) : baseQuota;
 
       let selectedMembers = [];
       let standbys = [];
@@ -766,8 +801,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       // 檢查更高優先級排班衝突（優先順序：醫院志工 > 宜蘭園區值班 > 東港聯絡處值班）並執行同星期後一組對換機制
       // 規則：無論宜蘭園區或東港聯絡處，若當日組別成員與更高優先級排班衝突，與同星期的後一組對換；若後一組也有衝突，換成與再後一組對換，以此類推直到沒有衝突為止
       const pointerKey = `${dayOfWeek}_${effectiveTeamIndex}`;
-      const startIdx = rotationPointers[pointerKey] || 0;
-      const initialCandidates = getTeamCandidates(assignedTeam, quota, startIdx);
+      const startIdx = isWholeTeam ? 0 : (rotationPointers[pointerKey] || 0);
+      const initialCandidates = getTeamCandidates(assignedTeam, quota, startIdx, isWholeTeam);
       const initialConflicts = checkMembersHigherPriorityConflict(initialCandidates.selected, dateStr);
 
       if (initialConflicts.length > 0) {
@@ -782,9 +817,13 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           const candidateTeam = teams[candidateTeamIdx];
           if (!candidateTeam || !Array.isArray(candidateTeam.members) || candidateTeam.members.length === 0) continue;
 
+          const candMembers = candidateTeam.members.map(n => (n || '').trim()).filter(Boolean);
+          if (candMembers.length === 0) continue;
+
+          const candQuota = isWholeTeam ? Math.max(1, candMembers.length) : baseQuota;
           const candPointerKey = `${dayOfWeek}_${candidateTeamIdx}`;
-          const candStartIdx = rotationPointers[candPointerKey] || 0;
-          const candCandidates = getTeamCandidates(candidateTeam, quota, candStartIdx);
+          const candStartIdx = isWholeTeam ? 0 : (rotationPointers[candPointerKey] || 0);
+          const candCandidates = getTeamCandidates(candidateTeam, candQuota, candStartIdx, isWholeTeam);
           const candConflicts = checkMembersHigherPriorityConflict(candCandidates.selected, dateStr);
 
           if (candConflicts.length === 0) {
@@ -792,11 +831,12 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             swappedSuccess = true;
             effectiveTeamIndex = candidateTeamIdx;
             assignedTeam = candidateTeam;
+            quota = candQuota; // 對換組別之席次數依該組實際成員數決定
             selectedMembers = candCandidates.selected;
             standbys = candCandidates.standbys;
 
-            // 更新 pointer
-            if (candidateTeam.members.length > quota) {
+            // 更新 pointer (非整組輪替時)
+            if (!isWholeTeam && candidateTeam.members.length > quota) {
               rotationPointers[candPointerKey] = (candStartIdx + quota) % candidateTeam.members.length;
             }
 
@@ -824,7 +864,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
               originalTeamName,
               swappedTeamName,
               memberName: conflictMembersText,
-              slotId: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_1`,
+              slotId: `${location}_${dateStr}_${rule.shiftId || (location === '東港聯絡處' ? 'DG_F' : 'YL_F')}_1`,
               currentLocation: location,
               currentShift: rule.shiftLabel || '女眾班',
               otherLocation: conflictLocNames,
@@ -839,7 +879,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         if (!swappedSuccess) {
           selectedMembers = initialCandidates.selected;
           standbys = initialCandidates.standbys;
-          if (assignedTeam.members && assignedTeam.members.length > quota) {
+          if (!isWholeTeam && assignedTeam.members && assignedTeam.members.length > quota) {
             rotationPointers[pointerKey] = (startIdx + quota) % assignedTeam.members.length;
           }
           conflicts.push({
@@ -847,11 +887,11 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             isSwapped: false,
             originalTeamName,
             memberName: conflictMembersText,
-            slotId: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_1`,
+            slotId: `${location}_${dateStr}_${rule.shiftId || (location === '東港聯絡處' ? 'DG_F' : 'YL_F')}_1`,
             currentLocation: location,
             currentShift: rule.shiftLabel || '女眾班',
             otherLocation: conflictLocNames,
-            otherShift: initialConflicts[0].conflictShift,
+            otherShift: initialConflicts[0]?.conflictShift || '值班',
             notice: `⚠️ 【排班衝突未解】原定${originalTeamName}之成員（${conflictMembersText}）與${conflictLocNames}排班衝突，且同星期後續組別均無法對換，請手動調整！`,
             suggestAction: `優先保留${conflictLocNames}排班，請手動調動${location}值班人員`
           });
@@ -859,7 +899,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       } else {
         selectedMembers = initialCandidates.selected;
         standbys = initialCandidates.standbys;
-        if (assignedTeam.members && assignedTeam.members.length > quota) {
+        if (!isWholeTeam && assignedTeam.members && assignedTeam.members.length > quota) {
           rotationPointers[pointerKey] = (startIdx + quota) % assignedTeam.members.length;
         }
       }
@@ -875,10 +915,11 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       // 取得班次時間常數配置
       const shiftConfig = getStandardShiftConfig(location, rule.shiftId, rule.shiftLabel);
       const shiftStart = shiftConfig?.startTime || '08:00';
-      const shiftEnd = shiftConfig?.endTime || (quota <= 2 ? '13:00' : '16:00');
+      const shiftEnd = shiftConfig?.endTime || (location === '東港聯絡處' ? '13:00' : '16:00');
       const timeRange = shiftConfig?.timeRange || `${shiftStart}~${shiftEnd}`;
+      const targetShiftId = rule.shiftId || (location === '東港聯絡處' ? 'DG_F' : 'YL_F');
 
-      const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === (rule.shiftId || 'YL_F'));
+      const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === targetShiftId);
 
       for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
         const slotNumber = slotIdx + 1;
@@ -894,14 +935,35 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         if (matrixSlot) {
           matrixSlot.memberName = memberName;
           matrixSlot.memberId = memberObj ? memberObj.id : (memberName || '');
+          matrixSlot.quota = quota;
           matrixSlot.status = memberName ? '已排班' : '未指派';
+        } else {
+          // 若原矩陣席位數少於當前組別人數，動態新增席位至 newMatrix
+          const newSlotItem = {
+            id: `${location}_${dateStr}_${targetShiftId}_${slotNumber}`,
+            location,
+            dutyDate: dateStr,
+            shiftId: targetShiftId,
+            shiftLabel: rule.shiftLabel || '女眾班',
+            shiftStart,
+            shiftEnd,
+            timeRange,
+            quota,
+            slotIndex: slotNumber,
+            genderType: rule.genderType || '女',
+            isWeekend: dayOfWeek === '0' || dayOfWeek === '6',
+            memberId: memberObj ? memberObj.id : (memberName || ''),
+            memberName: memberName || '',
+            status: memberName ? '已排班' : '未指派'
+          };
+          newMatrix.push(newSlotItem);
         }
 
         const slotItem = {
-          id: `${location}_${dateStr}_${rule.shiftId || 'YL_F'}_${slotNumber}`,
+          id: `${location}_${dateStr}_${targetShiftId}_${slotNumber}`,
           location,
           dutyDate: dateStr,
-          shiftId: rule.shiftId || 'YL_F',
+          shiftId: targetShiftId,
           shiftLabel: rule.shiftLabel || '女眾班',
           shiftStart,
           shiftEnd,
@@ -935,6 +997,18 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         }
       }
 
+      // 若在覆蓋模式下且該日原矩陣有大於 quota 的多餘席位，予以清理並記錄刪除
+      if (overwriteStrategy === 'overwrite') {
+        const extraSlots = daySlotsInMatrix.filter(s => s.slotIndex > quota);
+        extraSlots.forEach(extra => {
+          const rmIdx = newMatrix.findIndex(s => s.id === extra.id);
+          if (rmIdx >= 0) {
+            newMatrix.splice(rmIdx, 1);
+          }
+          deletedSlots.push({ id: extra.id });
+        });
+      }
+
       scheduledDetails.push({
         dateStr,
         dayOfWeek,
@@ -944,9 +1018,9 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         originalTeamName: swapConflictNotice ? swapConflictNotice.originalTeamName : null,
         swappedTeamName: swapConflictNotice ? swapConflictNotice.swappedTeamName : null,
         conflictLocation: swapConflictNotice ? swapConflictNotice.conflictLocation : null,
-        assignedCount: Math.min(selectedMembers.length, quota),
-        assignedMembers: selectedMembers.slice(0, quota),
-        standbys,
+        assignedCount: selectedMembers.length,
+        assignedMembers: selectedMembers, // 整組人員排班，不設上限
+        standbys: [],
         adjustedNotice: swapConflictNotice ? swapConflictNotice.reason : null,
         swapNotice: swapConflictNotice ? swapConflictNotice.reason : null
       });
@@ -960,6 +1034,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     return {
       matrixList: newMatrix,
       allGeneratedSlots,
+      deletedSlots,
       scheduledDetails,
       conflicts,
       standbyList,
@@ -974,12 +1049,16 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
    * @param {Array} slots
    * @param {Object} updatedPointers
    * @param {string} ruleId
+   * @param {Array} deletedSlots
    */
-  async function saveAutoScheduleToDb(slots = [], updatedPointers = null, ruleId = null) {
+  async function saveAutoScheduleToDb(slots = [], updatedPointers = null, ruleId = null, deletedSlots = []) {
     loading.value = true;
     try {
       if (slots && slots.length > 0) {
         await batchWriteItems('dutyShifts', slots, 'set');
+      }
+      if (deletedSlots && deletedSlots.length > 0) {
+        await batchWriteItems('dutyShifts', deletedSlots, 'delete');
       }
       if (updatedPointers && Object.keys(updatedPointers).length > 0 && ruleId) {
         const found = rules.value.find(r => r.id === ruleId);

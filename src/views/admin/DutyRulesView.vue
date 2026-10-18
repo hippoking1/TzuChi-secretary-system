@@ -214,7 +214,10 @@
 
             <div>
               <span class="text-xs text-muted block mb-0.5">每班需求人數：</span>
-              <div class="flex items-center gap-1">
+              <div v-if="activeRule.ruleType === 'weekday_group_rotation'" class="flex items-center gap-1 py-1">
+                <span class="badge badge-primary font-bold">整組全員輪值 (依組員數排班，無上限)</span>
+              </div>
+              <div v-else class="flex items-center gap-1">
                 <input 
                   v-model.number="activeRule.quota" 
                   type="number" 
@@ -536,7 +539,6 @@
               v-for="(team, teamIdx) in (activeRule.weekdayTeams?.[activeWeekday] || [])" 
               :key="teamIdx"
               class="team-card p-4 border rounded-lg bg-gray-50/50"
-              :class="{ 'border-warning': team.members.length > activeRuleQuota }"
             >
               <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div class="flex items-center gap-2">
@@ -545,11 +547,8 @@
                     class="form-input form-input-sm font-bold text-primary" 
                     style="max-width: 140px;"
                   />
-                  <span class="badge" :class="team.members.length > activeRuleQuota ? 'badge-warning' : 'badge-primary'">
-                    共 {{ team.members.length }} 人
-                  </span>
-                  <span v-if="team.members.length > activeRuleQuota" class="text-xs text-warning font-bold">
-                    ⚠️ 超額 {{ team.members.length - activeRuleQuota }} 人，自動啟動備用輪替機制（每次 {{ activeRuleQuota }} 人，多出志工下次遞補）
+                  <span class="badge badge-primary">
+                    共 {{ team.members.length }} 人（整組全員輪值）
                   </span>
                 </div>
 
@@ -582,13 +581,12 @@
                 </div>
               </div>
 
-              <!-- 組員膠囊列表 -->
+              <!-- 組員膠囊列表 (整組全員值班，不限上限) -->
               <div class="members-chip-container flex flex-wrap gap-2 mb-3">
                 <div 
                   v-for="(member, mIdx) in team.members" 
                   :key="mIdx"
                   class="member-chip"
-                  :class="{ 'chip-overflow': mIdx >= activeRuleQuota }"
                   :title="getMemberTooltipByName(member)"
                 >
                   <span class="chip-index">{{ mIdx + 1 }}.</span>
@@ -596,7 +594,6 @@
                   <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
                     {{ getMemberOrgBadgeByName(member) }}
                   </span>
-                  <span v-if="mIdx >= activeRuleQuota" class="chip-badge">備用輪替</span>
                   <button 
                     type="button" 
                     class="chip-delete-btn" 
@@ -719,7 +716,7 @@
                 style="width: 80px;" 
               />
               <span class="text-xs text-muted">
-                人 / 班（系統已依班次自適應帶入建議值，亦可自行調整）
+                {{ newRuleForm.ruleType === 'weekday_group_rotation' ? '（星期整組輪替依各組實際人數全額排班，不限人數上限）' : '人 / 班（系統已依班次自適應帶入建議值）' }}
               </span>
             </div>
           </div>
