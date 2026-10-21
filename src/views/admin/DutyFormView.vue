@@ -565,6 +565,40 @@
                 </label>
               </div>
             </div>
+
+            <!-- 輪值次數均衡模式設定 (東港聯絡處輪班均衡優化) -->
+            <div class="card p-3 border border-indigo-200 bg-indigo-50/30">
+              <label class="form-label font-bold text-sm mb-2 text-indigo-900 flex items-center gap-1.5">
+                <span>⚖️ 輪值均衡基準：</span>
+                <span class="badge badge-primary text-[10px] py-0.5">優化防不均</span>
+              </label>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
+                  <input 
+                    v-model="autoBalanceScope" 
+                    type="radio" 
+                    value="local" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>各道場獨立公平 (推薦)</strong>
+                    <small class="text-muted block text-[11px]">聯絡處內部人員輪值次數平均；高優先級衝突被延後者，下個班次優先補班，且代班者後續自動抵扣</small>
+                  </span>
+                </label>
+                <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
+                  <input 
+                    v-model="autoBalanceScope" 
+                    type="radio" 
+                    value="cross_location" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>跨場地總量平衡</strong>
+                    <small class="text-muted block text-[11px]">代班時併計宜蘭園區與醫院志工總出勤次數，總值班次數最少者優先接替</small>
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <!-- 醫院志工預排狀態與快速管理橫條 -->
@@ -626,6 +660,48 @@
                 class="badge badge-warning text-xs py-1 px-2"
               >
                 {{ st.dateStr }} ({{ st.teamName }}) 備用：{{ st.standbys.join('、') }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 輪班次數均衡度預覽統計面板 -->
+          <div v-if="autoPreviewResult?.fairnessSummary" class="card p-3 border border-indigo-200 bg-indigo-50/50">
+            <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <h4 class="font-bold text-indigo-950 text-xs flex items-center gap-1.5 m-0">
+                <span>📊 輪值次數均衡度統計：</span>
+                <span class="text-muted font-normal">
+                  (每人平均 {{ autoPreviewResult.fairnessSummary.avgLocal }} 班 ｜ 最低 {{ autoPreviewResult.fairnessSummary.minLocal }} 班 ~ 最高 {{ autoPreviewResult.fairnessSummary.maxLocal }} 班 ｜ 最大極差: {{ autoPreviewResult.fairnessSummary.spread }} 班)
+                </span>
+              </h4>
+              <div class="flex items-center gap-2">
+                <span v-if="autoPreviewResult.fairnessSummary.pendingOwedList?.length > 0" class="badge badge-warning text-[10px]" :title="'待補班志工：' + autoPreviewResult.fairnessSummary.pendingOwedList.map(x => x.memberName).join('、')">
+                  待補班名冊: {{ autoPreviewResult.fairnessSummary.pendingOwedList.length }} 人
+                </span>
+                <span v-if="autoPreviewResult.fairnessSummary.preServedCreditsCount > 0" class="badge badge-info text-[10px]">
+                  已預支代班額度: {{ autoPreviewResult.fairnessSummary.preServedCreditsCount }} 筆
+                </span>
+                <span v-if="autoPreviewResult.fairnessSummary.teamSwapDebtsCount > 0" class="badge badge-warning text-[10px]">
+                  待還組別佇列: {{ autoPreviewResult.fairnessSummary.teamSwapDebtsCount }} 筆
+                </span>
+              </div>
+            </div>
+
+            <!-- 人員執勤次數膠囊標籤 (緊湊橫列展示) -->
+            <div class="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto p-2 bg-white rounded border border-indigo-100 text-[11px]">
+              <span 
+                v-for="s in autoPreviewResult.fairnessSummary.memberStats.slice(0, 30)" 
+                :key="s.name"
+                class="badge"
+                :class="s.localCount >= (autoPreviewResult.fairnessSummary.maxLocal || 1) ? 'badge-primary' : 'badge-light border'"
+                :title="`聯絡處: ${s.localCount} 班 / 跨場地(園區+醫院): ${s.crossCount} 班 / 總量: ${s.totalCount} 班`"
+              >
+                {{ s.name }}: <strong>{{ s.localCount }}</strong>班
+                <span v-if="autoBalanceScope === 'cross_location' && s.crossCount > 0" class="text-gray-500 font-normal ml-0.5">
+                  (+{{ s.crossCount }}外)
+                </span>
+              </span>
+              <span v-if="autoPreviewResult.fairnessSummary.memberStats.length > 30" class="text-xs text-muted self-center">
+                ...等共 {{ autoPreviewResult.fairnessSummary.memberStats.length }} 位
               </span>
             </div>
           </div>
@@ -1196,6 +1272,7 @@ async function handleSave() {
 const showAutoModal = ref(false);
 const autoScheduleMode = ref('heqi_only'); // 預設優先以和氣輪值週次為準
 const overwriteStrategy = ref('overwrite'); // 'overwrite' | 'empty_only'
+const autoBalanceScope = ref('local'); // 'local' (各道場獨立公平) | 'cross_location' (跨場地總量平衡)
 const autoStartDate = ref('');
 const autoEndDate = ref('');
 const autoPreviewResult = ref(null);
@@ -1427,12 +1504,14 @@ watch(selectedLocation, (newLoc) => {
   customStartTeamIndex.value = '';
   customStartWeekdayMember.value = '';
   customStartWeekendMember.value = '';
+  autoBalanceScope.value = 'local';
 });
 
 function onAutoRuleChange() {
   customStartTeamIndex.value = '';
   customStartWeekdayMember.value = '';
   customStartWeekendMember.value = '';
+  autoBalanceScope.value = 'local';
   runAutoPreview();
 }
 
@@ -1444,6 +1523,7 @@ function openAutoScheduleModal() {
   customStartTeamIndex.value = '';
   customStartWeekdayMember.value = '';
   customStartWeekendMember.value = '';
+  autoBalanceScope.value = 'local';
 
   if (selectedLocation.value === '東港聯絡處') {
     if (selectedMonth.value) {
@@ -1529,7 +1609,8 @@ async function runAutoPreview() {
       overwriteStrategy: overwriteStrategy.value,
       customStartTeamIndex: customStartTeamIndex.value !== '' ? Number(customStartTeamIndex.value) : null,
       startWeekdayMember: customStartWeekdayMember.value || null,
-      startWeekendMember: customStartWeekendMember.value || null
+      startWeekendMember: customStartWeekendMember.value || null,
+      balanceScope: autoBalanceScope.value
     });
   } catch (err) {
     console.error('runAutoPreview error:', err);
