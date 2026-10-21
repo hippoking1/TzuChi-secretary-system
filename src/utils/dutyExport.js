@@ -66,7 +66,7 @@ export function getCampusDutyHeqiForDate(dateStr) {
 }
 
 /**
- * 整合與豐富排班資料（補充志工電話與所屬組織階層，自動綁定園區值週和氣）
+ * 整合與豐富排班資料（補充志工電話與所屬組織階層，支援未建檔/培訓志工與班次夥伴智慧和氣繼承）
  */
 export function enrichDutyList(duties = [], members = [], orgs = []) {
   const memberMapById = new Map();
@@ -82,48 +82,94 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
     }
   });
 
-  return duties
-    .filter(d => !!d.memberName)
-    .map(d => {
-      const rawName = (d.memberName || '').trim();
-      const cleanName = rawName.replace(/^[★*☆\s]+/, '').trim();
-      const m = memberMapById.get(d.memberId) || memberMapByName.get(cleanName) || memberMapByName.get(rawName) || null;
-      const orgId = m?.orgId || d.orgId || '';
-      const orgInfo = parseOrgHierarchy(orgId, orgs);
+  const validDuties = duties.filter(d => !!d.memberName);
 
-      // 計算值週和氣（宜蘭園區排班具備明確的輪值和氣）
-      const isCampus = (d.location === '宜蘭園區' || !d.location);
-      const campusDutyHeqi = isCampus ? getCampusDutyHeqiForDate(d.dutyDate) : '';
-      const dutyHeqi = campusDutyHeqi || orgInfo.heqi || '全區通用';
+  // 第一階段 (Pass 1)：建立每筆基礎組織資料，並統計同班次中已登記明確組織之出勤夥伴
+  const shiftPartnerOrgMap = new Map();
 
-      // 志工有效執勤和氣：若個人未登記組織，在園區排班中自動對應當日值週和氣，避免匯出時被濾除
-      const effectiveHeqi = (orgInfo.heqi && orgInfo.heqi !== '未指定和氣' && orgInfo.heqi !== '全區/未指定')
-        ? orgInfo.heqi
-        : (dutyHeqi || '全區/未指定');
+  const baseList = validDuties.map(d => {
+    const rawName = (d.memberName || '').trim();
+    const cleanName = rawName.replace(/^[★*☆\s]+/, '').trim();
+    const m = memberMapById.get(d.memberId) || memberMapByName.get(cleanName) || memberMapByName.get(rawName) || null;
+    const orgId = m?.orgId || d.orgId || '';
+    const orgInfo = parseOrgHierarchy(orgId, orgs);
+    const hasRegisteredOrg = !!(orgInfo.heqi && orgInfo.heqi !== '未指定和氣' && orgInfo.heqi !== '全區/未指定');
 
-      return {
-        ...d,
-        rawMemberName: rawName,
-        cleanMemberName: cleanName,
-        displayName: cleanName || rawName,
-        memberPhone: m?.phone || '',
-        memberCode: m?.volunteerCode || '',
-        dutyHeqi, // 該班次值週和氣
-        heqi: effectiveHeqi, // 志工有效執勤和氣
-        personalHeqi: orgInfo.heqi, // 志工原始登記和氣
+    const shiftKey = `${d.dutyDate}_${d.location || '宜蘭園區'}_${d.shiftId || ''}`;
+    if (hasRegisteredOrg && !shiftPartnerOrgMap.has(shiftKey)) {
+      shiftPartnerOrgMap.set(shiftKey, {
+        heqi: orgInfo.heqi,
         huai: orgInfo.huai,
         xieli: orgInfo.xieli,
-        orgPath: orgInfo.fullPath,
-        dayOfWeek: getDayOfWeekText(d.dutyDate)
-      };
-    })
-    .sort((a, b) => {
-      const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
-      if (cmpDate !== 0) return cmpDate;
-      const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
-      if (cmpShift !== 0) return cmpShift;
-      return (a.slotIndex || 0) - (b.slotIndex || 0);
-    });
+        fullPath: orgInfo.fullPath
+      });
+    }
+
+    return {
+      d,
+      rawName,
+      cleanName,
+      m,
+      orgInfo,
+      hasRegisteredOrg,
+      shiftKey
+    };
+  });
+
+  // 第二階段 (Pass 2)：智慧推導有效執勤和氣與所屬組織（未建檔/培訓志工優先繼承同班夥伴之和氣與協力）
+  return baseList.map(({ d, rawName, cleanName, m, orgInfo, hasRegisteredOrg, shiftKey }) => {
+    const partnerOrg = shiftPartnerOrgMap.get(shiftKey);
+    const isCampus = (d.location === '宜蘭園區' || !d.location);
+    const campusDutyHeqi = isCampus ? getCampusDutyHeqiForDate(d.dutyDate) : '';
+
+    let effectiveHeqi = '全區/未指定';
+    let effectiveHuai = orgInfo.huai || '全區';
+    let effectiveXieli = orgInfo.xieli || '未指定協力';
+    let effectivePath = orgInfo.fullPath || '全區通用';
+
+    if (hasRegisteredOrg) {
+      // 1. 個人名冊已登記明確組織
+      effectiveHeqi = orgInfo.heqi;
+    } else if (partnerOrg) {
+      // 2. 未建檔或未登記組織志工 (如培訓志工)：優先智慧繼承同班次出勤夥伴的和氣與互愛協力
+      effectiveHeqi = partnerOrg.heqi;
+      effectiveHuai = partnerOrg.huai;
+      effectiveXieli = partnerOrg.xieli;
+      effectivePath = `${partnerOrg.fullPath} (培訓/非名冊志工)`;
+    } else if (campusDutyHeqi) {
+      // 3. 宜蘭園區排班：依當日值週和氣輪值歸屬
+      effectiveHeqi = campusDutyHeqi;
+      effectivePath = `${campusDutyHeqi} (值週輪值)`;
+    } else if (d.location === '東港聯絡處') {
+      // 4. 東港聯絡處常態女眾/男眾值班：預設為和氣二主責輪值
+      effectiveHeqi = '和氣二';
+      effectivePath = '和氣二 (聯絡處輪值/培訓志工)';
+    }
+
+    const dutyHeqi = effectiveHeqi || campusDutyHeqi || '全區通用';
+
+    return {
+      ...d,
+      rawMemberName: rawName,
+      cleanMemberName: cleanName,
+      displayName: cleanName || rawName,
+      memberPhone: m?.phone || '',
+      memberCode: m?.volunteerCode || '',
+      dutyHeqi, // 該班次值週/執勤和氣
+      heqi: effectiveHeqi, // 志工有效執勤和氣
+      personalHeqi: orgInfo.heqi, // 志工原始登記和氣
+      huai: effectiveHuai,
+      xieli: effectiveXieli,
+      orgPath: effectivePath,
+      dayOfWeek: getDayOfWeekText(d.dutyDate)
+    };
+  }).sort((a, b) => {
+    const cmpDate = (a.dutyDate || '').localeCompare(b.dutyDate || '');
+    if (cmpDate !== 0) return cmpDate;
+    const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
+    if (cmpShift !== 0) return cmpShift;
+    return (a.slotIndex || 0) - (b.slotIndex || 0);
+  });
 }
 
 /**
@@ -154,7 +200,7 @@ export function exportDutyScheduleToExcel({
     if (endDate && item.dutyDate > endDate) return false;
     const matchHeqi = (targetHeqi === 'all' || !targetHeqi) 
       ? true 
-      : (item.dutyHeqi === targetHeqi || item.heqi === targetHeqi);
+      : (item.dutyHeqi === targetHeqi || item.heqi === targetHeqi || item.heqi === '全區/未指定');
     const matchGender = (targetGender === 'all' || !targetGender) 
       ? true 
       : (item.genderType === targetGender);
@@ -473,7 +519,7 @@ export function printDutySchedulePdf({
     if (endDate && item.dutyDate > endDate) return false;
     const matchHeqi = (targetHeqi === 'all' || !targetHeqi) 
       ? true 
-      : (item.dutyHeqi === targetHeqi || item.heqi === targetHeqi);
+      : (item.dutyHeqi === targetHeqi || item.heqi === targetHeqi || item.heqi === '全區/未指定');
     const matchGender = (targetGender === 'all' || !targetGender) 
       ? true 
       : (item.genderType === targetGender);

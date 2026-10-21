@@ -398,7 +398,7 @@ const filteredDuties = computed(() => {
     list = list.filter(d => d.dutyDate <= exportEndDate.value);
   }
   if (selectedHeqi.value !== 'all') {
-    list = list.filter(d => d.dutyHeqi === selectedHeqi.value || d.heqi === selectedHeqi.value);
+    list = list.filter(d => d.dutyHeqi === selectedHeqi.value || d.heqi === selectedHeqi.value || d.heqi === '全區/未指定');
   }
   if (selectedGender.value !== 'all') {
     list = list.filter(d => d.genderType === selectedGender.value);
