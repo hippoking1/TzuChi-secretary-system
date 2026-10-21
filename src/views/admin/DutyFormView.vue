@@ -124,6 +124,9 @@
             <button v-if="filterOrgId || searchKeyword" class="btn btn-xs btn-outline" @click="clearFilters">
               重設篩選
             </button>
+            <span v-if="searchKeyword && searchKeyword.trim() && !hasMatchedRegisteredVolunteer" class="badge badge-warning text-xs py-1 px-2 font-normal flex items-center gap-1">
+              <span>💡 名冊無「{{ searchKeyword.trim() }}」，可於下方席位選單直接排入培訓/非名冊志工</span>
+            </span>
           </div>
         </div>
       </div>
@@ -227,28 +230,76 @@
                   >
                     <span class="text-xs font-mono font-bold text-gray-400 w-4 text-center select-none" title="席位編號">{{ slotIdx + 1 }}</span>
                     <div class="flex-1">
-                      <select 
-                        v-model="slot.memberId" 
-                        class="form-select form-select-sm"
-                        :class="{ 'border-danger': slotConflictInfo(slot) }"
-                        @change="onSlotMemberChange(slot)"
-                      >
-                        <option value="">-- 未指派 --</option>
-                        <!-- 若已指派志工不在目前過濾條件中，固定列於首位 -->
-                        <option 
-                          v-if="slot.memberId && !isVolunteerInFilteredList(slot.memberId, slot.genderType)"
-                          :value="slot.memberId"
+                      <!-- 模式 1：手動打字輸入姓名 (培訓/非名冊志工) -->
+                      <div v-if="manualInputMap[slot.id]" class="flex items-center gap-1">
+                        <input 
+                          v-model="slot.memberName" 
+                          type="text" 
+                          class="form-input form-input-sm flex-1"
+                          :class="{ 'border-danger': slotConflictInfo(slot) }"
+                          placeholder="請輸入姓名 (如培訓志工)"
+                          @input="onManualNameInput(slot)"
+                        />
+                        <button 
+                          type="button" 
+                          class="btn btn-xs btn-outline py-1 px-1.5 whitespace-nowrap text-xs"
+                          @click="manualInputMap[slot.id] = false"
+                          title="切換回名冊下拉選單"
                         >
-                          ★ {{ slot.memberName }} {{ getMemberOrgPathText(slot.memberId) }}
-                        </option>
-                        <option 
-                          v-for="m in getFilteredVolunteers(slot.genderType)" 
-                          :key="m.id" 
-                          :value="m.id"
+                          👥 名冊
+                        </button>
+                      </div>
+
+                      <!-- 模式 2：下拉名冊選擇模式 -->
+                      <div v-else class="flex items-center gap-1">
+                        <select 
+                          v-model="slot.memberId" 
+                          class="form-select form-select-sm flex-1"
+                          :class="{ 'border-danger': slotConflictInfo(slot) }"
+                          @change="onSlotMemberChange(slot)"
                         >
-                          {{ m.name }} {{ getMemberOrgPathText(m.id) }}{{ isMemberInHospitalOnDate(slot.dutyDate, m.name) ? ' [🏥當日醫院志工]' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
-                        </option>
-                      </select>
+                          <option value="">-- 未指派 --</option>
+                          <!-- 快捷一鍵排入：若上方過濾框有輸入文字，可直接排入該培訓/非名冊志工 -->
+                          <option 
+                            v-if="searchKeyword && searchKeyword.trim()" 
+                            :value="'custom:' + searchKeyword.trim()"
+                            class="font-bold text-primary bg-blue-50"
+                          >
+                            ➕ 直接排入：「{{ searchKeyword.trim() }}」（培訓/非名冊志工）
+                          </option>
+
+                          <!-- 若已指派志工不在目前過濾條件中，固定列於首位 -->
+                          <option 
+                            v-if="slot.memberId && !isVolunteerInFilteredList(slot.memberId, slot.genderType)"
+                            :value="slot.memberId"
+                          >
+                            ★ {{ slot.memberName || slot.memberId }} {{ isCustomMember(slot.memberId) ? '（培訓/非名冊志工）' : getMemberOrgPathText(slot.memberId) }}
+                          </option>
+                          <option 
+                            v-for="m in getFilteredVolunteers(slot.genderType)" 
+                            :key="m.id" 
+                            :value="m.id"
+                          >
+                            {{ m.name }} {{ getMemberOrgPathText(m.id) }}{{ isMemberInHospitalOnDate(slot.dutyDate, m.name) ? ' [🏥當日醫院志工]' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
+                          </option>
+
+                          <!-- 手動輸入未建檔志工選項 -->
+                          <option value="__SWITCH_MANUAL__" class="text-secondary font-bold">
+                            ✏️ 手動自訂姓名（培訓/臨時志工）...
+                          </option>
+                        </select>
+
+                        <!-- 切換為手動打字輸入按鈕 -->
+                        <button 
+                          type="button" 
+                          class="btn btn-xs btn-outline py-1 px-1.5"
+                          @click="manualInputMap[slot.id] = true"
+                          title="切換為手動文字輸入姓名 (培訓/非名冊志工)"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+
                       <span v-if="slotConflictInfo(slot)" class="text-xs text-danger font-bold block mt-1">
                         ⚠️ {{ slotConflictInfo(slot) }}
                       </span>
@@ -1173,14 +1224,62 @@ function isVolunteerInFilteredList(memberId, gender) {
   return gender === '男' ? filteredMaleVolunteerIds.value.has(memberId) : filteredFemaleVolunteerIds.value.has(memberId);
 }
 
+const manualInputMap = ref({}); // 記錄個別 slot 是否處於手動打字輸入模式
+
+const hasMatchedRegisteredVolunteer = computed(() => {
+  const kw = searchKeyword.value ? searchKeyword.value.trim().toLowerCase() : '';
+  if (!kw) return true;
+  return allMembers.value.some(m => 
+    (m.name || '').toLowerCase().includes(kw) ||
+    (m.phone || '').includes(kw) ||
+    (m.volunteerCode || '').includes(kw) ||
+    (m.dharmaName || '').toLowerCase().includes(kw)
+  );
+});
+
+function isCustomMember(memberId) {
+  if (!memberId) return false;
+  return !allMembers.value.some(m => m.id === memberId);
+}
+
 function onSlotMemberChange(slot) {
+  if (slot.memberId === '__SWITCH_MANUAL__') {
+    slot.memberId = slot.memberName || '';
+    manualInputMap.value[slot.id] = true;
+    return;
+  }
+
+  if (!slot.memberId) {
+    slot.memberName = '';
+    return;
+  }
+
+  // 處理快捷一鍵排入自訂志工（例如 'custom:謝淑娟'）
+  if (typeof slot.memberId === 'string' && slot.memberId.startsWith('custom:')) {
+    const customName = slot.memberId.replace('custom:', '').trim();
+    slot.memberName = customName;
+    slot.memberId = customName;
+    return;
+  }
+
   const found = allMembers.value.find(m => m.id === slot.memberId);
-  slot.memberName = found ? found.name : '';
+  if (found) {
+    slot.memberName = found.name;
+  } else {
+    // 自身即為自訂志工姓名 (如培訓/非名冊志工)
+    slot.memberName = slot.memberId;
+  }
+}
+
+function onManualNameInput(slot) {
+  const clean = (slot.memberName || '').trim();
+  slot.memberId = clean;
 }
 
 function clearSlot(slot) {
   slot.memberId = '';
   slot.memberName = '';
+  manualInputMap.value[slot.id] = false;
 }
 
 // 手動排班自由增刪席位支援 (不限定班別人員上限)
@@ -1272,6 +1371,7 @@ const groupedDays = computed(() => {
 async function initMatrix() {
   loading.value = true;
   pendingDeletedSlots.value = [];
+  manualInputMap.value = {};
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
