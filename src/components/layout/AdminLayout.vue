@@ -96,6 +96,24 @@ const currentPageTitle = computed(() => {
   min-height: calc(100vh - 70px);
   background: var(--gray-50);
 }
+.admin-layout-sidebar {
+  position: sticky;
+  top: 65px;
+  height: calc(100vh - 65px);
+  overflow-y: auto;
+  flex-shrink: 0;
+  align-self: flex-start;
+  z-index: 40;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+.admin-layout-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+.admin-layout-sidebar::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 9999px;
+}
 .admin-main {
   max-width: 1300px;
   margin: 0 auto;

@@ -359,7 +359,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       customStartTeamIndex = null,   // 自訂星期整組輪替起始組別 (0-indexed: 0=第一組, 1=第二組...)
       startWeekdayMember = null,     // 自訂平日輪值起始志工姓名
       startWeekendMember = null,     // 自訂假日輪值起始志工姓名
-      balanceScope = 'local'         // 輪值均衡基準：'local' (各道場獨立公平，預設) | 'cross_location' (跨場地總量平衡)
+      balanceScope = 'local',        // 輪值均衡基準：'local' (各道場獨立公平，預設) | 'cross_location' (跨場地總量平衡)
+      limitShiftQuota = false        // 是否限定單一班別人員上限 (預設 false: 不限定，依組別人數全員排班；true: 限定席次上限，多出人員備用輪替)
     } = options;
 
     // 尋找目標規則：依據傳入 targetRule、ruleId、場地自選或自動配對
@@ -898,7 +899,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
       // 檢查是否先前曾對換過組別（若先前的週一第一組與第二組對換，則後續輪到第二組時優先對調還給第一組，適用宜蘭園區與東港聯絡處）
       // 升級為多重欠班 FIFO 陣列佇列：若該組幫別人代過班，優先檢查待還班名冊
-      const isWholeTeam = (rule.ruleType === 'weekday_group_rotation') || (rule.genderType === '女');
+      // 支援動態切換：不限定班別人員上限 (isWholeTeam = true，組員全員排班) vs 限定班別人員上限 (isWholeTeam = false，依 quota 限制並輪替備用人員)
+      const isWholeTeam = !limitShiftQuota && ((rule.ruleType === 'weekday_group_rotation') || (rule.genderType === '女'));
       let isTeamPayback = false;
       let paybackOriginInfo = null;
 

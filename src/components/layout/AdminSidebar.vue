@@ -123,8 +123,9 @@ const roleTitle = computed(() => {
   width: 240px;
   background: #ffffff;
   border-right: 1px solid var(--gray-200);
-  min-height: calc(100vh - 70px);
+  min-height: 100%;
   padding: 1.5rem 1rem;
+  box-sizing: border-box;
 }
 
 .sidebar-user-card {

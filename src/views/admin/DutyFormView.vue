@@ -206,16 +206,26 @@
                   <span class="font-bold text-sm text-gray-800">
                     {{ shiftGroup.shiftLabel }} ({{ shiftGroup.timeRange }}) - {{ shiftGroup.genderType }}眾 ({{ shiftGroup.quota }}位)
                   </span>
+                  <!-- 自由新增排班席位按鈕 -->
+                  <button 
+                    type="button" 
+                    class="btn btn-xs btn-outline-primary flex items-center gap-1 py-0.5 px-2"
+                    @click="addSlotToShift(day.dateStr, shiftGroup)"
+                    title="為此班別增加一個排班席位（自由增減人員，不設席次上限）"
+                  >
+                    <span>➕ 新增席位</span>
+                  </button>
                 </div>
 
                 <!-- 各個席位下拉選單 -->
                 <div class="slots-list flex flex-col gap-2">
                   <div 
-                    v-for="slot in shiftGroup.slots" 
+                    v-for="(slot, slotIdx) in shiftGroup.slots" 
                     :key="slot.id" 
                     class="slot-row flex items-center gap-2"
                     :class="{ 'slot-conflict': slotConflictInfo(slot) }"
                   >
+                    <span class="text-xs font-mono font-bold text-gray-400 w-4 text-center select-none" title="席位編號">{{ slotIdx + 1 }}</span>
                     <div class="flex-1">
                       <select 
                         v-model="slot.memberId" 
@@ -244,13 +254,25 @@
                       </span>
                     </div>
 
+                    <!-- 清空席位已選志工 -->
                     <button 
                       v-if="slot.memberId || slot.memberName" 
+                      type="button"
                       class="btn btn-sm btn-outline btn-clear" 
                       @click="clearSlot(slot)" 
-                      title="清空此席位"
+                      title="清空此席位志工"
                     >
                       ✕
+                    </button>
+
+                    <!-- 自由刪除席位 -->
+                    <button 
+                      type="button"
+                      class="btn btn-sm btn-outline text-danger hover:bg-red-50 border-gray-200" 
+                      @click="removeSlot(slot)" 
+                      title="刪除此席位"
+                    >
+                      🗑️
                     </button>
                   </div>
                 </div>
@@ -595,6 +617,43 @@
                   <span>
                     <strong>跨場地總量平衡</strong>
                     <small class="text-muted block text-[11px]">代班時併計宜蘭園區與醫院志工總出勤次數，總值班次數最少者優先接替</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 單一班別人員上限 (限定 / 不限定單一班別人員上限) -->
+            <div class="card p-3 border border-sky-200 bg-sky-50/30">
+              <label class="form-label font-bold text-sm mb-2 text-sky-900 flex items-center justify-between">
+                <span class="flex items-center gap-1.5">
+                  <span>👥 單一班別人員上限：</span>
+                </span>
+                <span class="badge badge-primary text-[10px] py-0.5">席次上限控制</span>
+              </label>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
+                  <input 
+                    v-model="autoLimitShiftQuota" 
+                    type="radio" 
+                    :value="false" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>不限定人員上限（依組別人數全員排班，推薦）</strong>
+                    <small class="text-muted block text-[11px]">組內志工動態全員排入（例如組內 5 位志工即開 5 席），不截斷名額</small>
+                  </span>
+                </label>
+
+                <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
+                  <input 
+                    v-model="autoLimitShiftQuota" 
+                    type="radio" 
+                    :value="true" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>限定班別人員上限（依班別預設名額）</strong>
+                    <small class="text-muted block text-[11px]">每班固定席次（如園區女眾 4 位、東港女眾 2 位），超出人員自動進入備用輪替</small>
                   </span>
                 </label>
               </div>
@@ -1124,6 +1183,52 @@ function clearSlot(slot) {
   slot.memberName = '';
 }
 
+// 手動排班自由增刪席位支援 (不限定班別人員上限)
+const pendingDeletedSlots = ref([]);
+
+function addSlotToShift(dateStr, shiftGroup) {
+  const currentDaySlots = matrixList.value.filter(s => s.dutyDate === dateStr && s.shiftId === shiftGroup.shiftId);
+  const maxSlotIndex = currentDaySlots.reduce((max, s) => Math.max(max, s.slotIndex || 0), 0);
+  const newSlotIndex = maxSlotIndex + 1;
+  const newId = `${selectedLocation.value}_${dateStr}_${shiftGroup.shiftId}_${newSlotIndex}`;
+
+  const isWeekend = getDayOfWeek(dateStr) === 0 || getDayOfWeek(dateStr) === 6;
+  const newSlot = {
+    id: newId,
+    location: selectedLocation.value,
+    dutyDate: dateStr,
+    shiftId: shiftGroup.shiftId,
+    shiftLabel: shiftGroup.shiftLabel,
+    timeRange: shiftGroup.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, shiftGroup.shiftId, shiftGroup.shiftLabel),
+    genderType: shiftGroup.genderType,
+    slotIndex: newSlotIndex,
+    isWeekend,
+    memberId: '',
+    memberName: '',
+    status: '未指派',
+    quota: currentDaySlots.length + 1
+  };
+
+  matrixList.value.push(newSlot);
+  matrixList.value.sort((a, b) => {
+    const cmp = (a.dutyDate || '').localeCompare(b.dutyDate || '');
+    if (cmp !== 0) return cmp;
+    const cmpShift = (a.shiftId || '').localeCompare(b.shiftId || '');
+    if (cmpShift !== 0) return cmpShift;
+    return (a.slotIndex || 0) - (b.slotIndex || 0);
+  });
+}
+
+function removeSlot(slot) {
+  const idx = matrixList.value.findIndex(s => s.id === slot.id);
+  if (idx !== -1) {
+    if (slot.id) {
+      pendingDeletedSlots.value.push({ id: slot.id });
+    }
+    matrixList.value.splice(idx, 1);
+  }
+}
+
 const groupedDays = computed(() => {
   const daysMap = {};
   matrixList.value.forEach(slot => {
@@ -1163,9 +1268,10 @@ const groupedDays = computed(() => {
   });
 });
 
-// 初始化排班矩陣：精確以標準 Slot ID 進行 1-to-1 匹配，並自動納入超出預設 quota 的動態組員席位
+// 初始化排班矩陣：忠實載入已存資料（支援任意席位增刪），未存班別以標準模板補足
 async function initMatrix() {
   loading.value = true;
+  pendingDeletedSlots.value = [];
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
     const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
@@ -1180,59 +1286,36 @@ async function initMatrix() {
     otherLocationDuties.value = otherExisting || [];
     hospitalLocationDuties.value = hospitalExisting || [];
 
-    // 以唯一 ID 建立對照表
-    const existingMap = {};
-    existing.forEach(item => {
-      if (item.id) existingMap[item.id] = item;
-    });
-
     const nameToMemberMap = {};
     allMembers.value.forEach(m => {
       if (m.name) nameToMemberMap[m.name] = m;
     });
 
-    const templateIdSet = new Set(template.map(t => t.id));
-    const mergedList = template.map(t => {
-      const existingItem = existingMap[t.id];
+    const existingShiftKeys = new Set(existing.map(item => `${item.dutyDate}_${item.shiftId}`));
+    const mergedList = [];
 
-      if (existingItem) {
-        let memberId = existingItem.memberId || '';
-        const memberName = existingItem.memberName || '';
-        
-        if (memberName && nameToMemberMap[memberName]) {
-          memberId = nameToMemberMap[memberName].id;
-        } else if (!memberId && memberName) {
-          memberId = memberName;
-        }
-
-        return {
-          ...t,
-          memberId,
-          memberName,
-          quota: existingItem.quota || t.quota,
-          timeRange: t.timeRange || existingItem.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, t.shiftId, t.shiftLabel)
-        };
+    // 1. 若該日期該班別在資料庫中已存在紀錄，完全以現有席位為準（不論手動增為 5 席或刪為 3 席）
+    existing.forEach(item => {
+      let memberId = item.memberId || '';
+      const memberName = item.memberName || '';
+      if (memberName && nameToMemberMap[memberName]) {
+        memberId = nameToMemberMap[memberName].id;
+      } else if (!memberId && memberName) {
+        memberId = memberName;
       }
-
-      return t;
+      mergedList.push({
+        ...item,
+        memberId,
+        memberName,
+        timeRange: item.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, item.shiftId, item.shiftLabel)
+      });
     });
 
-    // 納入 existing 中超越預設 template quota 的席位 (例如組員有 5 人以上時之 slot 5, slot 6...)
-    existing.forEach(item => {
-      if (item.id && !templateIdSet.has(item.id)) {
-        let memberId = item.memberId || '';
-        const memberName = item.memberName || '';
-        if (memberName && nameToMemberMap[memberName]) {
-          memberId = nameToMemberMap[memberName].id;
-        } else if (!memberId && memberName) {
-          memberId = memberName;
-        }
-        mergedList.push({
-          ...item,
-          memberId,
-          memberName,
-          timeRange: item.timeRange || dutiesStore.getShiftTimeRange(selectedLocation.value, item.shiftId, item.shiftLabel)
-        });
+    // 2. 對於尚未排過該班別之日期時段，由 template 補齊初始空白席位
+    template.forEach(t => {
+      const shiftKey = `${t.dutyDate}_${t.shiftId}`;
+      if (!existingShiftKeys.has(shiftKey)) {
+        mergedList.push(t);
       }
     });
 
@@ -1259,7 +1342,9 @@ async function handleSave() {
   saving.value = true;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
-    await dutiesStore.saveMonthlyDuties(selectedLocation.value, year, month, matrixList.value);
+    // 儲存時若有被刪除的已存在席位，一併從資料庫清除
+    await dutiesStore.saveMonthlyDuties(selectedLocation.value, year, month, matrixList.value, pendingDeletedSlots.value);
+    pendingDeletedSlots.value = [];
     toast.success('全月排班表儲存成功（已同步更新至資料庫）！');
   } catch (err) {
     toast.error('儲存失敗：' + err.message);
@@ -1273,6 +1358,7 @@ const showAutoModal = ref(false);
 const autoScheduleMode = ref('heqi_only'); // 預設優先以和氣輪值週次為準
 const overwriteStrategy = ref('overwrite'); // 'overwrite' | 'empty_only'
 const autoBalanceScope = ref('local'); // 'local' (各道場獨立公平) | 'cross_location' (跨場地總量平衡)
+const autoLimitShiftQuota = ref(false); // false: 不限定單一班別人員上限 (依組別人數全員排班，推薦) | true: 限定班別人員上限 (標準名額)
 const autoStartDate = ref('');
 const autoEndDate = ref('');
 const autoPreviewResult = ref(null);
@@ -1524,6 +1610,7 @@ function openAutoScheduleModal() {
   customStartWeekdayMember.value = '';
   customStartWeekendMember.value = '';
   autoBalanceScope.value = 'local';
+  autoLimitShiftQuota.value = false;
 
   if (selectedLocation.value === '東港聯絡處') {
     if (selectedMonth.value) {
@@ -1610,7 +1697,8 @@ async function runAutoPreview() {
       customStartTeamIndex: customStartTeamIndex.value !== '' ? Number(customStartTeamIndex.value) : null,
       startWeekdayMember: customStartWeekdayMember.value || null,
       startWeekendMember: customStartWeekendMember.value || null,
-      balanceScope: autoBalanceScope.value
+      balanceScope: autoBalanceScope.value,
+      limitShiftQuota: autoLimitShiftQuota.value
     });
   } catch (err) {
     console.error('runAutoPreview error:', err);

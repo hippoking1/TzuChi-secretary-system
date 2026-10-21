@@ -257,9 +257,12 @@ export const useDutiesStore = defineStore('duties', () => {
     }
   }
 
-  async function saveMonthlyDuties(location, year, month, dutyList) {
+  async function saveMonthlyDuties(location, year, month, dutyList, deletedSlots = []) {
     loading.value = true;
     try {
+      if (deletedSlots && deletedSlots.length > 0) {
+        await batchWriteItems('dutyShifts', deletedSlots, 'delete');
+      }
       const cleanedItems = dutyList.map(item => ({
         id: item.id || `${location}_${item.dutyDate}_${item.shiftId}_${item.slotIndex}`,
         location: location,
