@@ -165,7 +165,7 @@
           </div>
           <ul v-if="exportOrderMode === 'date'" class="text-gray-700 pl-4 list-disc space-y-1 leading-relaxed">
             <li><strong>Excel 檔 (.xlsx)</strong>：不論組織別，完全依照<strong>「值班日期」</strong>由先至後排列匯出單一完整排班總名冊，包含班次、時段、眾別、姓名、所屬組織與簽章欄，適合現場櫃台每日出勤核對。</li>
-            <li><strong>PDF 檔 (.pdf)</strong>：依日期先後排程連續產出出勤簽到清冊，不按組織拆頁，支援自動跨頁表頭重現，便於整份列印張貼於公佈欄。</li>
+            <li><strong>PDF 檔 (.pdf)</strong>：<strong>標準月曆值班表（比照「2026宜蘭園區值班 委員.pdf」官方規格）</strong>，自動按月份單頁 A4 排版，含國曆、農曆、星期（週末紅字）、席位橫向展開、和氣代碼標記、服儀規範及精神標語。</li>
           </ul>
           <ul v-else class="text-gray-700 pl-4 list-disc space-y-1 leading-relaxed">
             <li><strong>Excel 檔 (.xlsx)</strong>：第 1 頁為值班總表，第 2 頁起自動依<strong>「各互愛及各協力」建立獨立工作表 (Worksheet)</strong>，包含出勤簽章與備註欄。</li>
