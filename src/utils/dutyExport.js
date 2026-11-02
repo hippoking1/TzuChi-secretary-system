@@ -60,6 +60,14 @@ export function getHeqiCode(heqi) {
 }
 
 /**
+ * 清除志工姓名後方的 (培)、(培訓) 等註記，維持匯出名單乾淨純淨
+ */
+export function stripTraineeSuffix(name) {
+  if (!name) return '';
+  return name.replace(/\s*[（(]\s*培(?:訓)?\s*[)）]\s*$/, '').trim();
+}
+
+/**
  * 解析組織階層 (和氣 / 互愛 / 協力)
  */
 export function parseOrgHierarchy(orgId, orgsList = []) {
@@ -139,7 +147,7 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
 
   const baseList = validDuties.map(d => {
     const rawName = (d.memberName || '').trim();
-    const cleanName = rawName.replace(/^[★*☆\s]+/, '').trim();
+    const cleanName = stripTraineeSuffix(rawName.replace(/^[★*☆\s]+/, '').trim());
     const m = memberMapById.get(d.memberId) || memberMapByName.get(cleanName) || memberMapByName.get(rawName) || null;
     const orgId = m?.orgId || d.orgId || '';
     const orgInfo = parseOrgHierarchy(orgId, orgs);
@@ -181,19 +189,19 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
       // 1. 個人名冊已登記明確組織
       effectiveHeqi = orgInfo.heqi;
     } else if (partnerOrg) {
-      // 2. 未建檔或未登記組織志工 (如培訓志工)：優先智慧繼承同班次出勤夥伴的和氣與互愛協力
+      // 2. 未建檔或未登記組織志工：優先智慧繼承同班次出勤夥伴的和氣與互愛協力
       effectiveHeqi = partnerOrg.heqi;
       effectiveHuai = partnerOrg.huai;
       effectiveXieli = partnerOrg.xieli;
-      effectivePath = `${partnerOrg.fullPath} (培訓/非名冊志工)`;
+      effectivePath = partnerOrg.fullPath;
     } else if (campusDutyHeqi) {
       // 3. 宜蘭園區排班：依當日值週和氣輪值歸屬
       effectiveHeqi = campusDutyHeqi;
-      effectivePath = `${campusDutyHeqi} (值週輪值)`;
+      effectivePath = campusDutyHeqi;
     } else if (d.location === '東港聯絡處') {
       // 4. 東港聯絡處常態女眾/男眾值班：預設為和氣二主責輪值
       effectiveHeqi = '和氣二';
-      effectivePath = '和氣二 (聯絡處輪值/培訓志工)';
+      effectivePath = '和氣二';
     }
 
     const dutyHeqi = effectiveHeqi || campusDutyHeqi || '全區通用';
@@ -202,7 +210,7 @@ export function enrichDutyList(duties = [], members = [], orgs = []) {
       ...d,
       rawMemberName: rawName,
       cleanMemberName: cleanName,
-      displayName: cleanName || rawName,
+      displayName: cleanName || stripTraineeSuffix(rawName),
       memberPhone: m?.phone || '',
       memberCode: m?.volunteerCode || '',
       dutyHeqi, // 該班次值週/執勤和氣
@@ -550,7 +558,6 @@ export function exportBatchHeqiExcel({
  * 產生比照【2026宜蘭園區值班 委員.pdf】標準規格的月曆式 PDF 列印報表
  * - 依月份自動單頁排版 (A4 portrait)，一月一頁
  * - 每日一列，左側國曆/農曆/星期 (週末紅字)，右側席位欄橫向展開
- * - 培訓未建檔志工標註 (培)
  * - 支援和氣代碼 (-/=/A/B) 標示於交接日與首末日
  * - 頁尾包含準時到班、提醒機制、依季節動態服儀說明、和氣圖例與精神標語
  * 透過隱藏 iframe 自動觸發原生列印對話框，可直接「另存為 PDF」或實體列印
@@ -807,10 +814,7 @@ export function printDutySchedulePdf({
             let name = '';
             if (slot) {
               name = slot.displayName || slot.cleanMemberName || slot.memberName || '';
-              const isTrainee = (slot.orgPath && slot.orgPath.includes('培訓')) || slot.isCustom;
-              if (isTrainee && !name.includes('(培)')) {
-                name += '(培)';
-              }
+              name = stripTraineeSuffix(name);
             }
             slotTds += `<td class="slot-td">${name || '&nbsp;'}</td>`;
           }
