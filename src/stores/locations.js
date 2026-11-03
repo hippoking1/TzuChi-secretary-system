@@ -310,7 +310,8 @@ export const useLocationsStore = defineStore('locations', () => {
         if (oldRules && oldRules.length > 0) {
           const ruleBatch = oldRules.map(r => ({
             ...r,
-            location: newName
+            location: newName,
+            ruleName: (r.ruleName && oldName) ? r.ruleName.replace(new RegExp(oldName, 'g'), newName) : r.ruleName
           }));
           await batchWriteItems('dutySchedulingRules', ruleBatch, 'set');
         }

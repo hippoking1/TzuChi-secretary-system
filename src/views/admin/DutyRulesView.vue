@@ -1725,6 +1725,7 @@ function openCreateRuleModal() {
 async function handleCreateRuleSubmit() {
   const shiftLabels = {
     'YL_F': '女眾班',
+    'YL_M': '男眾班(早晚班)',
     'YL_M1': '男眾一班',
     'YL_M2': '男眾二班',
     'DG_F': '女眾班',

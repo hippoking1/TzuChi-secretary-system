@@ -75,7 +75,7 @@ export const DEFAULT_HEQI2_FEMALE_TEAMS = {
 // 宜蘭園區和氣二女眾標準規則物件
 export const DEFAULT_HEQI2_CAMPUS_FEMALE_RULE = {
   id: 'rule_heqi2_campus_female',
-  ruleName: '宜蘭園區和氣二女眾值班規則',
+  ruleName: '宜蘭園區女眾值班規則',
   heqiGroup: '和氣二',
   location: '宜蘭園區',
   shiftId: 'YL_F',
@@ -84,6 +84,54 @@ export const DEFAULT_HEQI2_CAMPUS_FEMALE_RULE = {
   quota: 4,
   ruleType: 'weekday_group_rotation', // 星期 × 整組輪替
   weekdayTeams: JSON.parse(JSON.stringify(DEFAULT_HEQI2_FEMALE_TEAMS)),
+  rotationPointers: {},
+  enabled: true
+};
+
+// 宜蘭園區和氣二男眾標準組別名單（依歷史實際值週排班精確建立）
+export const DEFAULT_HEQI2_CAMPUS_MALE_TEAMS = {
+  '1': [
+    { teamName: '第一組', members: ['林東建', '李世清', '徐進財', '葉文熙'] },
+    { teamName: '第二組', members: ['陳敬福', '李建福', '楊洦育', '林富興'] }
+  ],
+  '2': [
+    { teamName: '第一組', members: ['黃木村', '吳順王', '薛登霖', '黃冠諺'] },
+    { teamName: '第二組', members: ['張錫俊', '許烜彰', '葉文熙', '黃志煌'] }
+  ],
+  '3': [
+    { teamName: '第一組', members: ['楊振風', '吳世明', '吳福源', '吳春榮'] },
+    { teamName: '第二組', members: ['黃國材', '鄭文松', '林茂祥', '黃文彥'] }
+  ],
+  '4': [
+    { teamName: '第一組', members: ['陳茂春', '呂連通', '許國基', '李自強'] },
+    { teamName: '第二組', members: ['游潤儔', '陳榮忠', '賴建宏', '徐家福'] }
+  ],
+  '5': [
+    { teamName: '第一組', members: ['楊志忠', '李長和', '陳振川', '林明村'] },
+    { teamName: '第二組', members: ['石有杉', '莊盧達', '林子民', '黃文彬'] }
+  ],
+  '6': [
+    { teamName: '第一組', members: ['游天祥', '吳金福', '莊漢僑', '莊志忠'] },
+    { teamName: '第二組', members: ['龔福鳴', '鄒肇財', '游明哲', '洪光賢'] }
+  ],
+  '0': [
+    { teamName: '第一組', members: ['張振益', '林俊宏', '何忠憲', '趙正文'] },
+    { teamName: '第二組', members: ['李應全', '徐棟樑', '羅文熙', '董國斌'] }
+  ]
+};
+
+// 宜蘭園區和氣二男眾標準規則物件
+export const DEFAULT_HEQI2_CAMPUS_MALE_RULE = {
+  id: 'rule_heqi2_campus_male',
+  ruleName: '宜蘭園區男眾值班規則',
+  heqiGroup: '和氣二',
+  location: '宜蘭園區',
+  shiftId: 'YL_M',
+  shiftLabel: '男眾班(早晚班)',
+  genderType: '男',
+  quota: 4,
+  ruleType: 'weekday_group_rotation', // 星期 × 整組輪替
+  weekdayTeams: JSON.parse(JSON.stringify(DEFAULT_HEQI2_CAMPUS_MALE_TEAMS)),
   rotationPointers: {},
   enabled: true
 };
@@ -468,22 +516,40 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       let all = [...docs];
 
       // 若和氣二宜蘭女眾規則尚未存在，以預設規則呈現
-      const hasHeqi2 = all.some(r => r.heqiGroup === '和氣二' && r.location === '宜蘭園區' && r.shiftId === 'YL_F');
-      if (!hasHeqi2) {
+      const hasCampusFemale = all.some(r => r.id === 'rule_heqi2_campus_female' || (r.location === '宜蘭園區' && r.genderType === '女'));
+      if (!hasCampusFemale) {
         all.push({ ...DEFAULT_HEQI2_CAMPUS_FEMALE_RULE });
       }
 
-      // 若東港聯絡處男眾規則尚未存在，以預設規則呈現
-      const hasDonggangMale = all.some(r => r.location === '東港聯絡處' && r.shiftId === 'DG_M');
+      // 若和氣二宜蘭男眾規則尚未存在，以預設規則呈現 (全新新增 ✨)
+      const hasCampusMale = all.some(r => r.id === 'rule_heqi2_campus_male' || (r.location === '宜蘭園區' && r.genderType === '男'));
+      if (!hasCampusMale) {
+        all.push({ ...DEFAULT_HEQI2_CAMPUS_MALE_RULE });
+      }
+
+      // 若東港聯絡處男眾規則尚未存在，以預設規則呈現 (防重複：只要已存在 DG_M 或 rule_donggang_male 即不重複加入)
+      const hasDonggangMale = all.some(r => r.id === 'rule_donggang_male' || r.shiftId === 'DG_M');
       if (!hasDonggangMale) {
         all.push({ ...DEFAULT_DONGGANG_MALE_RULE });
       }
 
       // 若東港聯絡處女眾規則尚未存在，以預設規則呈現
-      const hasDonggangFemale = all.some(r => r.location === '東港聯絡處' && r.shiftId === 'DG_F');
+      const hasDonggangFemale = all.some(r => r.id === 'rule_donggang_female' || r.shiftId === 'DG_F');
       if (!hasDonggangFemale) {
         all.push({ ...DEFAULT_DONGGANG_FEMALE_RULE });
       }
+
+      // 嚴格依 id / 業務鍵唯一性去重（防止任何歷史同 ID 殘留重複）
+      const seenKeys = new Set();
+      const deduplicated = [];
+      for (const r of all) {
+        const key = r.id || `${r.location}_${r.shiftId}_${r.heqiGroup}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          deduplicated.push(r);
+        }
+      }
+      all = deduplicated;
 
       // 確保所有規則皆具備 memberConstraints 屬性；若東港男眾舊規則尚未初始化 memberConstraints，自動帶入預設範例設定
       all = all.map(r => {
@@ -1455,34 +1521,125 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         if (c) memberLocalCounts.set(c, (memberLocalCounts.get(c) || 0) + 1);
       });
 
-      // 取得班次時間常數配置
-      const shiftConfig = getStandardShiftConfig(location, rule.shiftId, rule.shiftLabel);
-      const shiftStart = shiftConfig?.startTime || '08:00';
-      const shiftEnd = shiftConfig?.endTime || (location === '東港聯絡處' ? '13:00' : '16:00');
-      const timeRange = shiftConfig?.timeRange || `${shiftStart}~${shiftEnd}`;
-      const targetShiftId = rule.shiftId || (location === '東港聯絡處' ? 'DG_F' : 'YL_F');
+      const isCampusMaleDuty = isCampusDuty && rule.genderType === '男';
 
-      const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === targetShiftId);
+      if (isCampusMaleDuty) {
+        // 宜蘭園區男眾專用分流邏輯：組員 4 位依序填入 男眾班(一) YL_M1 (2席) 與 男眾班(二) YL_M2 (2席)
+        const subShifts = [
+          { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', timeRange: '16:00~18:30', quota: 2 },
+          { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', timeRange: '18:30~20:30', quota: 2 }
+        ];
 
-      for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
-        const slotNumber = slotIdx + 1;
-        const memberName = selectedMembers[slotIdx] || '';
-        const memberObj = memberName ? findMemberObj(memberName) : null;
+        let memberPtr = 0;
+        subShifts.forEach(sub => {
+          const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === sub.shiftId);
+          for (let slotIdx = 0; slotIdx < sub.quota; slotIdx++) {
+            const slotNumber = slotIdx + 1;
+            const memberName = selectedMembers[memberPtr] || '';
+            memberPtr++;
+            const memberObj = memberName ? findMemberObj(memberName) : null;
 
-        const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
-        if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {
-          skippedSlots.push({ slotId: matrixSlot.id, reason: '已有排班故保留' });
-          continue;
-        }
+            const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
+            if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {
+              skippedSlots.push({ slotId: matrixSlot.id, reason: '已有排班故保留' });
+              continue;
+            }
 
-        if (matrixSlot) {
-          matrixSlot.memberName = memberName;
-          matrixSlot.memberId = memberObj ? memberObj.id : (memberName || '');
-          matrixSlot.quota = quota;
-          matrixSlot.status = memberName ? '已排班' : '未指派';
-        } else {
-          // 若原矩陣席位數少於當前組別人數，動態新增席位至 newMatrix
-          const newSlotItem = {
+            const slotItem = {
+              id: `${location}_${dateStr}_${sub.shiftId}_${slotNumber}`,
+              location,
+              dutyDate: dateStr,
+              shiftId: sub.shiftId,
+              shiftLabel: sub.label,
+              shiftStart: sub.startTime,
+              shiftEnd: sub.endTime,
+              timeRange: sub.timeRange,
+              quota: sub.quota,
+              slotIndex: slotNumber,
+              genderType: '男',
+              isWeekend: dayOfWeek === '0' || dayOfWeek === '6',
+              memberId: memberObj ? memberObj.id : (memberName || ''),
+              memberName: memberName || '',
+              status: memberName ? '已排班' : '未指派'
+            };
+
+            if (matrixSlot) {
+              matrixSlot.memberName = memberName;
+              matrixSlot.memberId = slotItem.memberId;
+              matrixSlot.quota = sub.quota;
+              matrixSlot.status = slotItem.status;
+            } else {
+              newMatrix.push(slotItem);
+            }
+            allGeneratedSlots.push(slotItem);
+
+            if (memberName && !swapConflictNotice) {
+              const remainConflict = checkSingleMemberHigherPriorityConflict(memberName, dateStr);
+              if (remainConflict) {
+                conflicts.push({
+                  dateStr,
+                  memberName,
+                  slotId: slotItem.id,
+                  currentLocation: location,
+                  currentShift: slotItem.shiftLabel,
+                  otherLocation: remainConflict.conflictLocation,
+                  otherShift: remainConflict.conflictShift,
+                  notice: `⚠️ 【重複排班衝突】志工「${memberName}」與${remainConflict.conflictLocation}同日排班衝突`,
+                  suggestAction: `優先保留${remainConflict.conflictLocation}排班，建議調動${location}值班人員`
+                });
+              }
+            }
+          }
+        });
+      } else {
+        // 取得班次時間常數配置
+        const shiftConfig = getStandardShiftConfig(location, rule.shiftId, rule.shiftLabel);
+        const shiftStart = shiftConfig?.startTime || '08:00';
+        const shiftEnd = shiftConfig?.endTime || (location === '東港聯絡處' ? '13:00' : '16:00');
+        const timeRange = shiftConfig?.timeRange || `${shiftStart}~${shiftEnd}`;
+        const targetShiftId = rule.shiftId || (location === '東港聯絡處' ? 'DG_F' : 'YL_F');
+
+        const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === targetShiftId);
+
+        for (let slotIdx = 0; slotIdx < quota; slotIdx++) {
+          const slotNumber = slotIdx + 1;
+          const memberName = selectedMembers[slotIdx] || '';
+          const memberObj = memberName ? findMemberObj(memberName) : null;
+
+          const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
+          if (overwriteStrategy === 'empty_only' && matrixSlot && matrixSlot.memberName) {
+            skippedSlots.push({ slotId: matrixSlot.id, reason: '已有排班故保留' });
+            continue;
+          }
+
+          if (matrixSlot) {
+            matrixSlot.memberName = memberName;
+            matrixSlot.memberId = memberObj ? memberObj.id : (memberName || '');
+            matrixSlot.quota = quota;
+            matrixSlot.status = memberName ? '已排班' : '未指派';
+          } else {
+            // 若原矩陣席位數少於當前組別人數，動態新增席位至 newMatrix
+            const newSlotItem = {
+              id: `${location}_${dateStr}_${targetShiftId}_${slotNumber}`,
+              location,
+              dutyDate: dateStr,
+              shiftId: targetShiftId,
+              shiftLabel: rule.shiftLabel || '女眾班',
+              shiftStart,
+              shiftEnd,
+              timeRange,
+              quota,
+              slotIndex: slotNumber,
+              genderType: rule.genderType || '女',
+              isWeekend: dayOfWeek === '0' || dayOfWeek === '6',
+              memberId: memberObj ? memberObj.id : (memberName || ''),
+              memberName: memberName || '',
+              status: memberName ? '已排班' : '未指派'
+            };
+            newMatrix.push(newSlotItem);
+          }
+
+          const slotItem = {
             id: `${location}_${dateStr}_${targetShiftId}_${slotNumber}`,
             location,
             dutyDate: dateStr,
@@ -1499,57 +1656,38 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             memberName: memberName || '',
             status: memberName ? '已排班' : '未指派'
           };
-          newMatrix.push(newSlotItem);
-        }
+          allGeneratedSlots.push(slotItem);
 
-        const slotItem = {
-          id: `${location}_${dateStr}_${targetShiftId}_${slotNumber}`,
-          location,
-          dutyDate: dateStr,
-          shiftId: targetShiftId,
-          shiftLabel: rule.shiftLabel || '女眾班',
-          shiftStart,
-          shiftEnd,
-          timeRange,
-          quota,
-          slotIndex: slotNumber,
-          genderType: rule.genderType || '女',
-          isWeekend: dayOfWeek === '0' || dayOfWeek === '6',
-          memberId: memberObj ? memberObj.id : (memberName || ''),
-          memberName: memberName || '',
-          status: memberName ? '已排班' : '未指派'
-        };
-        allGeneratedSlots.push(slotItem);
-
-        // 若依然有高優先級衝突則記錄（若無對換成功）
-        if (memberName && !swapConflictNotice) {
-          const remainConflict = checkSingleMemberHigherPriorityConflict(memberName, dateStr);
-          if (remainConflict) {
-            conflicts.push({
-              dateStr,
-              memberName,
-              slotId: slotItem.id,
-              currentLocation: location,
-              currentShift: slotItem.shiftLabel,
-              otherLocation: remainConflict.conflictLocation,
-              otherShift: remainConflict.conflictShift,
-              notice: `⚠️ 【重複排班衝突】志工「${memberName}」與${remainConflict.conflictLocation}同日排班衝突`,
-              suggestAction: `優先保留${remainConflict.conflictLocation}排班，建議調動${location}值班人員`
-            });
+          // 若依然有高優先級衝突則記錄（若無對換成功）
+          if (memberName && !swapConflictNotice) {
+            const remainConflict = checkSingleMemberHigherPriorityConflict(memberName, dateStr);
+            if (remainConflict) {
+              conflicts.push({
+                dateStr,
+                memberName,
+                slotId: slotItem.id,
+                currentLocation: location,
+                currentShift: slotItem.shiftLabel,
+                otherLocation: remainConflict.conflictLocation,
+                otherShift: remainConflict.conflictShift,
+                notice: `⚠️ 【重複排班衝突】志工「${memberName}」與${remainConflict.conflictLocation}同日排班衝突`,
+                suggestAction: `優先保留${remainConflict.conflictLocation}排班，建議調動${location}值班人員`
+              });
+            }
           }
         }
-      }
 
-      // 若在覆蓋模式下且該日原矩陣有大於 quota 的多餘席位，予以清理並記錄刪除
-      if (overwriteStrategy === 'overwrite') {
-        const extraSlots = daySlotsInMatrix.filter(s => s.slotIndex > quota);
-        extraSlots.forEach(extra => {
-          const rmIdx = newMatrix.findIndex(s => s.id === extra.id);
-          if (rmIdx >= 0) {
-            newMatrix.splice(rmIdx, 1);
-          }
-          deletedSlots.push({ id: extra.id });
-        });
+        // 若在覆蓋模式下且該日原矩陣有大於 quota 的多餘席位，予以清理並記錄刪除
+        if (overwriteStrategy === 'overwrite') {
+          const extraSlots = daySlotsInMatrix.filter(s => s.slotIndex > quota);
+          extraSlots.forEach(extra => {
+            const rmIdx = newMatrix.findIndex(s => s.id === extra.id);
+            if (rmIdx >= 0) {
+              newMatrix.splice(rmIdx, 1);
+            }
+            deletedSlots.push({ id: extra.id });
+          });
+        }
       }
 
       scheduledDetails.push({
