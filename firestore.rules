@@ -95,6 +95,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 道場據點清單與設定
+    match /dutyLocations/{locId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // LINE 綁定：前台綁定/後台管理
     match /lineBindings/{bindingId} {
       allow read: if true;

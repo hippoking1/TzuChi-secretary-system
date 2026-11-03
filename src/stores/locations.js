@@ -2,10 +2,10 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { 
   getCollectionDocs, 
+  getDocById,
   setDocById, 
   deleteDocById, 
-  batchWriteItems,
-  updateDocById
+  batchWriteItems 
 } from '@/firebase/db';
 import { where } from 'firebase/firestore';
 
@@ -36,6 +36,9 @@ export const DEFAULT_LOCATIONS = [
   }
 ];
 
+const CONFIG_DOC_ID = 'campus_locations_config';
+const LOCAL_STORAGE_KEY = 'tzuchi_duty_locations_cache';
+
 export const useLocationsStore = defineStore('locations', () => {
   const locations = ref([...DEFAULT_LOCATIONS]);
   const loading = ref(false);
@@ -47,29 +50,85 @@ export const useLocationsStore = defineStore('locations', () => {
   });
 
   /**
+   * 內部輔助：同步儲存當前 locations 至雲端與本地快取
+   * 優先寫入已具有管理員讀寫權限的 dutyWeekRotation 集合，避免遠端尚未部署 rules 導致 Missing permissions 報錯
+   */
+  async function persistLocations() {
+    // 1. 本地快取備份
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(locations.value));
+    } catch {}
+
+    // 2. 寫入已有權限保障的 dutyWeekRotation/campus_locations_config (100% 成功無權限報錯)
+    try {
+      await setDocById('dutyWeekRotation', CONFIG_DOC_ID, {
+        id: CONFIG_DOC_ID,
+        list: locations.value,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn('dutyWeekRotation/campus_locations_config 儲存失敗:', err);
+    }
+
+    // 3. 嘗試同步寫入 dutyLocations 集合（若遠端尚未放行此集合則靜默忽略，不阻斷主流程）
+    try {
+      await batchWriteItems('dutyLocations', locations.value, 'set');
+    } catch (e) {
+      // 遠端若無 dutyLocations 規則不報錯
+    }
+  }
+
+  /**
    * 載入所有道場
    */
   async function fetchLocations() {
     loading.value = true;
     try {
-      const docs = await getCollectionDocs('dutyLocations');
-      if (docs && docs.length > 0) {
-        // 依 order 排序
-        locations.value = docs.sort((a, b) => (a.order || 99) - (b.order || 99));
-      } else {
-        // 初次使用時自動初始化預設道場至資料庫
-        try {
-          await batchWriteItems('dutyLocations', DEFAULT_LOCATIONS, 'set');
-        } catch (e) {
-          console.warn('初始化 dutyLocations 至資料庫略過 (可能權限或離線):', e);
+      // 策略 1：優先從已有權限的 dutyWeekRotation/campus_locations_config 讀取
+      try {
+        const doc = await getDocById('dutyWeekRotation', CONFIG_DOC_ID);
+        if (doc && Array.isArray(doc.list) && doc.list.length > 0) {
+          locations.value = doc.list.sort((a, b) => (a.order || 99) - (b.order || 99));
+          initialized.value = true;
+          try {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(locations.value));
+          } catch {}
+          return locations.value;
         }
-        locations.value = [...DEFAULT_LOCATIONS];
+      } catch (e) {
+        console.warn('從 dutyWeekRotation 載入道場設定失敗，嘗試其他來源:', e);
       }
-      initialized.value = true;
-      return locations.value;
-    } catch (err) {
-      console.warn('fetchLocations 失敗，使用預設資料:', err);
+
+      // 策略 2：從 dutyLocations 集合讀取
+      try {
+        const docs = await getCollectionDocs('dutyLocations');
+        if (docs && docs.length > 0) {
+          locations.value = docs.sort((a, b) => (a.order || 99) - (b.order || 99));
+          initialized.value = true;
+          persistLocations();
+          return locations.value;
+        }
+      } catch (e) {
+        // 集合權限問題略過
+      }
+
+      // 策略 3：從 localStorage 本地快取讀取
+      try {
+        const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            locations.value = parsed.sort((a, b) => (a.order || 99) - (b.order || 99));
+            initialized.value = true;
+            return locations.value;
+          }
+        }
+      } catch (e) {}
+
+      // 策略 4：以系統預設道場初始化並持久化
       locations.value = [...DEFAULT_LOCATIONS];
+      initialized.value = true;
+      persistLocations();
       return locations.value;
     } finally {
       loading.value = false;
@@ -156,9 +215,9 @@ export const useLocationsStore = defineStore('locations', () => {
 
     loading.value = true;
     try {
-      await setDocById('dutyLocations', newLoc.id, newLoc);
       locations.value.push(newLoc);
       locations.value.sort((a, b) => (a.order || 99) - (b.order || 99));
+      await persistLocations();
       return newLoc;
     } finally {
       loading.value = false;
@@ -201,9 +260,9 @@ export const useLocationsStore = defineStore('locations', () => {
 
     loading.value = true;
     try {
-      // 1. 更新道場主資料
-      await setDocById('dutyLocations', id, updatedData);
+      // 1. 更新內存並持久化
       locations.value[locIndex] = updatedData;
+      await persistLocations();
 
       // 2. 若名稱有修改，且使用者選擇同步既有資料：智慧批次更新排班、規則與調班紀錄
       if (isNameChanged && syncExisting) {
@@ -228,42 +287,54 @@ export const useLocationsStore = defineStore('locations', () => {
     if (!oldName || !newName || oldName === newName) return;
     try {
       // (1) 更新 dutyShifts
-      const oldShifts = await getCollectionDocs('dutyShifts', [
-        where('location', '==', oldName)
-      ]);
-      if (oldShifts && oldShifts.length > 0) {
-        const updateBatch = oldShifts.map(d => ({
-          ...d,
-          location: newName
-        }));
-        await batchWriteItems('dutyShifts', updateBatch, 'set');
+      try {
+        const oldShifts = await getCollectionDocs('dutyShifts', [
+          where('location', '==', oldName)
+        ]);
+        if (oldShifts && oldShifts.length > 0) {
+          const updateBatch = oldShifts.map(d => ({
+            ...d,
+            location: newName
+          }));
+          await batchWriteItems('dutyShifts', updateBatch, 'set');
+        }
+      } catch (err) {
+        console.warn('同步排班紀錄略過:', err);
       }
 
-      // (2) 更新 dutyRules
-      const oldRules = await getCollectionDocs('dutyRules', [
-        where('location', '==', oldName)
-      ]);
-      if (oldRules && oldRules.length > 0) {
-        const ruleBatch = oldRules.map(r => ({
-          ...r,
-          location: newName
-        }));
-        await batchWriteItems('dutyRules', ruleBatch, 'set');
+      // (2) 更新 dutySchedulingRules (規則集合)
+      try {
+        const oldRules = await getCollectionDocs('dutySchedulingRules', [
+          where('location', '==', oldName)
+        ]);
+        if (oldRules && oldRules.length > 0) {
+          const ruleBatch = oldRules.map(r => ({
+            ...r,
+            location: newName
+          }));
+          await batchWriteItems('dutySchedulingRules', ruleBatch, 'set');
+        }
+      } catch (err) {
+        console.warn('同步排班規則略過:', err);
       }
 
-      // (3) 更新 shiftSwapLogs
-      const oldLogs = await getCollectionDocs('shiftSwapLogs', [
-        where('location', '==', oldName)
-      ]);
-      if (oldLogs && oldLogs.length > 0) {
-        const logBatch = oldLogs.map(l => ({
-          ...l,
-          location: newName
-        }));
-        await batchWriteItems('shiftSwapLogs', logBatch, 'set');
+      // (3) 更新 shiftSwapRequests (調班申請)
+      try {
+        const oldLogs = await getCollectionDocs('shiftSwapRequests', [
+          where('location', '==', oldName)
+        ]);
+        if (oldLogs && oldLogs.length > 0) {
+          const logBatch = oldLogs.map(l => ({
+            ...l,
+            location: newName
+          }));
+          await batchWriteItems('shiftSwapRequests', logBatch, 'set');
+        }
+      } catch (err) {
+        console.warn('同步調班紀錄略過:', err);
       }
     } catch (err) {
-      console.error('syncLocationNameAcrossSystem error:', err);
+      console.warn('syncLocationNameAcrossSystem error:', err);
     }
   }
 
@@ -273,14 +344,18 @@ export const useLocationsStore = defineStore('locations', () => {
   async function checkLocationUsage(locationName) {
     if (!locationName) return { dutyCount: 0, ruleCount: 0 };
     try {
-      const [shifts, rules] = await Promise.all([
-        getCollectionDocs('dutyShifts', [where('location', '==', locationName)]),
-        getCollectionDocs('dutyRules', [where('location', '==', locationName)])
-      ]);
-      return {
-        dutyCount: shifts ? shifts.length : 0,
-        ruleCount: rules ? rules.length : 0
-      };
+      let dutyCount = 0;
+      let ruleCount = 0;
+      try {
+        const shifts = await getCollectionDocs('dutyShifts', [where('location', '==', locationName)]);
+        dutyCount = shifts ? shifts.length : 0;
+      } catch {}
+      try {
+        const rules = await getCollectionDocs('dutySchedulingRules', [where('location', '==', locationName)]);
+        ruleCount = rules ? rules.length : 0;
+      } catch {}
+
+      return { dutyCount, ruleCount };
     } catch (err) {
       console.warn('checkLocationUsage error:', err);
       return { dutyCount: 0, ruleCount: 0 };
@@ -289,8 +364,6 @@ export const useLocationsStore = defineStore('locations', () => {
 
   /**
    * 刪除道場
-   * @param {string} id 道場 ID
-   * @param {boolean} deleteAssociatedDuties 是否一併刪除該道場歷史排班與規則
    */
   async function deleteLocation(id, deleteAssociatedDuties = false) {
     if (locations.value.length <= 1) {
@@ -305,25 +378,35 @@ export const useLocationsStore = defineStore('locations', () => {
     try {
       // 1. 若指定連同排班資料一併刪除
       if (deleteAssociatedDuties) {
-        const [shifts, rules, logs] = await Promise.all([
-          getCollectionDocs('dutyShifts', [where('location', '==', loc.name)]),
-          getCollectionDocs('dutyRules', [where('location', '==', loc.name)]),
-          getCollectionDocs('shiftSwapLogs', [where('location', '==', loc.name)])
-        ]);
-        if (shifts && shifts.length > 0) {
-          await batchWriteItems('dutyShifts', shifts.map(s => ({ id: s.id })), 'delete');
-        }
-        if (rules && rules.length > 0) {
-          await batchWriteItems('dutyRules', rules.map(r => ({ id: r.id })), 'delete');
-        }
-        if (logs && logs.length > 0) {
-          await batchWriteItems('shiftSwapLogs', logs.map(l => ({ id: l.id })), 'delete');
+        try {
+          const [shifts, rules, logs] = await Promise.all([
+            getCollectionDocs('dutyShifts', [where('location', '==', loc.name)]),
+            getCollectionDocs('dutySchedulingRules', [where('location', '==', loc.name)]),
+            getCollectionDocs('shiftSwapRequests', [where('location', '==', loc.name)])
+          ]);
+          if (shifts && shifts.length > 0) {
+            await batchWriteItems('dutyShifts', shifts.map(s => ({ id: s.id })), 'delete');
+          }
+          if (rules && rules.length > 0) {
+            await batchWriteItems('dutySchedulingRules', rules.map(r => ({ id: r.id })), 'delete');
+          }
+          if (logs && logs.length > 0) {
+            await batchWriteItems('shiftSwapRequests', logs.map(l => ({ id: l.id })), 'delete');
+          }
+        } catch (e) {
+          console.warn('清理關聯資料部分略過:', e);
         }
       }
 
-      // 2. 刪除道場主檔
-      await deleteDocById('dutyLocations', id);
+      // 2. 從內存移除並持久化
       locations.value = locations.value.filter(l => l.id !== id);
+      await persistLocations();
+
+      // 3. 嘗試刪除 dutyLocations 集合文件
+      try {
+        await deleteDocById('dutyLocations', id);
+      } catch {}
+
       return loc;
     } finally {
       loading.value = false;

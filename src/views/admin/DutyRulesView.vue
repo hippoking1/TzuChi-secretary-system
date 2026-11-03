@@ -1263,7 +1263,7 @@ function clearMemberFilters() {
 
 const formattedOrgOptions = computed(() => {
   const options = [];
-  orgsStore.orgTree.forEach(heqi => {
+  (orgsStore.orgTree || []).forEach(heqi => {
     options.push({ id: heqi.id, label: `🌸 ${heqi.name} (全體)` });
     (heqi.children || []).forEach(huai => {
       options.push({ id: huai.id, label: `　├ ${huai.name} (全體)` });
@@ -1277,10 +1277,12 @@ const formattedOrgOptions = computed(() => {
 
 const memberOrgPathMap = computed(() => {
   const map = new Map();
-  const all = [...maleMembers.value, ...femaleMembers.value];
+  const males = Array.isArray(maleMembers.value) ? maleMembers.value : [];
+  const females = Array.isArray(femaleMembers.value) ? femaleMembers.value : [];
+  const all = [...males, ...females];
   for (let i = 0; i < all.length; i++) {
     const m = all[i];
-    if (m.id && m.orgId) {
+    if (m && m.id && m.orgId) {
       const p = orgsStore.getOrgPath(m.orgId);
       if (p) map.set(m.id, `(${p})`);
     }
@@ -1295,8 +1297,11 @@ function getMemberOrgPathText(memberId) {
 
 const memberByNameMap = computed(() => {
   const map = new Map();
-  const all = [...maleMembers.value, ...femaleMembers.value];
+  const males = Array.isArray(maleMembers.value) ? maleMembers.value : [];
+  const females = Array.isArray(femaleMembers.value) ? femaleMembers.value : [];
+  const all = [...males, ...females];
   all.forEach(m => {
+    if (!m) return;
     const name = (m.name || '').trim();
     if (!name) return;
     if (!map.has(name)) map.set(name, []);
@@ -1779,7 +1784,7 @@ const upcomingWeeksPreview = computed(() => {
 });
 
 onMounted(async () => {
-  const [rot, males, females] = await Promise.all([
+  const [locs, rot, males, females] = await Promise.all([
     locationsStore.fetchLocations(),
     dutyRulesStore.fetchWeekRotation('宜蘭園區'),
     membersStore.fetchMembers({ gender: '男' }),
@@ -1792,10 +1797,10 @@ onMounted(async () => {
     rotationForm.value = { ...DEFAULT_WEEK_ROTATION, ...rot };
   }
 
-  maleMembers.value = males;
-  femaleMembers.value = females;
+  maleMembers.value = Array.isArray(males) ? males : [];
+  femaleMembers.value = Array.isArray(females) ? females : [];
 
-  if (dutyRulesStore.rules.length > 0) {
+  if (dutyRulesStore.rules && dutyRulesStore.rules.length > 0) {
     activeRuleId.value = dutyRulesStore.rules[0].id;
   }
 });
