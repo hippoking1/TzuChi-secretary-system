@@ -84,10 +84,21 @@
       <div class="card mb-0 p-4 bg-white shadow-sm">
         <div class="duty-control-row">
           <div class="form-group mb-0">
-            <label class="form-label font-bold">1. 選擇場地：</label>
-            <select v-model="selectedLocation" class="form-select" @change="initMatrix">
-              <option value="宜蘭園區">宜蘭園區</option>
-              <option value="東港聯絡處">東港聯絡處</option>
+            <div class="flex items-center justify-between mb-1">
+              <label class="form-label font-bold mb-0">1. 選擇場地：</label>
+              <button 
+                type="button" 
+                class="btn btn-xs btn-outline py-0 px-1 text-[11px]" 
+                @click="showLocationModal = true"
+                title="管理道場據點（新增、刪除、修改名稱與班次）"
+              >
+                🏛️ 管理道場
+              </button>
+            </div>
+            <select v-model="selectedLocation" class="form-select font-bold" @change="initMatrix">
+              <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+                {{ loc }}
+              </option>
             </select>
           </div>
 
@@ -1005,6 +1016,13 @@
       @close="showHospitalModal = false"
       @updated="onHospitalScheduleUpdated"
     />
+
+    <!-- 道場據點管理 Modal -->
+    <LocationManageModal
+      :show="showLocationModal"
+      @close="showLocationModal = false"
+      @updated="onLocationUpdated"
+    />
   </div>
 </template>
 
@@ -1012,7 +1030,9 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
+import LocationManageModal from '@/components/duty/LocationManageModal.vue';
 import { useDutiesStore } from '@/stores/duties';
+import { useLocationsStore } from '@/stores/locations';
 import { useDutyRulesStore, getRuleQuota, evaluateMemberAvailability, getMemberConstraint, formatMemberConstraintBadge } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
@@ -1021,8 +1041,10 @@ import { batchWriteItems } from '@/firebase/db';
 
 const showExportModal = ref(false);
 const showHospitalModal = ref(false);
+const showLocationModal = ref(false);
 
 const dutiesStore = useDutiesStore();
+const locationsStore = useLocationsStore();
 const dutyRulesStore = useDutyRulesStore();
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
@@ -1127,7 +1149,7 @@ const conflictList = computed(() => {
         return;
       }
 
-      // 2. 次優先檢查：是否與另一道場排班衝突
+      // 2. 次優先檢查：是否與其他道場排班衝突
       const dayMap = otherMap.get(slot.dutyDate);
       if (dayMap && dayMap.has(cleanName)) {
         const otherShift = dayMap.get(cleanName);
@@ -1136,7 +1158,7 @@ const conflictList = computed(() => {
           memberName: slot.memberName,
           slotId: slot.id,
           currentShiftLabel: slot.shiftLabel,
-          otherLocation: otherLocationName,
+          otherLocation: otherShift.location || otherLocationName,
           otherShiftLabel: otherShift.shiftLabel || '值班'
         });
       }
@@ -1415,16 +1437,18 @@ async function initMatrix() {
   manualInputMap.value = {};
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
-    const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
+    const otherLocations = locationsStore.locationNames.filter(l => l !== selectedLocation.value);
+    const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endStr = `${year}-${String(month).padStart(2, '0')}-31`;
 
-    const [template, existing, otherExisting, hospitalExisting] = await Promise.all([
+    const [template, existing, otherExistingLists, hospitalExisting] = await Promise.all([
       Promise.resolve(dutiesStore.generateMonthlyTemplate(selectedLocation.value, year, month)),
       dutiesStore.fetchDutySchedule(selectedLocation.value, year, month),
-      dutiesStore.fetchDutySchedule(otherLocationName, year, month),
+      Promise.all(otherLocations.map(loc => dutiesStore.getDutyScheduleByRange(loc, startStr, endStr))),
       dutiesStore.fetchHospitalVolunteerSchedule(year, month)
     ]);
 
-    otherLocationDuties.value = otherExisting || [];
+    otherLocationDuties.value = (otherExistingLists || []).flat();
     hospitalLocationDuties.value = hospitalExisting || [];
 
     const nameToMemberMap = {};
@@ -1790,24 +1814,21 @@ async function runAutoPreview() {
   if (!selectedMonth.value) return;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
-    const otherLocationName = selectedLocation.value === '宜蘭園區' ? '東港聯絡處' : '宜蘭園區';
+    const otherLocations = locationsStore.locationNames.filter(l => l !== selectedLocation.value);
 
     // 若有自訂排班起訖區間，非同步動態載入涵蓋該區間之所有另一場地與預排醫院志工資料，徹底解決跨月衝突檢測盲區
     let previewOtherDuties = otherLocationDuties.value || [];
     let previewHospitalDuties = hospitalLocationDuties.value || [];
 
     if (autoStartDate.value && autoEndDate.value) {
-      const [rangeDuties, rangeHospDuties] = await Promise.all([
-        dutiesStore.getDutyScheduleByRange(
-          otherLocationName,
-          autoStartDate.value,
-          autoEndDate.value
-        ),
+      const [otherResults, rangeHospDuties] = await Promise.all([
+        Promise.all(otherLocations.map(loc => dutiesStore.getDutyScheduleByRange(loc, autoStartDate.value, autoEndDate.value))),
         dutiesStore.getHospitalVolunteerScheduleByRange(
           autoStartDate.value,
           autoEndDate.value
         )
       ]);
+      const rangeDuties = (otherResults || []).flat();
       if (Array.isArray(rangeDuties) && rangeDuties.length > 0) {
         const map = new Map();
         previewOtherDuties.forEach(d => { if (d.id) map.set(d.id, d); });
@@ -1873,8 +1894,21 @@ async function applyAutoSchedule() {
   }
 }
 
+function onLocationUpdated(newTargetName) {
+  if (newTargetName) {
+    selectedLocation.value = newTargetName;
+  } else if (!locationsStore.locationNames.includes(selectedLocation.value)) {
+    selectedLocation.value = locationsStore.locationNames[0] || '宜蘭園區';
+  }
+  initMatrix();
+}
+
 onMounted(async () => {
   loading.value = true;
+  await locationsStore.fetchLocations();
+  if (!locationsStore.locationNames.includes(selectedLocation.value) && locationsStore.locationNames.length > 0) {
+    selectedLocation.value = locationsStore.locationNames[0];
+  }
   const [males, females] = await Promise.all([
     membersStore.fetchMembers({ gender: '男' }),
     membersStore.fetchMembers({ gender: '女' }),

@@ -3,14 +3,18 @@
     <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
       <div>
         <h1 class="text-2xl font-bold">道場值班月曆</h1>
-        <p class="text-sm text-muted">檢視宜蘭園區與東港聯絡處全月排班與各班次時段（點擊日期卡片可檢視完整名單）</p>
+        <p class="text-sm text-muted">檢視各道場據點全月排班與各班次時段（點擊日期卡片可檢視完整名單）</p>
       </div>
       <div class="flex gap-3 flex-wrap">
-        <select v-model="selectedLocation" class="form-select" style="min-width: 140px;" @change="loadSchedule">
-          <option value="宜蘭園區">宜蘭園區</option>
-          <option value="東港聯絡處">東港聯絡處</option>
+        <select v-model="selectedLocation" class="form-select font-bold" style="min-width: 140px;" @change="loadSchedule">
+          <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+            {{ loc }}
+          </option>
         </select>
         <input v-model="selectedMonth" type="month" class="form-input" style="min-width: 150px;" @change="loadSchedule" />
+        <button class="btn btn-outline flex items-center gap-1.5" @click="showLocationModal = true" title="自由增刪道場與修改道場名稱">
+          <span>🏛️ 管理道場</span>
+        </button>
         <button class="btn btn-outline flex items-center gap-1.5" @click="showHospitalModal = true">
           <span>🏥 預排醫院志工</span>
           <span v-if="dutiesStore.hospitalDuties.length > 0" class="badge badge-primary text-xs">
@@ -154,22 +158,33 @@
       @close="showHospitalModal = false"
       @updated="loadSchedule"
     />
+
+    <!-- 道場據點管理 Modal -->
+    <LocationManageModal
+      :show="showLocationModal"
+      @close="showLocationModal = false"
+      @updated="onLocationUpdated"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
+import { useLocationsStore } from '@/stores/locations';
 import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
+import LocationManageModal from '@/components/duty/LocationManageModal.vue';
 
 const dutiesStore = useDutiesStore();
+const locationsStore = useLocationsStore();
 
 const selectedLocation = ref('宜蘭園區');
 const selectedMonth = ref(new Date().toISOString().substring(0, 7));
 const showDayModal = ref(false);
 const showExportModal = ref(false);
 const showHospitalModal = ref(false);
+const showLocationModal = ref(false);
 const selectedDayCell = ref(null);
 
 const calendarCells = computed(() => {
@@ -206,7 +221,20 @@ async function loadSchedule() {
   ]);
 }
 
-onMounted(() => {
+function onLocationUpdated(newTargetName) {
+  if (newTargetName) {
+    selectedLocation.value = newTargetName;
+  } else if (!locationsStore.locationNames.includes(selectedLocation.value)) {
+    selectedLocation.value = locationsStore.locationNames[0] || '宜蘭園區';
+  }
+  loadSchedule();
+}
+
+onMounted(async () => {
+  await locationsStore.fetchLocations();
+  if (!locationsStore.locationNames.includes(selectedLocation.value) && locationsStore.locationNames.length > 0) {
+    selectedLocation.value = locationsStore.locationNames[0];
+  }
   loadSchedule();
 });
 </script>

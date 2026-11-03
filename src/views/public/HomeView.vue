@@ -15,7 +15,7 @@
           <router-link to="/duty-search" class="quick-card card-hover">
             <span class="quick-icon">🗓️</span>
             <h4>道場值班查詢</h4>
-            <p class="text-sm text-muted">查詢宜蘭園區與東港排班</p>
+            <p class="text-sm text-muted">查詢各道場據點志工排班</p>
           </router-link>
           <router-link to="/login" class="quick-card card-hover">
             <span class="quick-icon">🛡️</span>

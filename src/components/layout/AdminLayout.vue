@@ -27,6 +27,7 @@
       <router-link v-if="authStore.canAccessDuty" to="/admin/duty-form" class="pill-item" active-class="active">✏️ 排班</router-link>
       <router-link v-if="authStore.canAccessDuty" to="/admin/duty-rules" class="pill-item" active-class="active">⚙️ 規則</router-link>
       <router-link v-if="authStore.canAccessDuty" to="/admin/shift-swap-log" class="pill-item" active-class="active">🔄 調班</router-link>
+      <router-link v-if="authStore.canAccessDuty" to="/admin/duty-locations" class="pill-item" active-class="active">🏛️ 道場</router-link>
       <router-link v-if="authStore.canAccessMembers" to="/admin/members" class="pill-item" active-class="active">📒 志工</router-link>
       <router-link v-if="authStore.canAccessMembers" to="/admin/line-bindings" class="pill-item" active-class="active">💬 LINE</router-link>
       <router-link v-if="authStore.canAccessExport" to="/admin/export" class="pill-item" active-class="active">📥 匯出</router-link>
@@ -79,6 +80,7 @@ const pageTitleMap = {
   '/admin/duty-form': '✏️ 月度排班維護',
   '/admin/duty-rules': '⚙️ 排班規則管理',
   '/admin/shift-swap-log': '🔄 志工調班紀錄',
+  '/admin/duty-locations': '🏛️ 道場據點管理',
   '/admin/members': '📒 志工名冊維護',
   '/admin/orgs': '🏛️ 組織階層架構',
   '/admin/line-bindings': '💬 LINE 綁定管理',

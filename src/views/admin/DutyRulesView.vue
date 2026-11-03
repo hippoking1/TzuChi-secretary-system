@@ -11,6 +11,9 @@
         </p>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
+        <button class="btn btn-outline border-blue-600 text-blue-800 hover:bg-blue-50" @click="showLocationModal = true">
+          🏛️ 管理道場據點
+        </button>
         <button class="btn btn-outline border-teal-600 text-teal-800 hover:bg-teal-50" @click="showHospitalModal = true">
           🏥 預排醫院志工
         </button>
@@ -117,10 +120,11 @@
           <div class="flex items-center gap-2 flex-wrap text-xs">
             <span class="font-bold text-gray-600">快速篩選：</span>
             <!-- 道場過濾 -->
-            <select v-model="filterLocation" class="form-select form-select-sm" style="width: 130px;">
+            <select v-model="filterLocation" class="form-select form-select-sm" style="width: 140px;">
               <option value="">全部道場</option>
-              <option value="宜蘭園區">宜蘭園區</option>
-              <option value="東港聯絡處">東港聯絡處</option>
+              <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+                {{ loc }}
+              </option>
             </select>
 
             <!-- 眾別過濾 -->
@@ -1016,9 +1020,10 @@
           <div class="grid grid-cols-2 gap-3">
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">所屬道場：</label>
-              <select v-model="newRuleForm.location" class="form-select form-select-sm">
-                <option value="宜蘭園區">宜蘭園區</option>
-                <option value="東港聯絡處">東港聯絡處</option>
+              <select v-model="newRuleForm.location" class="form-select form-select-sm" @change="onNewRuleLocationChange">
+                <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+                  {{ loc }}
+                </option>
               </select>
             </div>
 
@@ -1038,11 +1043,13 @@
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">班次時段代碼：</label>
               <select v-model="newRuleForm.shiftId" class="form-select form-select-sm" @change="onNewRuleShiftChange">
-                <option value="YL_F">YL_F (宜蘭園區 女眾班)</option>
-                <option value="YL_M1">YL_M1 (宜蘭園區 男眾一班)</option>
-                <option value="YL_M2">YL_M2 (宜蘭園區 男眾二班)</option>
-                <option value="DG_F">DG_F (東港聯絡處 女眾班)</option>
-                <option value="DG_M">DG_M (東港聯絡處 男眾班)</option>
+                <option 
+                  v-for="s in currentNewRuleAvailableShifts" 
+                  :key="s.shiftId" 
+                  :value="s.shiftId"
+                >
+                  {{ s.shiftId }} ({{ s.label }} - {{ s.timeRange }})
+                </option>
               </select>
             </div>
 
@@ -1097,12 +1104,21 @@
       :show="showHospitalModal"
       @close="showHospitalModal = false"
     />
+
+    <!-- 道場據點管理 Modal -->
+    <LocationManageModal
+      :show="showLocationModal"
+      @close="showLocationModal = false"
+      @updated="onLocationUpdated"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
+import LocationManageModal from '@/components/duty/LocationManageModal.vue';
+import { useLocationsStore } from '@/stores/locations';
 import { 
   useDutyRulesStore, 
   DEFAULT_HEQI2_CAMPUS_FEMALE_RULE, 
@@ -1120,6 +1136,7 @@ import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
 
 const dutyRulesStore = useDutyRulesStore();
+const locationsStore = useLocationsStore();
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();
@@ -1129,6 +1146,7 @@ const savingRotation = ref(false);
 const savingRule = ref(false);
 const showCreateModal = ref(false);
 const showHospitalModal = ref(false);
+const showLocationModal = ref(false);
 
 // 志工名冊
 const maleMembers = ref([]);
@@ -1175,6 +1193,25 @@ const newRuleForm = ref({
   quota: 4,
   ruleType: 'weekday_group_rotation'
 });
+
+// 當前選取道場可用的班次清單
+const currentNewRuleAvailableShifts = computed(() => {
+  const shifts = locationsStore.getShiftsForLocation(newRuleForm.value.location);
+  return shifts || [];
+});
+
+function onNewRuleLocationChange() {
+  const shifts = currentNewRuleAvailableShifts.value;
+  if (shifts && shifts.length > 0) {
+    newRuleForm.value.shiftId = shifts[0].shiftId;
+    newRuleForm.value.genderType = shifts[0].gender || '女';
+    newRuleForm.value.quota = shifts[0].quota || 2;
+  }
+}
+
+function onLocationUpdated() {
+  locationsStore.fetchLocations();
+}
 
 // 過濾後的規則清單
 const filteredRules = computed(() => {
@@ -1743,6 +1780,7 @@ const upcomingWeeksPreview = computed(() => {
 
 onMounted(async () => {
   const [rot, males, females] = await Promise.all([
+    locationsStore.fetchLocations(),
     dutyRulesStore.fetchWeekRotation('宜蘭園區'),
     membersStore.fetchMembers({ gender: '男' }),
     membersStore.fetchMembers({ gender: '女' }),

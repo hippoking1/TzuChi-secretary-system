@@ -41,8 +41,9 @@
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">1. 值班場地：</label>
               <select v-model="selectedLocation" class="form-select form-select-sm" style="min-width: 130px;" @change="loadCalendarSchedule">
-                <option value="宜蘭園區">宜蘭園區</option>
-                <option value="東港聯絡處">東港聯絡處</option>
+                <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+                  {{ loc }}
+                </option>
               </select>
             </div>
 
@@ -305,10 +306,12 @@ import OrgCascader from '@/components/ui/OrgCascader.vue';
 import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 import { useMembersStore } from '@/stores/members';
 import { useDutiesStore } from '@/stores/duties';
+import { useLocationsStore } from '@/stores/locations';
 import { useOrgsStore } from '@/stores/orgs';
 
 const membersStore = useMembersStore();
 const dutiesStore = useDutiesStore();
+const locationsStore = useLocationsStore();
 const orgsStore = useOrgsStore();
 
 // Tab 狀態
@@ -437,12 +440,11 @@ async function handlePersonalSearch() {
   loading.value = true;
   try {
     const [year, month] = selectedMonth.value.split('-').map(Number);
-    const [yilanDuties, donggangDuties] = await Promise.all([
-      dutiesStore.fetchDutySchedule('宜蘭園區', year, month),
-      dutiesStore.fetchDutySchedule('東港聯絡處', year, month)
-    ]);
+    const allDutiesLists = await Promise.all(
+      locationsStore.locationNames.map(loc => dutiesStore.fetchDutySchedule(loc, year, month))
+    );
     
-    const combined = [...yilanDuties, ...donggangDuties];
+    const combined = allDutiesLists.flat();
     const targetMember = memberList.value.find(x => x.id === selectedMemberId.value);
     const targetName = targetMember ? targetMember.name : '';
 
@@ -456,7 +458,11 @@ async function handlePersonalSearch() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await locationsStore.fetchLocations();
+  if (!locationsStore.locationNames.includes(selectedLocation.value) && locationsStore.locationNames.length > 0) {
+    selectedLocation.value = locationsStore.locationNames[0];
+  }
   loadCalendarSchedule();
 });
 </script>

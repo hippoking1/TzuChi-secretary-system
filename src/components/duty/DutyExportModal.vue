@@ -20,8 +20,9 @@
             <div class="form-group mb-0">
               <label class="form-label font-bold text-xs">1. 選擇場地：</label>
               <select v-model="selectedLocation" class="form-select form-select-sm" @change="onLocationChange">
-                <option value="宜蘭園區">宜蘭園區</option>
-                <option value="東港聯絡處">東港聯絡處</option>
+                <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+                  {{ loc }}
+                </option>
               </select>
             </div>
 
@@ -227,6 +228,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
+import { useLocationsStore } from '@/stores/locations';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
@@ -243,6 +245,7 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const dutiesStore = useDutiesStore();
+const locationsStore = useLocationsStore();
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();

@@ -66,6 +66,9 @@
         <router-link to="/admin/shift-swap-log" class="nav-item" active-class="active" @click="$emit('close')">
           <span>🔄 調班紀錄查詢</span>
         </router-link>
+        <router-link to="/admin/duty-locations" class="nav-item" active-class="active" @click="$emit('close')">
+          <span>🏛️ 道場據點管理</span>
+        </router-link>
       </div>
 
       <!-- 4. 組織與志工模組 -->

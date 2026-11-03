@@ -1,0 +1,347 @@
+import { defineStore } from 'pinia';
+import { ref, computed } from 'vue';
+import { 
+  getCollectionDocs, 
+  setDocById, 
+  deleteDocById, 
+  batchWriteItems,
+  updateDocById
+} from '@/firebase/db';
+import { where } from 'firebase/firestore';
+
+// 系統預設道場資料
+export const DEFAULT_LOCATIONS = [
+  {
+    id: 'loc_ilan',
+    name: '宜蘭園區',
+    isCampus: true,
+    note: '宜蘭園區靜思堂，女眾整天班與男眾早晚班',
+    order: 1,
+    shifts: [
+      { shiftId: 'YL_F', label: '女眾班', startTime: '08:00', endTime: '16:00', timeRange: '08:00~16:00', gender: '女', quota: 4 },
+      { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', timeRange: '16:00~18:30', gender: '男', quota: 2 },
+      { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', timeRange: '18:30~20:30', gender: '男', quota: 2 }
+    ]
+  },
+  {
+    id: 'loc_donggang',
+    name: '東港聯絡處',
+    isCampus: false,
+    note: '東港聯絡處常態輪值，女眾上午班與男眾下午班',
+    order: 2,
+    shifts: [
+      { shiftId: 'DG_F', label: '女眾班', startTime: '08:00', endTime: '13:00', timeRange: '08:00~13:00', gender: '女', quota: 2 },
+      { shiftId: 'DG_M', label: '男眾班', startTime: '13:00', endTime: '17:00', timeRange: '13:00~17:00', gender: '男', quota: 1 }
+    ]
+  }
+];
+
+export const useLocationsStore = defineStore('locations', () => {
+  const locations = ref([...DEFAULT_LOCATIONS]);
+  const loading = ref(false);
+  const initialized = ref(false);
+
+  // 所有道場名稱陣列 (供各頁面下拉選單綁定)
+  const locationNames = computed(() => {
+    return locations.value.map(l => l.name);
+  });
+
+  /**
+   * 載入所有道場
+   */
+  async function fetchLocations() {
+    loading.value = true;
+    try {
+      const docs = await getCollectionDocs('dutyLocations');
+      if (docs && docs.length > 0) {
+        // 依 order 排序
+        locations.value = docs.sort((a, b) => (a.order || 99) - (b.order || 99));
+      } else {
+        // 初次使用時自動初始化預設道場至資料庫
+        try {
+          await batchWriteItems('dutyLocations', DEFAULT_LOCATIONS, 'set');
+        } catch (e) {
+          console.warn('初始化 dutyLocations 至資料庫略過 (可能權限或離線):', e);
+        }
+        locations.value = [...DEFAULT_LOCATIONS];
+      }
+      initialized.value = true;
+      return locations.value;
+    } catch (err) {
+      console.warn('fetchLocations 失敗，使用預設資料:', err);
+      locations.value = [...DEFAULT_LOCATIONS];
+      return locations.value;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * 根據名稱尋找道場
+   */
+  function getLocationByName(name) {
+    if (!name) return null;
+    return locations.value.find(l => l.name === name.trim()) || null;
+  }
+
+  /**
+   * 取得指定道場的班次設定
+   */
+  function getShiftsForLocation(locationName) {
+    const loc = getLocationByName(locationName);
+    if (loc && Array.isArray(loc.shifts) && loc.shifts.length > 0) {
+      return loc.shifts;
+    }
+    // 預設 fallback 班次
+    if (locationName === '東港聯絡處') {
+      return DEFAULT_LOCATIONS[1].shifts;
+    }
+    return DEFAULT_LOCATIONS[0].shifts;
+  }
+
+  /**
+   * 新增道場
+   */
+  async function addLocation({ name, shifts = [], note = '', isCampus = false }) {
+    const cleanName = (name || '').trim();
+    if (!cleanName) {
+      throw new Error('請輸入道場名稱');
+    }
+    if (cleanName === '醫院志工' || cleanName.includes('醫院')) {
+      throw new Error('道場名稱不可包含「醫院」，以避免與醫院志工排班衝突');
+    }
+    const exists = locations.value.some(l => l.name === cleanName);
+    if (exists) {
+      throw new Error(`道場名稱「${cleanName}」已存在，請勿重複建立`);
+    }
+
+    // 若未自訂班次，給予預設標準班次（女眾班+男眾班）
+    let defaultShifts = shifts;
+    if (!Array.isArray(defaultShifts) || defaultShifts.length === 0) {
+      const codePrefix = 'LOC' + (locations.value.length + 1);
+      defaultShifts = [
+        {
+          shiftId: `${codePrefix}_F`,
+          label: '女眾班',
+          startTime: '08:00',
+          endTime: '16:00',
+          timeRange: '08:00~16:00',
+          gender: '女',
+          quota: 4
+        },
+        {
+          shiftId: `${codePrefix}_M`,
+          label: '男眾班',
+          startTime: '16:00',
+          endTime: '20:00',
+          timeRange: '16:00~20:00',
+          gender: '男',
+          quota: 2
+        }
+      ];
+    }
+
+    const newOrder = locations.value.length > 0 
+      ? Math.max(...locations.value.map(l => l.order || 0)) + 1 
+      : 1;
+
+    const newLoc = {
+      id: `loc_${Date.now()}`,
+      name: cleanName,
+      isCampus: !!isCampus,
+      note: (note || '').trim(),
+      order: newOrder,
+      shifts: defaultShifts
+    };
+
+    loading.value = true;
+    try {
+      await setDocById('dutyLocations', newLoc.id, newLoc);
+      locations.value.push(newLoc);
+      locations.value.sort((a, b) => (a.order || 99) - (b.order || 99));
+      return newLoc;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * 修改道場（支援修改名稱、班次、備註，並智慧同步既有排班與規則之道場名稱）
+   */
+  async function updateLocation(id, { name, shifts, note, isCampus, syncExisting = true }) {
+    const locIndex = locations.value.findIndex(l => l.id === id);
+    if (locIndex === -1) {
+      throw new Error('找不到指定的道場資料');
+    }
+    const oldLoc = locations.value[locIndex];
+    const cleanName = (name || '').trim();
+    if (!cleanName) {
+      throw new Error('道場名稱不可為空');
+    }
+    if (cleanName === '醫院志工' || cleanName.includes('醫院')) {
+      throw new Error('道場名稱不可包含「醫院」');
+    }
+
+    // 檢查若名稱修改，是否與其他道場重名
+    const isNameChanged = oldLoc.name !== cleanName;
+    if (isNameChanged) {
+      const duplicate = locations.value.some(l => l.id !== id && l.name === cleanName);
+      if (duplicate) {
+        throw new Error(`已有其他道場命名為「${cleanName}」，請使用其他名稱`);
+      }
+    }
+
+    const updatedData = {
+      ...oldLoc,
+      name: cleanName,
+      note: note !== undefined ? (note || '').trim() : oldLoc.note,
+      isCampus: isCampus !== undefined ? !!isCampus : oldLoc.isCampus,
+      shifts: shifts !== undefined ? shifts : oldLoc.shifts
+    };
+
+    loading.value = true;
+    try {
+      // 1. 更新道場主資料
+      await setDocById('dutyLocations', id, updatedData);
+      locations.value[locIndex] = updatedData;
+
+      // 2. 若名稱有修改，且使用者選擇同步既有資料：智慧批次更新排班、規則與調班紀錄
+      if (isNameChanged && syncExisting) {
+        await syncLocationNameAcrossSystem(oldLoc.name, cleanName);
+      }
+
+      return {
+        location: updatedData,
+        isNameChanged,
+        oldName: oldLoc.name,
+        newName: cleanName
+      };
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * 當道場改名時，同步將系統內舊名稱之排班、規則更新為新名稱
+   */
+  async function syncLocationNameAcrossSystem(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    try {
+      // (1) 更新 dutyShifts
+      const oldShifts = await getCollectionDocs('dutyShifts', [
+        where('location', '==', oldName)
+      ]);
+      if (oldShifts && oldShifts.length > 0) {
+        const updateBatch = oldShifts.map(d => ({
+          ...d,
+          location: newName
+        }));
+        await batchWriteItems('dutyShifts', updateBatch, 'set');
+      }
+
+      // (2) 更新 dutyRules
+      const oldRules = await getCollectionDocs('dutyRules', [
+        where('location', '==', oldName)
+      ]);
+      if (oldRules && oldRules.length > 0) {
+        const ruleBatch = oldRules.map(r => ({
+          ...r,
+          location: newName
+        }));
+        await batchWriteItems('dutyRules', ruleBatch, 'set');
+      }
+
+      // (3) 更新 shiftSwapLogs
+      const oldLogs = await getCollectionDocs('shiftSwapLogs', [
+        where('location', '==', oldName)
+      ]);
+      if (oldLogs && oldLogs.length > 0) {
+        const logBatch = oldLogs.map(l => ({
+          ...l,
+          location: newName
+        }));
+        await batchWriteItems('shiftSwapLogs', logBatch, 'set');
+      }
+    } catch (err) {
+      console.error('syncLocationNameAcrossSystem error:', err);
+    }
+  }
+
+  /**
+   * 查詢道場目前的排班席次筆數（供刪除前防呆確認）
+   */
+  async function checkLocationUsage(locationName) {
+    if (!locationName) return { dutyCount: 0, ruleCount: 0 };
+    try {
+      const [shifts, rules] = await Promise.all([
+        getCollectionDocs('dutyShifts', [where('location', '==', locationName)]),
+        getCollectionDocs('dutyRules', [where('location', '==', locationName)])
+      ]);
+      return {
+        dutyCount: shifts ? shifts.length : 0,
+        ruleCount: rules ? rules.length : 0
+      };
+    } catch (err) {
+      console.warn('checkLocationUsage error:', err);
+      return { dutyCount: 0, ruleCount: 0 };
+    }
+  }
+
+  /**
+   * 刪除道場
+   * @param {string} id 道場 ID
+   * @param {boolean} deleteAssociatedDuties 是否一併刪除該道場歷史排班與規則
+   */
+  async function deleteLocation(id, deleteAssociatedDuties = false) {
+    if (locations.value.length <= 1) {
+      throw new Error('系統至少需保留一個道場，無法刪除全部道場');
+    }
+    const loc = locations.value.find(l => l.id === id);
+    if (!loc) {
+      throw new Error('找不到要刪除的道場');
+    }
+
+    loading.value = true;
+    try {
+      // 1. 若指定連同排班資料一併刪除
+      if (deleteAssociatedDuties) {
+        const [shifts, rules, logs] = await Promise.all([
+          getCollectionDocs('dutyShifts', [where('location', '==', loc.name)]),
+          getCollectionDocs('dutyRules', [where('location', '==', loc.name)]),
+          getCollectionDocs('shiftSwapLogs', [where('location', '==', loc.name)])
+        ]);
+        if (shifts && shifts.length > 0) {
+          await batchWriteItems('dutyShifts', shifts.map(s => ({ id: s.id })), 'delete');
+        }
+        if (rules && rules.length > 0) {
+          await batchWriteItems('dutyRules', rules.map(r => ({ id: r.id })), 'delete');
+        }
+        if (logs && logs.length > 0) {
+          await batchWriteItems('shiftSwapLogs', logs.map(l => ({ id: l.id })), 'delete');
+        }
+      }
+
+      // 2. 刪除道場主檔
+      await deleteDocById('dutyLocations', id);
+      locations.value = locations.value.filter(l => l.id !== id);
+      return loc;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  return {
+    locations,
+    locationNames,
+    loading,
+    initialized,
+    fetchLocations,
+    getLocationByName,
+    getShiftsForLocation,
+    addLocation,
+    updateLocation,
+    deleteLocation,
+    checkLocationUsage,
+    syncLocationNameAcrossSystem
+  };
+});

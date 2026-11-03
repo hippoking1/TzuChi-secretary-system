@@ -12,7 +12,7 @@
       <div class="card">
         <h3 class="font-bold mb-2">📥 匯出月度值班表 (Excel / PDF)</h3>
         <p class="text-sm text-muted mb-4">
-          匯出宜蘭園區或東港聯絡處全月排班名單，可依和氣篩選並自動依互愛及協力拆分獨立工作表 (Excel) 或獨立分頁 (PDF)。
+          匯出各道場全月排班名單，可依和氣篩選並自動依互愛及協力拆分獨立工作表 (Excel) 或標準月曆排版 (PDF)。
         </p>
         <button class="btn btn-primary" @click="showDutyExportModal = true">
           📤 匯出值班名冊 (Excel / PDF)

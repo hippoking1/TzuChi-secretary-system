@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getCollectionDocs, batchWriteItems } from '@/firebase/db';
 import { where } from 'firebase/firestore';
+import { useLocationsStore } from './locations';
 
 // 道場班次時段常數定義 (含標準時段字串與席次需求 quota)
 export const DUTY_SHIFTS_CONFIG = {
@@ -17,8 +18,16 @@ export const DUTY_SHIFTS_CONFIG = {
 };
 
 export function getStandardShiftConfig(location, shiftId, label) {
-  const list = DUTY_SHIFTS_CONFIG[location] || [];
-  return list.find(s => s.shiftId === shiftId || s.label === label) || null;
+  let list = DUTY_SHIFTS_CONFIG[location];
+  if (!list || list.length === 0) {
+    try {
+      const locationsStore = useLocationsStore();
+      list = locationsStore.getShiftsForLocation(location);
+    } catch {
+      list = [];
+    }
+  }
+  return list ? (list.find(s => s.shiftId === shiftId || s.label === label) || null) : null;
 }
 
 export function getStandardShiftQuota(location, shiftId, genderType = '女') {
@@ -288,7 +297,15 @@ export const useDutiesStore = defineStore('duties', () => {
   }
 
   function generateMonthlyTemplate(location, year, month) {
-    const shiftsConfig = DUTY_SHIFTS_CONFIG[location] || [];
+    let shiftsConfig = DUTY_SHIFTS_CONFIG[location];
+    if (!shiftsConfig || shiftsConfig.length === 0) {
+      try {
+        const locationsStore = useLocationsStore();
+        shiftsConfig = locationsStore.getShiftsForLocation(location);
+      } catch {
+        shiftsConfig = [];
+      }
+    }
     const daysInMonth = new Date(year, month, 0).getDate();
     const result = [];
 

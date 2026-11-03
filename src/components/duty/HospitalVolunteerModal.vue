@@ -529,6 +529,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useDutiesStore } from '@/stores/duties';
+import { useLocationsStore } from '@/stores/locations';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
@@ -541,6 +542,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'updated']);
 
 const dutiesStore = useDutiesStore();
+const locationsStore = useLocationsStore();
 const membersStore = useMembersStore();
 const orgsStore = useOrgsStore();
 const toast = useToast();
@@ -572,8 +574,7 @@ const loadingList = ref(false);
 const submitting = ref(false);
 
 const monthHospitalList = ref([]);
-const monthYilanList = ref([]);
-const monthDonggangList = ref([]);
+const monthLocationDutiesList = ref([]);
 const allMembers = ref([]);
 
 watch(() => props.defaultMonth, (val) => {
@@ -624,16 +625,18 @@ async function loadMonthData() {
   loadingList.value = true;
   try {
     const [year, month] = activeMonth.value.split('-').map(Number);
-    const [hosp, yl, dg, allHosp] = await Promise.all([
+    await locationsStore.fetchLocations();
+    const locPromises = locationsStore.locationNames.map(loc =>
+      dutiesStore.getDutyScheduleByRange(loc, `${activeMonth.value}-01`, `${activeMonth.value}-31`)
+    );
+    const [hosp, allHosp, ...locDuties] = await Promise.all([
       dutiesStore.fetchHospitalVolunteerSchedule(year, month),
-      dutiesStore.getDutyScheduleByRange('宜蘭園區', `${activeMonth.value}-01`, `${activeMonth.value}-31`),
-      dutiesStore.getDutyScheduleByRange('東港聯絡處', `${activeMonth.value}-01`, `${activeMonth.value}-31`),
-      dutiesStore.fetchAllHospitalVolunteerSchedules()
+      dutiesStore.fetchAllHospitalVolunteerSchedules(),
+      ...locPromises
     ]);
     monthHospitalList.value = hosp || [];
-    monthYilanList.value = yl || [];
-    monthDonggangList.value = dg || [];
     allHistoricalHospitalList.value = allHosp || [];
+    monthLocationDutiesList.value = (locDuties || []).flat();
   } finally {
     loadingList.value = false;
   }
@@ -995,10 +998,11 @@ function getDayOfWeekShort(dateStr) {
 function getExistingLocationConflict(dateStr, memberName) {
   if (!dateStr || !memberName) return '';
   const hits = [];
-  const inYl = monthYilanList.value.find(d => d.dutyDate === dateStr && d.memberName === memberName);
-  if (inYl) hits.push(`宜蘭園區(${inYl.shiftLabel || '值班'})`);
-  const inDg = monthDonggangList.value.find(d => d.dutyDate === dateStr && d.memberName === memberName);
-  if (inDg) hits.push(`東港聯絡處(${inDg.shiftLabel || '值班'})`);
+  monthLocationDutiesList.value.forEach(d => {
+    if (d.dutyDate === dateStr && d.memberName === memberName) {
+      hits.push(`${d.location || '道場'}(${d.shiftLabel || '值班'})`);
+    }
+  });
   return hits.length > 0 ? `已排: ${hits.join('、')}` : '';
 }
 

@@ -41,8 +41,9 @@
           <label class="form-label text-xs">道場地點</label>
           <select v-model="filterLocation" class="form-select">
             <option value="">全部道場</option>
-            <option value="宜蘭園區">宜蘭園區</option>
-            <option value="東港聯絡處">東港聯絡處</option>
+            <option v-for="loc in locationsStore.locationNames" :key="loc" :value="loc">
+              {{ loc }}
+            </option>
           </select>
         </div>
 
@@ -252,10 +253,12 @@
 import { ref, computed, onMounted } from 'vue';
 import { getCollectionDocs } from '@/firebase/db';
 import { useToast } from '@/composables/useToast';
+import { useLocationsStore } from '@/stores/locations';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '@/firebase/config';
 
 const toast = useToast();
+const locationsStore = useLocationsStore();
 const functions = getFunctions(app, 'asia-east1');
 const revertDutySwap = httpsCallable(functions, 'revertDutySwap');
 
@@ -370,6 +373,7 @@ async function handleRevert(item) {
 }
 
 onMounted(() => {
+  locationsStore.fetchLocations();
   loadLogs();
 });
 </script>
