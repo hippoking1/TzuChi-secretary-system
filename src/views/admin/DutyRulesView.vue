@@ -178,68 +178,24 @@
 
       <!-- 當前選定規則編輯區 -->
       <div v-if="activeRule" class="card-body">
-        <!-- 規則基本設定列與操作按鈕 -->
-        <div class="flex items-center justify-between mb-5 pb-4 border-b flex-wrap gap-4">
-          <div class="flex items-center gap-3 flex-wrap">
-            <div>
-              <span class="text-xs text-muted block mb-0.5">規則名稱：</span>
-              <input 
-                v-model="activeRule.ruleName" 
-                class="form-input form-input-sm font-bold text-gray-800" 
-                style="min-width: 260px;" 
-                placeholder="輸入規則名稱..."
-              />
-            </div>
-
-            <div>
-              <span class="text-xs text-muted block mb-0.5">所屬道場：</span>
-              <span class="badge badge-light border text-sm py-1.5 px-3 font-bold">
-                {{ activeRule.location }}
-              </span>
-            </div>
-
-            <div>
-              <span class="text-xs text-muted block mb-0.5">班次時段：</span>
-              <span class="badge badge-light border text-sm py-1.5 px-3">
-                {{ activeRule.shiftLabel }} ({{ activeRule.shiftId }})
-              </span>
-            </div>
-
-            <div>
-              <span class="text-xs text-muted block mb-0.5">所屬和氣：</span>
-              <select v-model="activeRule.heqiGroup" class="form-select form-select-sm" style="min-width: 120px;">
-                <option value="和氣一">和氣一</option>
-                <option value="和氣二">和氣二</option>
-                <option value="和氣三">和氣三</option>
-                <option value="和氣四">和氣四</option>
-                <option value="全區通用">全區通用</option>
-              </select>
-            </div>
-
-            <div>
-              <span class="text-xs text-muted block mb-0.5">每班需求人數：</span>
-              <div v-if="activeRule.ruleType === 'weekday_group_rotation'" class="flex items-center gap-1 py-1">
-                <span class="badge badge-primary font-bold">整組全員輪值 (依組員數排班，無上限)</span>
-              </div>
-              <div v-else class="flex items-center gap-1">
-                <input 
-                  v-model.number="activeRule.quota" 
-                  type="number" 
-                  min="1" 
-                  max="10" 
-                  class="form-input form-input-sm font-bold text-primary" 
-                  style="width: 70px;" 
-                />
-                <span class="text-xs text-muted font-bold">人/班</span>
-              </div>
-            </div>
-
-            <div>
-              <span class="text-xs text-muted block mb-0.5">規則類型：</span>
-              <span class="badge badge-primary py-1 px-2.5 text-xs">
-                {{ activeRule.ruleType === 'weekday_weekend_sequential' ? '🏢🏖️ 平日/假日雙軌循序輪替' : '📅 星期 × 整組循環輪替' }}
-              </span>
-            </div>
+        <!-- 1. 規則標題與操作按鈕工具列 (Header & Action Toolbar) -->
+        <div class="flex items-center justify-between mb-4 pb-3 border-b flex-wrap gap-3">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <span class="text-xl leading-none">
+              {{ activeRule.location === '宜蘭園區' ? '🌸' : '⚓' }}
+            </span>
+            <h3 class="text-base font-bold text-gray-800 m-0">
+              {{ activeRule.ruleName }}
+            </h3>
+            <span class="badge badge-sm" :class="activeRule.genderType === '女' ? 'badge-danger' : 'badge-info'">
+              {{ activeRule.genderType }}眾班
+            </span>
+            <span class="badge badge-sm badge-light border text-gray-700">
+              {{ activeRule.ruleType === 'weekday_weekend_sequential' ? '🏢🏖️ 平假日雙軌循序輪替' : '📅 星期 × 整組循環輪替' }}
+            </span>
+            <span class="badge badge-sm badge-gray text-gray-600">
+              📍 {{ activeRule.location }}
+            </span>
           </div>
 
           <div class="flex items-center gap-2">
@@ -261,12 +217,75 @@
             </button>
             <button 
               type="button" 
-              class="btn btn-primary btn-sm" 
+              class="btn btn-primary btn-sm font-bold shadow-xs px-3" 
               :disabled="savingRule" 
               @click="handleSaveActiveRule"
             >
               {{ savingRule ? '儲存中...' : '💾 儲存此規則' }}
             </button>
+          </div>
+        </div>
+
+        <!-- 2. 規則基本參數對齊設定網格面板 (Settings Grid) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 p-3.5 mb-4 bg-gray-50/90 rounded-lg border border-gray-200">
+          <!-- 1. 規則名稱 -->
+          <div class="form-group mb-0 flex flex-col justify-between">
+            <label class="form-label font-bold text-xs text-gray-700 mb-1 flex items-center gap-1">
+              <span>📝 規則名稱：</span>
+            </label>
+            <input 
+              v-model="activeRule.ruleName" 
+              class="form-input form-input-sm w-full font-bold text-gray-800 bg-white" 
+              placeholder="輸入規則名稱..."
+            />
+          </div>
+
+          <!-- 2. 所屬和氣 -->
+          <div class="form-group mb-0 flex flex-col justify-between">
+            <label class="form-label font-bold text-xs text-gray-700 mb-1 flex items-center gap-1">
+              <span>🌸 所屬和氣組別：</span>
+            </label>
+            <select v-model="activeRule.heqiGroup" class="form-select form-select-sm w-full font-bold bg-white">
+              <option value="和氣一">和氣一</option>
+              <option value="和氣二">和氣二</option>
+              <option value="和氣三">和氣三</option>
+              <option value="和氣四">和氣四</option>
+              <option value="全區通用">全區通用</option>
+            </select>
+          </div>
+
+          <!-- 3. 所屬道場與班次時段 -->
+          <div class="form-group mb-0 flex flex-col justify-between">
+            <label class="form-label font-bold text-xs text-gray-700 mb-1 flex items-center gap-1">
+              <span>📍 道場與班次時段：</span>
+            </label>
+            <div class="form-input form-input-sm w-full bg-white text-gray-800 flex items-center justify-between font-medium">
+              <span class="font-bold text-xs">{{ activeRule.location }}</span>
+              <span class="badge badge-sm badge-light border text-gray-600 font-mono">
+                {{ activeRule.shiftLabel }} ({{ activeRule.shiftId }})
+              </span>
+            </div>
+          </div>
+
+          <!-- 4. 每班需求人數 / 輪值模式 -->
+          <div class="form-group mb-0 flex flex-col justify-between">
+            <label class="form-label font-bold text-xs text-gray-700 mb-1 flex items-center gap-1">
+              <span>👥 席次需求 / 輪值模式：</span>
+            </label>
+            <div v-if="activeRule.ruleType === 'weekday_group_rotation'" class="form-input form-input-sm w-full bg-blue-50/50 border-blue-200 text-primary font-bold flex items-center justify-between text-xs">
+              <span>整組全員輪值</span>
+              <span class="text-xs text-muted font-normal">(依組別人數排班)</span>
+            </div>
+            <div v-else class="flex items-center gap-2">
+              <input 
+                v-model.number="activeRule.quota" 
+                type="number" 
+                min="1" 
+                max="10" 
+                class="form-input form-input-sm w-24 font-bold text-primary text-center bg-white" 
+              />
+              <span class="text-xs text-muted font-bold">人 / 班</span>
+            </div>
           </div>
         </div>
 
