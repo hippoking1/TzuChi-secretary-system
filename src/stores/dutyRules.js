@@ -100,6 +100,234 @@ export const DEFAULT_DONGGANG_MALE_WEEKEND_MEMBERS = [
   '莊盧達', '黃志煌', '葉文熙', '薛登霖', '李自強', '莊漢僑'
 ];
 
+// 東港聯絡處男眾班預設個人排班彈性限制（可於規則管理介面自由增刪修改）
+export const DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS = {
+  '莊漢僑': { mode: 'preferred', days: [0], skipBehavior: 'defer_payback', note: '排日為主', dateRanges: [] },
+  '李自強': { mode: 'allowed', days: [6, 0], skipBehavior: 'defer_payback', note: '排六日', dateRanges: [] },
+  '李長和': { mode: 'excluded', days: [2, 4, 6], skipBehavior: 'defer_payback', note: '勿排二四六', dateRanges: [] },
+  '吳世明': { mode: 'excluded', days: [1, 2, 4, 6], skipBehavior: 'defer_payback', note: '勿排一二四六', dateRanges: [] },
+  '薛登霖': { mode: 'allowed', days: [6, 0], skipBehavior: 'defer_payback', note: '排六日', dateRanges: [] },
+  '李世清': { mode: 'allowed', days: [1], skipBehavior: 'defer_payback', note: '排週一', dateRanges: [] },
+  '林子民': { mode: 'allowed', days: [1], skipBehavior: 'defer_payback', note: '排週一', dateRanges: [] }
+};
+
+const DAY_SHORT_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+const DAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/**
+ * 將星期數字陣列轉為簡短中文（依 一二三四五六日 順序）
+ */
+export function formatDaysShortText(days = []) {
+  if (!Array.isArray(days) || days.length === 0) return '';
+  const numSet = new Set(days.map(Number));
+  return DAY_DISPLAY_ORDER.filter(d => numSet.has(d)).map(d => DAY_SHORT_NAMES[d]).join('');
+}
+
+/**
+ * 正規化單一志工之個人排班彈性設定物件
+ */
+export function normalizeMemberConstraint(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const hasAllowed = Array.isArray(raw.allowedDays) && raw.allowedDays.length > 0;
+  const hasExcluded = Array.isArray(raw.excludedDays) && raw.excludedDays.length > 0;
+  const hasPreferred = Array.isArray(raw.preferredDays) && raw.preferredDays.length > 0;
+
+  const mode = raw.mode || (hasAllowed ? 'allowed' : (hasExcluded ? 'excluded' : (hasPreferred ? 'preferred' : 'none')));
+  const days = Array.isArray(raw.days) ? raw.days.map(Number).filter(n => !isNaN(n)) : [];
+
+  const allowedDays = mode === 'allowed' ? days : (hasAllowed ? raw.allowedDays.map(Number) : []);
+  const excludedDays = mode === 'excluded' ? days : (hasExcluded ? raw.excludedDays.map(Number) : []);
+  const preferredDays = mode === 'preferred' ? days : (hasPreferred ? raw.preferredDays.map(Number) : []);
+  const dateRanges = Array.isArray(raw.dateRanges)
+    ? raw.dateRanges.filter(r => r && (r.startDate || r.endDate))
+    : [];
+  const skipBehavior = raw.skipBehavior === 'exempt' ? 'exempt' : 'defer_payback';
+  const note = (raw.note || '').trim();
+
+  if (allowedDays.length === 0 && excludedDays.length === 0 && preferredDays.length === 0 && dateRanges.length === 0 && !note) {
+    return null;
+  }
+
+  return {
+    mode,
+    days: mode === 'allowed' ? allowedDays : (mode === 'excluded' ? excludedDays : (mode === 'preferred' ? preferredDays : days)),
+    allowedDays,
+    excludedDays,
+    preferredDays,
+    dateRanges,
+    skipBehavior,
+    note
+  };
+}
+
+/**
+ * 產生志工個人限制之簡短標籤文字（例如：排日為主、排六日、勿排二四六、排週一）
+ */
+export function formatMemberConstraintBadge(raw) {
+  const c = normalizeMemberConstraint(raw);
+  if (!c) return '';
+  const parts = [];
+  if (c.allowedDays.length > 0) {
+    if (c.allowedDays.length === 1) {
+      parts.push(`排週${DAY_SHORT_NAMES[c.allowedDays[0]]}`);
+    } else {
+      parts.push(`排${formatDaysShortText(c.allowedDays)}`);
+    }
+  }
+  if (c.excludedDays.length > 0) {
+    parts.push(`勿排${formatDaysShortText(c.excludedDays)}`);
+  }
+  if (c.preferredDays.length > 0) {
+    parts.push(`排${formatDaysShortText(c.preferredDays)}為主`);
+  }
+  if (c.dateRanges.length > 0) {
+    parts.push(`請假${c.dateRanges.length}筆`);
+  }
+  if (parts.length === 0 && c.note) {
+    parts.push(c.note);
+  }
+  return parts.join('・');
+}
+
+/**
+ * 讀取規則中特定志工之正規化限制設定
+ */
+export function getMemberConstraint(rule, memberName) {
+  if (!rule || !rule.memberConstraints || !memberName) return null;
+  const clean = String(memberName).replace(/[★*☆\s]/g, '').trim();
+  const raw = rule.memberConstraints[clean] || rule.memberConstraints[memberName];
+  return normalizeMemberConstraint(raw);
+}
+
+/**
+ * 評估特定志工在指定日期是否符合其個人排班彈性限制
+ * @returns {{ canAssign: boolean, isPreferred: boolean, hasPreference: boolean, conflictType: string|null, reason: string, shortReason: string, badgeText: string, skipBehavior: string, allowedWeekdaysCount: number }}
+ */
+export function evaluateMemberAvailability(memberName, dateStr, rule) {
+  const defaultRes = {
+    canAssign: true,
+    isPreferred: true,
+    hasPreference: false,
+    conflictType: null,
+    reason: '',
+    shortReason: '',
+    badgeText: '',
+    skipBehavior: 'defer_payback',
+    allowedWeekdaysCount: 5
+  };
+  if (!memberName || !dateStr || !rule) return defaultRes;
+  const c = getMemberConstraint(rule, memberName);
+  if (!c) return defaultRes;
+
+  const badgeText = formatMemberConstraintBadge(c);
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dayOfWeek = new Date(y, m - 1, d).getDay(); // 0 ~ 6
+
+  // 計算該志工在平日 (1~5) 可排的天數，供智慧前瞻預拉判斷是否為「單一星期受限者（如僅排週一）」
+  let allowedWeekdaysCount = 0;
+  for (let wd = 1; wd <= 5; wd++) {
+    const passAllowed = c.allowedDays.length === 0 || c.allowedDays.includes(wd);
+    const passExcluded = c.excludedDays.length === 0 || !c.excludedDays.includes(wd);
+    if (passAllowed && passExcluded) allowedWeekdaysCount++;
+  }
+
+  // 1. 檢查特定日期區間請假 / 免排
+  if (c.dateRanges.length > 0) {
+    const hitRange = c.dateRanges.find(r => {
+      const s = r.startDate || '0000-01-01';
+      const e = r.endDate || '9999-12-31';
+      return dateStr >= s && dateStr <= e;
+    });
+    if (hitRange) {
+      const rText = hitRange.reason ? `${hitRange.reason} (${hitRange.startDate}~${hitRange.endDate})` : `${hitRange.startDate}~${hitRange.endDate} 免排`;
+      return {
+        canAssign: false,
+        isPreferred: false,
+        hasPreference: false,
+        conflictType: 'constraint_date_range',
+        reason: `個人期間免排（${rText}）`,
+        shortReason: hitRange.reason || '期間不排班',
+        badgeText,
+        skipBehavior: hitRange.skipBehavior || c.skipBehavior || 'defer_payback',
+        allowedWeekdaysCount
+      };
+    }
+  }
+
+  // 2. 檢查勿排星期 (excludedDays)
+  if (c.excludedDays.length > 0 && c.excludedDays.includes(dayOfWeek)) {
+    const shortReason = `勿排${formatDaysShortText(c.excludedDays)}`;
+    return {
+      canAssign: false,
+      isPreferred: false,
+      hasPreference: false,
+      conflictType: 'constraint_weekday',
+      reason: `個人排班規則（${shortReason}）`,
+      shortReason,
+      badgeText,
+      skipBehavior: c.skipBehavior || 'defer_payback',
+      allowedWeekdaysCount
+    };
+  }
+
+  // 3. 檢查僅排星期 (allowedDays)
+  if (c.allowedDays.length > 0 && !c.allowedDays.includes(dayOfWeek)) {
+    const shortReason = c.allowedDays.length === 1
+      ? `排週${DAY_SHORT_NAMES[c.allowedDays[0]]}`
+      : `排${formatDaysShortText(c.allowedDays)}`;
+    return {
+      canAssign: false,
+      isPreferred: false,
+      hasPreference: false,
+      conflictType: 'constraint_weekday',
+      reason: `個人排班規則（${shortReason}）`,
+      shortReason,
+      badgeText,
+      skipBehavior: c.skipBehavior || 'defer_payback',
+      allowedWeekdaysCount
+    };
+  }
+
+  // 4. 檢查優先星期 / 以特定星期為主 (preferredDays)
+  if (c.preferredDays.length > 0) {
+    const isPref = c.preferredDays.includes(dayOfWeek);
+    const shortReason = `排${formatDaysShortText(c.preferredDays)}為主`;
+    return {
+      canAssign: true,
+      isPreferred: isPref,
+      hasPreference: true,
+      conflictType: isPref ? null : 'preference_weekday',
+      reason: isPref ? '' : `個人排班偏好（${shortReason}）`,
+      shortReason,
+      badgeText,
+      skipBehavior: c.skipBehavior || 'defer_payback',
+      allowedWeekdaysCount
+    };
+  }
+
+  return {
+    ...defaultRes,
+    badgeText,
+    skipBehavior: c.skipBehavior || 'defer_payback',
+    allowedWeekdaysCount
+  };
+}
+
+/**
+ * 判斷志工之星期限制是否可於平日軌 (isWeekend=false) 或假日軌 (isWeekend=true) 出勤
+ * 用於當志工名冊尚未搬移但設定了「排週一」或「排六日」時自動跨池路由
+ */
+export function canMemberWorkTrack(memberName, isWeekend, rule) {
+  const c = getMemberConstraint(rule, memberName);
+  if (!c) return true;
+  const targetDays = isWeekend ? [6, 0] : [1, 2, 3, 4, 5];
+  return targetDays.some(d => {
+    const passAllowed = c.allowedDays.length === 0 || c.allowedDays.includes(d);
+    const passExcluded = c.excludedDays.length === 0 || !c.excludedDays.includes(d);
+    return passAllowed && passExcluded;
+  });
+}
+
 export const DEFAULT_DONGGANG_MALE_RULE = {
   id: 'rule_donggang_male',
   ruleName: '東港聯絡處男眾值班規則',
@@ -112,6 +340,7 @@ export const DEFAULT_DONGGANG_MALE_RULE = {
   ruleType: 'weekday_weekend_sequential', // 平日/假日雙軌循序循環輪替
   weekdayMembers: [...DEFAULT_DONGGANG_MALE_WEEKDAY_MEMBERS],
   weekendMembers: [...DEFAULT_DONGGANG_MALE_WEEKEND_MEMBERS],
+  memberConstraints: JSON.parse(JSON.stringify(DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS)),
   rotationPointers: {
     weekday: 0,
     weekend: 0
@@ -255,6 +484,20 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       if (!hasDonggangFemale) {
         all.push({ ...DEFAULT_DONGGANG_FEMALE_RULE });
       }
+
+      // 確保所有規則皆具備 memberConstraints 屬性；若東港男眾舊規則尚未初始化 memberConstraints，自動帶入預設範例設定
+      all = all.map(r => {
+        if (r.id === 'rule_donggang_male' && r.memberConstraints === undefined) {
+          return {
+            ...r,
+            memberConstraints: JSON.parse(JSON.stringify(DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS))
+          };
+        }
+        return {
+          ...r,
+          memberConstraints: r.memberConstraints || {}
+        };
+      });
 
       const filtered = location ? all.filter(r => r.location === location) : all;
       rules.value = filtered;
@@ -414,15 +657,28 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
     const rotationPointers = { ...(rule?.rotationPointers || {}) };
 
+    // 針對平日/假日雙軌輪替：依據個人星期限制自動跨池路由（例如假日名冊中的人員被設為「排週一」，自動歸入平日池執行排班）
+    const rawWeekdayList = Array.isArray(rule?.weekdayMembers) ? rule.weekdayMembers.map(n => (n || '').trim()).filter(Boolean) : [];
+    const rawWeekendList = Array.isArray(rule?.weekendMembers) ? rule.weekendMembers.map(n => (n || '').trim()).filter(Boolean) : [];
+
+    const effectiveWeekdayPool = [
+      ...rawWeekdayList.filter(name => canMemberWorkTrack(name, false, rule)),
+      ...rawWeekendList.filter(name => !canMemberWorkTrack(name, true, rule) && canMemberWorkTrack(name, false, rule) && !rawWeekdayList.includes(name))
+    ];
+    const effectiveWeekendPool = [
+      ...rawWeekendList.filter(name => canMemberWorkTrack(name, true, rule)),
+      ...rawWeekdayList.filter(name => !canMemberWorkTrack(name, false, rule) && canMemberWorkTrack(name, true, rule) && !rawWeekendList.includes(name))
+    ];
+
     // 若有自訂平日或假日起始志工，設定起始 pointer
-    if (startWeekdayMember && Array.isArray(rule?.weekdayMembers)) {
-      const idx = rule.weekdayMembers.findIndex(n => (n || '').trim() === startWeekdayMember.trim());
+    if (startWeekdayMember && effectiveWeekdayPool.length > 0) {
+      const idx = effectiveWeekdayPool.findIndex(n => (n || '').trim() === startWeekdayMember.trim());
       if (idx >= 0) {
         rotationPointers.weekday = idx;
       }
     }
-    if (startWeekendMember && Array.isArray(rule?.weekendMembers)) {
-      const idx = rule.weekendMembers.findIndex(n => (n || '').trim() === startWeekendMember.trim());
+    if (startWeekendMember && effectiveWeekendPool.length > 0) {
+      const idx = effectiveWeekendPool.findIndex(n => (n || '').trim() === startWeekendMember.trim());
       if (idx >= 0) {
         rotationPointers.weekend = idx;
       }
@@ -633,13 +889,26 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     }
 
     /**
-     * 檢查組別候選名單是否與更高優先級排班（醫院志工 / 宜蘭園區）衝突
+     * 檢查組別候選名單是否與更高優先級排班（醫院志工 / 宜蘭園區）或個人排班硬性限制衝突
      */
     function checkMembersHigherPriorityConflict(memberList, dStr) {
       const res = [];
       memberList.forEach(name => {
         const hit = checkSingleMemberHigherPriorityConflict(name, dStr);
-        if (hit) res.push(hit);
+        if (hit) {
+          res.push(hit);
+          return;
+        }
+        const avail = evaluateMemberAvailability(name, dStr, rule);
+        if (!avail.canAssign) {
+          res.push({
+            memberName: name,
+            cleanName: cleanMemberName(name),
+            conflictType: avail.conflictType || 'constraint',
+            conflictLocation: '個人排班規則',
+            conflictShift: avail.shortReason || avail.reason || '個人排班限制'
+          });
+        }
       });
       return res;
     }
@@ -652,10 +921,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const dateStr = `${y}-${m}-${d}`;
       const dayOfWeek = String(curr.getDay()); // '0' ~ '6'
 
-      // ─── 模式 A：平日/假日雙軌循序循環輪替（依據規則類型判定，支援醫院志工 > 宜蘭園區 > 東港聯絡處） ───
+      // ─── 模式 A：平日/假日雙軌循序循環輪替（依據規則類型判定，支援醫院志工 > 宜蘭園區 > 東港聯絡處，以及個人星期限制/優先星期/前瞻預拉） ───
       if (rule.ruleType === 'weekday_weekend_sequential') {
         const isWeekend = (dayOfWeek === '0' || dayOfWeek === '6');
-        const pool = isWeekend ? (rule.weekendMembers || []) : (rule.weekdayMembers || []);
+        const pool = isWeekend ? effectiveWeekendPool : effectiveWeekdayPool;
         
         if (pool.length === 0) {
           curr.setDate(curr.getDate() + 1);
@@ -669,15 +938,32 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         let conflictAdjustedInfo = null;
         let isPaybackDuty = false;
         let paybackOriginInfo = null;
+        let lookaheadNotice = null;
 
-        // Step 1: 檢查是否有待補班的志工 (因先前高優先級衝突被延後者)
+        // Step 1: 檢查是否有待補班的志工 (因先前高優先級衝突或個人星期限制/偏好被延後者)
         if (pendingSeqOwed[pointerKey] && pendingSeqOwed[pointerKey].length > 0) {
-          const owedIdx = pendingSeqOwed[pointerKey].findIndex(item => {
+          const validOwedCandidates = [];
+          pendingSeqOwed[pointerKey].forEach((item, idx) => {
             const hit = checkSingleMemberHigherPriorityConflict(item.memberName, dateStr);
-            return !hit;
+            if (hit) return;
+            const avail = evaluateMemberAvailability(item.memberName, dateStr, rule);
+            if (!avail.canAssign) return;
+            // 若該員設有優先星期（如排日為主），待補班時僅於其優先星期排入
+            if (avail.hasPreference && !avail.isPreferred) return;
+
+            validOwedCandidates.push({
+              idx,
+              item,
+              avail,
+              // 僅能排單一星期者（如僅排週一）最優先補班，其次為命中優先星期者，最後依 FIFO 順序
+              priorityScore: (avail.allowedWeekdaysCount === 1 ? 0 : (avail.hasPreference && avail.isPreferred ? 1 : 2))
+            });
           });
-          if (owedIdx >= 0) {
-            const owedItem = pendingSeqOwed[pointerKey].splice(owedIdx, 1)[0];
+
+          if (validOwedCandidates.length > 0) {
+            validOwedCandidates.sort((a, b) => a.priorityScore - b.priorityScore || a.idx - b.idx);
+            const bestOwed = validOwedCandidates[0];
+            const owedItem = pendingSeqOwed[pointerKey].splice(bestOwed.idx, 1)[0];
             chosenMember = owedItem.memberName;
             isPaybackDuty = true;
             paybackOriginInfo = owedItem;
@@ -685,7 +971,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           }
         }
 
-        // Step 2: 若今日無人補班，依常規指標指派（自動跳過已預支代班的志工）
+        // Step 2: 若今日無人補班，依常規指標指派（含同週受限人員前瞻預拉 + 自動跳過已預支代班志工）
         if (!chosenMember) {
           // 若 pool[curPointer] 先前已代班過 (在 preServedSeqCredits 中)，扣抵一次並推進指標
           let maxCreditsChecks = pool.length;
@@ -703,66 +989,135 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
           const primaryCandidateName = (pool[curPointer % pool.length] || '').trim();
           const primaryConflictHit = checkSingleMemberHigherPriorityConflict(primaryCandidateName, dateStr);
+          const primaryAvail = evaluateMemberAvailability(primaryCandidateName, dateStr, rule);
 
-          if (!primaryConflictHit) {
-            // 常規當值志工無衝突：直接排定，主指標前進
-            chosenMember = primaryCandidateName;
-            curPointer = (curPointer + 1) % pool.length;
-          } else {
-            // 常規當值志工有高優先級衝突：
-            // 1. 將原定志工記入待補班佇列 pendingSeqOwed，保留其值班義務
-            if (!pendingSeqOwed[pointerKey]) pendingSeqOwed[pointerKey] = [];
-            pendingSeqOwed[pointerKey].push({
-              memberName: primaryCandidateName,
-              sinceDate: dateStr,
-              conflictLocation: primaryConflictHit.conflictLocation,
-              conflictShift: primaryConflictHit.conflictShift
-            });
+          // Step 2A: 同週前瞻預拉 (Lookahead) — 若今日為平日（如週一），且當前指標人員並非「僅能排今日」，
+          // 檢查前方同週順位內（4 個有效順位內）是否有「僅能排今日星期（如排週一）」的志工，提前拉至今日排班並記預支抵扣，避免月底跨月欠班
+          const isPrimaryStrictlyToday = !isWeekend && primaryAvail.canAssign && primaryAvail.allowedWeekdaysCount === 1;
+          if (!isWeekend && !isPrimaryStrictlyToday) {
+            const lookaheadWindow = Math.min(4, pool.length - 1);
+            let checkedValidSteps = 0;
+            for (let step = 1; step < pool.length && checkedValidSteps < lookaheadWindow; step++) {
+              const lookIdx = (curPointer + step) % pool.length;
+              const lookName = (pool[lookIdx] || '').trim();
+              if (!lookName) continue;
+              const cleanLook = cleanMemberName(lookName);
+              const hasCredit = (preServedSeqCredits[pointerKey] || []).some(c => cleanMemberName(c.memberName) === cleanLook);
+              if (hasCredit) continue;
+              checkedValidSteps++;
 
-            conflictAdjustedInfo = {
-              dateStr,
-              originalMember: primaryCandidateName,
-              conflictLocation: primaryConflictHit.conflictLocation,
-              conflictShiftLabel: primaryConflictHit.conflictShift
-            };
-
-            // 推進主指標，避免整個輪值被卡死在同一人
-            curPointer = (curPointer + 1) % pool.length;
-
-            // 2. 挑選代班志工：從剩餘池中挑選「無衝突」且「區間累計值班次數最少」者接替
-            const viableSubs = [];
-            for (let i = 0; i < pool.length; i++) {
-              const subIdx = (curPointer + i) % pool.length;
-              const subName = (pool[subIdx] || '').trim();
-              if (!subName || subName === primaryCandidateName) continue;
-              const subConflict = checkSingleMemberHigherPriorityConflict(subName, dateStr);
-              if (subConflict) continue;
-
-              const weight = getMemberBalanceWeight(subName);
-              const alreadyCredited = (preServedSeqCredits[pointerKey] || []).filter(c => cleanMemberName(c.memberName) === cleanMemberName(subName)).length;
-              viableSubs.push({
-                subName,
-                subIdx,
-                weight: weight + alreadyCredited * 2,
-                distance: i
-              });
+              const lookConflict = checkSingleMemberHigherPriorityConflict(lookName, dateStr);
+              const lookAvail = evaluateMemberAvailability(lookName, dateStr, rule);
+              if (!lookConflict && lookAvail.canAssign && lookAvail.allowedWeekdaysCount === 1) {
+                chosenMember = lookName;
+                if (!preServedSeqCredits[pointerKey]) preServedSeqCredits[pointerKey] = [];
+                preServedSeqCredits[pointerKey].push({
+                  memberName: lookName,
+                  sinceDate: dateStr,
+                  replacedFor: primaryCandidateName,
+                  isLookahead: true
+                });
+                lookaheadNotice = `📌 【個人規則優先】依「${lookName}（${lookAvail.badgeText || '僅排當日'}）」規則於本週提前排入（原順位「${primaryCandidateName}」順延至下一工作日）`;
+                break;
+              }
             }
+          }
 
-            if (viableSubs.length > 0) {
-              // 負載權重越少越優先；平手時依輪替順位距離最近者優先
-              viableSubs.sort((a, b) => a.weight - b.weight || a.distance - b.distance);
-              const bestSub = viableSubs[0];
-              chosenMember = bestSub.subName;
+          // Step 2B: 常規當值志工判定（含高優先級衝突、硬性星期/區間限制、以及軟性優先星期對調）
+          if (!chosenMember) {
+            const canPrimaryTakeToday = !primaryConflictHit && primaryAvail.canAssign && (!primaryAvail.hasPreference || primaryAvail.isPreferred);
 
-              // 將代班者記入 preServedSeqCredits，未來輪到其順位時可抵扣跳過一次
-              if (!preServedSeqCredits[pointerKey]) preServedSeqCredits[pointerKey] = [];
-              preServedSeqCredits[pointerKey].push({
-                memberName: bestSub.subName,
-                sinceDate: dateStr,
-                replacedFor: primaryCandidateName
-              });
-            } else {
+            if (canPrimaryTakeToday) {
+              // 常規當值志工無衝突且符合個人規則：直接排定，主指標前進
               chosenMember = primaryCandidateName;
+              curPointer = (curPointer + 1) % pool.length;
+            } else {
+              // 判斷原因：高優先級衝突 vs 個人排班限制/偏好
+              const reasonLocation = primaryConflictHit
+                ? primaryConflictHit.conflictLocation
+                : (primaryAvail.hasPreference && !primaryAvail.isPreferred ? '個人排班偏好' : '個人排班規則');
+              const reasonShift = primaryConflictHit
+                ? primaryConflictHit.conflictShift
+                : (primaryAvail.shortReason || primaryAvail.reason || '個人排班限制');
+              const isExemptLeave = !primaryConflictHit && !primaryAvail.canAssign && primaryAvail.skipBehavior === 'exempt';
+
+              // 挑選代班志工：從剩餘池中挑選「無高優先級衝突」、「符合個人可排規則」且「負載權重最少」者接替
+              const nextPointer = (curPointer + 1) % pool.length;
+              const viableSubs = [];
+              for (let i = 0; i < pool.length; i++) {
+                const subIdx = (nextPointer + i) % pool.length;
+                const subName = (pool[subIdx] || '').trim();
+                if (!subName || subName === primaryCandidateName) continue;
+                const subConflict = checkSingleMemberHigherPriorityConflict(subName, dateStr);
+                if (subConflict) continue;
+                const subAvail = evaluateMemberAvailability(subName, dateStr, rule);
+                if (!subAvail.canAssign) continue;
+
+                const weight = getMemberBalanceWeight(subName);
+                const alreadyCredited = (preServedSeqCredits[pointerKey] || []).filter(c => cleanMemberName(c.memberName) === cleanMemberName(subName)).length;
+                // 若候選代班者本身在當日不符其軟性偏好，或屬於僅排單一星期者，給予額外權重懲罰以優先保護其偏好
+                const prefPenalty = (subAvail.hasPreference && !subAvail.isPreferred) ? 10 : 0;
+                const strictDayPenalty = (!isWeekend && subAvail.allowedWeekdaysCount === 1) ? 5 : 0;
+                // 若原定志工是因「個人星期限制/偏好（如莊漢僑排日為主、李長和勿排二四六）」調班，優先與緊鄰的下一順位對調
+                const isPersonalRuleSwap = !primaryConflictHit;
+
+                viableSubs.push({
+                  subName,
+                  subIdx,
+                  alreadyCredited,
+                  prefPenalty,
+                  weight: weight + alreadyCredited * 2 + prefPenalty + strictDayPenalty,
+                  distance: i,
+                  isPersonalRuleSwap
+                });
+              }
+
+              if (viableSubs.length > 0) {
+                viableSubs.sort((a, b) => {
+                  if (a.prefPenalty !== b.prefPenalty) return a.prefPenalty - b.prefPenalty;
+                  if (a.isPersonalRuleSwap) {
+                    return a.alreadyCredited - b.alreadyCredited || a.distance - b.distance || a.weight - b.weight;
+                  }
+                  return a.weight - b.weight || a.distance - b.distance;
+                });
+                const bestSub = viableSubs[0];
+                chosenMember = bestSub.subName;
+
+                // 推進主指標
+                curPointer = nextPointer;
+
+                if (!isExemptLeave) {
+                  // 1. 將原定志工記入待補班佇列 pendingSeqOwed，於下一個可排日優先補班
+                  if (!pendingSeqOwed[pointerKey]) pendingSeqOwed[pointerKey] = [];
+                  pendingSeqOwed[pointerKey].push({
+                    memberName: primaryCandidateName,
+                    sinceDate: dateStr,
+                    conflictLocation: reasonLocation,
+                    conflictShift: reasonShift
+                  });
+
+                  // 2. 將代班者記入 preServedSeqCredits，未來輪到其順位時可抵扣跳過一次
+                  if (!preServedSeqCredits[pointerKey]) preServedSeqCredits[pointerKey] = [];
+                  preServedSeqCredits[pointerKey].push({
+                    memberName: bestSub.subName,
+                    sinceDate: dateStr,
+                    replacedFor: primaryCandidateName
+                  });
+                }
+
+                conflictAdjustedInfo = {
+                  dateStr,
+                  originalMember: primaryCandidateName,
+                  conflictLocation: reasonLocation,
+                  conflictShiftLabel: reasonShift,
+                  isPersonalRule: !primaryConflictHit,
+                  isExemptLeave
+                };
+              } else {
+                // 若無任何代班人選：若原定志工僅為「軟性優先星期（如排日為主）」，則由本人兜底值班
+                chosenMember = primaryCandidateName;
+                curPointer = nextPointer;
+              }
             }
           }
         }
@@ -770,7 +1125,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
         rotationPointers[pointerKey] = curPointer;
 
         if (conflictAdjustedInfo) {
-          const priorityTarget = conflictAdjustedInfo.conflictLocation === '醫院志工' ? '醫院志工' : `${conflictAdjustedInfo.conflictLocation}排班`;
+          const isPersonal = conflictAdjustedInfo.isPersonalRule;
+          const priorityTarget = isPersonal
+            ? `個人規則（${conflictAdjustedInfo.conflictShiftLabel}）`
+            : (conflictAdjustedInfo.conflictLocation === '醫院志工' ? '醫院志工' : `${conflictAdjustedInfo.conflictLocation}排班`);
           conflicts.push({
             dateStr,
             memberName: conflictAdjustedInfo.originalMember,
@@ -779,7 +1137,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             currentShift: rule.shiftLabel || '男眾班',
             otherLocation: conflictAdjustedInfo.conflictLocation,
             otherShift: conflictAdjustedInfo.conflictShiftLabel,
-            suggestAction: `已優先保留${priorityTarget}，${location}排班由「${chosenMember}」代班輪值（原定志工將於下次優先補班）`
+            isPersonalRule: isPersonal,
+            suggestAction: conflictAdjustedInfo.isExemptLeave
+              ? `依${priorityTarget}免排並跳過當次輪值，由「${chosenMember}」接替`
+              : `已依${priorityTarget}調換，${location}排班由「${chosenMember}」先行代班（原定志工將於可排日優先補班）`
           });
         }
 
@@ -836,10 +1197,12 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           isPayback: isPaybackDuty,
           adjustedFrom: conflictAdjustedInfo?.originalMember || null,
           adjustedNotice: isPaybackDuty
-            ? `🔄 【優先補班】補回原定 ${paybackOriginInfo?.sinceDate} 因【${paybackOriginInfo?.conflictLocation}】衝突之班次`
-            : (conflictAdjustedInfo
-              ? `⚠️ 原定「${conflictAdjustedInfo.originalMember}」因參與【${conflictAdjustedInfo.conflictLocation}】優先，已由「${chosenMember}」代班（原志工保留優先補班）`
-              : null)
+            ? `🔄 【優先補班】補回原定 ${paybackOriginInfo?.sinceDate} 因【${paybackOriginInfo?.conflictShift || paybackOriginInfo?.conflictLocation}】順延之班次`
+            : (lookaheadNotice || (conflictAdjustedInfo
+              ? (conflictAdjustedInfo.isPersonalRule
+                ? `📌 原定「${conflictAdjustedInfo.originalMember}」因【${conflictAdjustedInfo.conflictShiftLabel}】，已由「${chosenMember}」調換代班（原志工於可排日優先補班）`
+                : `⚠️ 原定「${conflictAdjustedInfo.originalMember}」因參與【${conflictAdjustedInfo.conflictLocation}】優先，已由「${chosenMember}」代班（原志工保留優先補班）`)
+              : null))
         });
 
         curr.setDate(curr.getDate() + 1);

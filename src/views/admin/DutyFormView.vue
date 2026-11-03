@@ -280,7 +280,7 @@
                             :key="m.id" 
                             :value="m.id"
                           >
-                            {{ m.name }} {{ getMemberOrgPathText(m.id) }}{{ isMemberInHospitalOnDate(slot.dutyDate, m.name) ? ' [🏥當日醫院志工]' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
+                            {{ m.name }} {{ getMemberOrgPathText(m.id) }}{{ getMemberOptionConstraintText(slot, m.name) }}{{ isMemberInHospitalOnDate(slot.dutyDate, m.name) ? ' [🏥當日醫院志工]' : '' }} [本月: {{ getMemberShiftCount(m.name) }}班]
                           </option>
 
                           <!-- 手動輸入未建檔志工選項 -->
@@ -302,6 +302,9 @@
 
                       <span v-if="slotConflictInfo(slot)" class="text-xs text-danger font-bold block mt-1">
                         ⚠️ {{ slotConflictInfo(slot) }}
+                      </span>
+                      <span v-else-if="slotConstraintWarningInfo(slot)" class="text-xs text-amber-700 font-bold block mt-1">
+                        📌 {{ slotConstraintWarningInfo(slot) }}
                       </span>
                     </div>
 
@@ -740,7 +743,16 @@
               <li v-for="(c, idx) in autoPreviewResult.conflicts" :key="idx">
                 <span class="font-bold text-gray-900 mr-1">【{{ c.dateStr }}】</span>
                 <span v-if="c.isSwapped" class="text-amber-900 font-bold">
-                  ⚠️ 【{{ (c.otherLocation || '').includes('醫院志工') ? '醫院志工' : '跨場地' }}衝突自動調換】原定{{ c.originalTeamName }}之成員（{{ c.memberName }}）與{{ c.otherLocation }}排班衝突，已依規則與同星期後續【{{ c.swappedTeamName }}】對換值班
+                  ⚠️ 【{{ (c.otherLocation || '').includes('醫院志工') ? '醫院志工' : ((c.otherLocation || '').includes('個人排班') ? '個人彈性限制' : '跨場地') }}衝突自動調換】原定{{ c.originalTeamName }}之成員（{{ c.memberName }}）與{{ c.otherLocation }}衝突，已依規則與同星期後續【{{ c.swappedTeamName }}】對換值班
+                </span>
+                <span v-else-if="c.isPersonalRule">
+                  志工「<strong class="text-primary">{{ c.memberName }}</strong>」設有【{{ c.otherLocation }}：{{ c.otherShift }}】
+                  <span v-if="c.replaceName" class="text-emerald-700 font-bold ml-1">
+                    ➔ 已自動由「{{ c.replaceName }}」先行調換代班（原志工於可排日優先補班）
+                  </span>
+                  <span v-else-if="c.suggestAction" class="text-emerald-700 font-bold ml-1">
+                    ➔ {{ c.suggestAction }}
+                  </span>
                 </span>
                 <span v-else>
                   志工「<strong class="text-primary">{{ c.memberName }}</strong>」原已排在【{{ c.otherLocation }} - {{ c.otherShift }}】
@@ -1001,7 +1013,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import DutyExportModal from '@/components/duty/DutyExportModal.vue';
 import HospitalVolunteerModal from '@/components/duty/HospitalVolunteerModal.vue';
 import { useDutiesStore } from '@/stores/duties';
-import { useDutyRulesStore, getRuleQuota } from '@/stores/dutyRules';
+import { useDutyRulesStore, getRuleQuota, evaluateMemberAvailability, getMemberConstraint, formatMemberConstraintBadge } from '@/stores/dutyRules';
 import { useMembersStore } from '@/stores/members';
 import { useOrgsStore } from '@/stores/orgs';
 import { useToast } from '@/composables/useToast';
@@ -1152,6 +1164,35 @@ function dayHasConflict(dateStr) {
 
 function slotConflictInfo(slot) {
   return conflictMap.value.get(slot.id) || '';
+}
+
+function findRuleForSlot(slot) {
+  if (!slot) return null;
+  const rules = dutyRulesStore.rules || [];
+  return rules.find(r => r.location === selectedLocation.value && r.shiftId === slot.shiftId && r.enabled !== false)
+    || rules.find(r => r.location === selectedLocation.value && r.genderType === slot.genderType && r.enabled !== false)
+    || null;
+}
+
+function getMemberOptionConstraintText(slot, memberName) {
+  if (!slot || !memberName) return '';
+  const rule = findRuleForSlot(slot);
+  if (!rule) return '';
+  const c = getMemberConstraint(rule, memberName);
+  if (!c) return '';
+  const badge = formatMemberConstraintBadge(c);
+  return badge ? ` [⚡${badge}]` : '';
+}
+
+function slotConstraintWarningInfo(slot) {
+  if (!slot || !slot.memberName || !slot.dutyDate) return '';
+  const rule = findRuleForSlot(slot);
+  if (!rule) return '';
+  const avail = evaluateMemberAvailability(slot.memberName, slot.dutyDate, rule);
+  if (!avail.canAssign) {
+    return `${avail.reason || avail.shortReason}`;
+  }
+  return '';
 }
 
 // 志工所屬組織路徑文字快取 Map，杜絕在各席位 option 渲染時重複遞迴搜尋 (30,000x 加速)

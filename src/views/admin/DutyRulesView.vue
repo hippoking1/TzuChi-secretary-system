@@ -345,10 +345,35 @@
                 >
                   <span class="chip-idx">{{ idx + 1 }}.</span>
                   <span class="chip-name font-bold">{{ member }}</span>
-                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
+                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
                     {{ getMemberOrgBadgeByName(member) }}
                   </span>
+                  <span 
+                    v-if="getMemberConstraintBadgeText(member)" 
+                    class="constraint-mini-badge cursor-pointer"
+                    :class="getMemberConstraintBadgeClass(member)"
+                    title="點擊修改個人排班彈性限制"
+                    @click="openConstraintModal(member)"
+                  >
+                    {{ getMemberConstraintBadgeText(member) }}
+                  </span>
                   <div class="chip-actions">
+                    <button 
+                      type="button" 
+                      class="btn-chip-arrow" 
+                      @click="openConstraintModal(member)"
+                      title="設定個人排班彈性規則 (如排週一、勿排二四六等)"
+                    >
+                      ⚙️
+                    </button>
+                    <button 
+                      type="button" 
+                      class="btn-chip-arrow" 
+                      @click="transferSequentialMember(activeRule.weekdayMembers, activeRule.weekendMembers, idx, '假日')"
+                      title="移至假日輪值名冊"
+                    >
+                      ⇄
+                    </button>
                     <button 
                       type="button" 
                       class="btn-chip-arrow" 
@@ -441,10 +466,35 @@
                 >
                   <span class="chip-idx">{{ idx + 1 }}.</span>
                   <span class="chip-name font-bold">{{ member }}</span>
-                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
+                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
                     {{ getMemberOrgBadgeByName(member) }}
                   </span>
+                  <span 
+                    v-if="getMemberConstraintBadgeText(member)" 
+                    class="constraint-mini-badge cursor-pointer"
+                    :class="getMemberConstraintBadgeClass(member)"
+                    title="點擊修改個人排班彈性限制"
+                    @click="openConstraintModal(member)"
+                  >
+                    {{ getMemberConstraintBadgeText(member) }}
+                  </span>
                   <div class="chip-actions">
+                    <button 
+                      type="button" 
+                      class="btn-chip-arrow" 
+                      @click="openConstraintModal(member)"
+                      title="設定個人排班彈性規則 (如排六日、排日為主等)"
+                    >
+                      ⚙️
+                    </button>
+                    <button 
+                      type="button" 
+                      class="btn-chip-arrow" 
+                      @click="transferSequentialMember(activeRule.weekendMembers, activeRule.weekdayMembers, idx, '平日')"
+                      title="移至平日輪值名冊"
+                    >
+                      ⇄
+                    </button>
                     <button 
                       type="button" 
                       class="btn-chip-arrow" 
@@ -591,9 +641,26 @@
                 >
                   <span class="chip-index">{{ mIdx + 1 }}.</span>
                   <span class="chip-text">{{ member }}</span>
-                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-1">
+                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
                     {{ getMemberOrgBadgeByName(member) }}
                   </span>
+                  <span 
+                    v-if="getMemberConstraintBadgeText(member)" 
+                    class="constraint-mini-badge cursor-pointer ml-1"
+                    :class="getMemberConstraintBadgeClass(member)"
+                    title="點擊修改個人排班彈性限制"
+                    @click="openConstraintModal(member)"
+                  >
+                    {{ getMemberConstraintBadgeText(member) }}
+                  </span>
+                  <button 
+                    type="button" 
+                    class="btn-chip-arrow ml-1" 
+                    title="設定個人排班彈性限制"
+                    @click="openConstraintModal(member)"
+                  >
+                    ⚙️
+                  </button>
                   <button 
                     type="button" 
                     class="chip-delete-btn" 
@@ -644,6 +711,290 @@
                 ➕ 在{{ weekdays.find(w => w.key === activeWeekday)?.label }}新增一組
               </button>
             </div>
+          </div>
+        </div>
+
+        <!-- ─── 個人排班彈性限制設定區 (適用所有規則：僅排星期 / 勿排星期 / 優先星期 / 臨時請假) ─── -->
+        <div class="card p-4 mt-6 border border-indigo-200 bg-indigo-50/30 rounded-lg">
+          <div class="flex items-center justify-between flex-wrap gap-3 mb-3 border-b border-indigo-100 pb-3">
+            <div>
+              <h3 class="font-bold text-sm text-indigo-950 m-0 flex items-center gap-1.5">
+                <span>⚡ 個人排班彈性限制設定（特定星期可排 / 勿排 / 優先星期 / 臨時請假）</span>
+                <span class="badge badge-primary text-xs">共 {{ activeConstraintEntries.length }} 位設定</span>
+              </h3>
+              <p class="text-xs text-muted m-0 mt-1">
+                設定個別志工之出勤彈性（例：排日為主、排六日、勿排二四六、排週一等）。自動排班時將智慧提前預拉或由下一位代班並於可排日優先補班；點擊上方名冊人員旁的「⚙️」亦可直接設定。
+              </p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button
+                v-if="activeRule.id === 'rule_donggang_male'"
+                type="button"
+                class="btn btn-xs btn-outline border-indigo-300 text-indigo-800 hover:bg-indigo-100"
+                @click="handleApplyDefaultDonggangConstraints"
+                title="載入預設彈性規則（莊漢僑排日為主、李自強/薛登霖排六日、李長和勿排二四六、吳世明勿排一二四六、李世清/林子民排週一）"
+              >
+                🔄 載入預設範例限制
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-primary flex items-center gap-1"
+                @click="openConstraintModal('')"
+              >
+                <span>➕ 新增 / 設定志工彈性限制</span>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="activeConstraintEntries.length === 0" class="text-xs text-muted py-4 text-center bg-white rounded border border-dashed">
+            目前尚未設定個人排班彈性限制，可點擊上方名冊人員旁的「⚙️」或點擊「➕ 新增 / 設定志工彈性限制」進行設定。
+          </div>
+
+          <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div
+              v-for="entry in activeConstraintEntries"
+              :key="entry.memberName"
+              class="p-2.5 bg-white border rounded-lg flex items-center justify-between gap-2 shadow-2xs hover:border-indigo-300 transition-colors"
+            >
+              <div class="flex flex-col gap-1 min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <strong class="text-sm text-gray-900">{{ entry.memberName }}</strong>
+                  <span class="constraint-mini-badge" :class="getMemberConstraintBadgeClass(entry.memberName)">
+                    {{ entry.badgeText }}
+                  </span>
+                  <span v-if="entry.constraint.skipBehavior === 'exempt'" class="badge badge-gray text-[10px] py-0 px-1.5">
+                    免補班
+                  </span>
+                </div>
+                <div v-if="entry.constraint.dateRanges?.length > 0" class="text-[11px] text-amber-800">
+                  📅 請假免排：{{ entry.constraint.dateRanges.map(r => `${r.startDate}~${r.endDate}${r.reason ? '(' + r.reason + ')' : ''}`).join('、') }}
+                </div>
+                <div v-else-if="entry.constraint.note && entry.constraint.note !== entry.badgeText" class="text-[11px] text-muted truncate">
+                  備註：{{ entry.constraint.note }}
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline py-0.5 px-2"
+                  title="編輯此志工限制"
+                  @click="openConstraintModal(entry.memberName)"
+                >
+                  ✏️
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline text-danger py-0.5 px-2"
+                  title="移除此志工限制"
+                  @click="removeMemberConstraint(entry.memberName)"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 設定志工個人排班彈性限制 Modal -->
+    <div v-if="showConstraintModal" class="modal-backdrop" @click="showConstraintModal = false">
+      <div class="modal-content" style="max-width: 580px;" @click.stop>
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title font-bold text-base flex items-center gap-1.5">
+              <span>⚡ 設定個人排班彈性限制</span>
+              <span v-if="constraintForm.memberName" class="badge badge-primary text-xs">{{ constraintForm.memberName }}</span>
+            </h3>
+            <p class="text-xs text-muted mt-0.5">
+              設定後請記得點擊規則頁面的「💾 儲存此規則」以永久保存至資料庫
+            </p>
+          </div>
+          <button class="modal-close" @click="showConstraintModal = false">×</button>
+        </div>
+
+        <div class="modal-body flex flex-col gap-4">
+          <!-- 1. 選擇志工姓名 -->
+          <div class="form-group mb-0">
+            <label class="form-label font-bold text-xs">1. 選擇或輸入志工姓名：</label>
+            <div class="flex items-center gap-2 flex-wrap">
+              <select
+                v-model="constraintForm.memberName"
+                class="form-select form-select-sm flex-1 min-w-[200px]"
+                @change="onConstraintMemberSelect(constraintForm.memberName)"
+              >
+                <option value="">-- 從當前規則名冊選擇志工 --</option>
+                <option v-for="name in currentRuleAllRosterNames" :key="name" :value="name">
+                  {{ name }} {{ getMemberConstraintBadgeText(name) ? `(${getMemberConstraintBadgeText(name)})` : '' }}
+                </option>
+              </select>
+              <input
+                v-model="constraintForm.memberName"
+                type="text"
+                class="form-input form-input-sm"
+                style="width: 160px;"
+                placeholder="或直接輸入姓名..."
+              />
+            </div>
+          </div>
+
+          <!-- 2. 快速常用範本一鍵套用 -->
+          <div class="p-2.5 bg-indigo-50/60 border border-indigo-200 rounded-lg">
+            <span class="text-xs font-bold text-indigo-950 block mb-1.5">💡 快速套用常見彈性狀況：</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button type="button" class="btn btn-xs btn-outline bg-white" @click="applyConstraintPreset('preferred', [0], '排日為主')">
+                ⭐ 排日為主
+              </button>
+              <button type="button" class="btn btn-xs btn-outline bg-white" @click="applyConstraintPreset('allowed', [6, 0], '排六日')">
+                📌 排六日
+              </button>
+              <button type="button" class="btn btn-xs btn-outline bg-white" @click="applyConstraintPreset('allowed', [1], '排週一')">
+                📌 排週一
+              </button>
+              <button type="button" class="btn btn-xs btn-outline bg-white" @click="applyConstraintPreset('excluded', [2, 4, 6], '勿排二四六')">
+                🚫 勿排二四六
+              </button>
+              <button type="button" class="btn btn-xs btn-outline bg-white" @click="applyConstraintPreset('excluded', [1, 2, 4, 6], '勿排一二四六')">
+                🚫 勿排一二四六
+              </button>
+              <button type="button" class="btn btn-xs btn-outline bg-white text-gray-600" @click="applyConstraintPreset('none', [], '')">
+                ↺ 清除星期限制
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. 星期限制模式與勾選 -->
+          <div class="p-3 border rounded-lg bg-gray-50/60">
+            <label class="form-label font-bold text-xs mb-2 block">2. 星期出勤規則模式：</label>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+              <label class="mode-radio-card" :class="{ 'mode-radio-active': constraintForm.mode === 'none' }">
+                <input v-model="constraintForm.mode" type="radio" value="none" class="hidden" />
+                <span class="font-bold text-xs">✅ 不限星期</span>
+                <small class="text-[10px] text-muted block">依常規順序輪班</small>
+              </label>
+
+              <label class="mode-radio-card" :class="{ 'mode-radio-active': constraintForm.mode === 'allowed' }">
+                <input v-model="constraintForm.mode" type="radio" value="allowed" class="hidden" />
+                <span class="font-bold text-xs text-blue-700">📌 僅排星期</span>
+                <small class="text-[10px] text-muted block">只排勾選的星期</small>
+              </label>
+
+              <label class="mode-radio-card" :class="{ 'mode-radio-active': constraintForm.mode === 'excluded' }">
+                <input v-model="constraintForm.mode" type="radio" value="excluded" class="hidden" />
+                <span class="font-bold text-xs text-red-700">🚫 勿排星期</span>
+                <small class="text-[10px] text-muted block">避開勾選的星期</small>
+              </label>
+
+              <label class="mode-radio-card" :class="{ 'mode-radio-active': constraintForm.mode === 'preferred' }">
+                <input v-model="constraintForm.mode" type="radio" value="preferred" class="hidden" />
+                <span class="font-bold text-xs text-amber-800">⭐ 優先星期</span>
+                <small class="text-[10px] text-muted block">以勾選星期為主</small>
+              </label>
+            </div>
+
+            <div v-if="constraintForm.mode !== 'none'" class="mt-2">
+              <span class="text-xs font-bold text-gray-700 block mb-1.5">
+                請點選目標星期（{{ constraintForm.mode === 'allowed' ? '僅排以下勾選之星期' : (constraintForm.mode === 'excluded' ? '勿排以下勾選之星期' : '優先排於以下勾選之星期') }}）：
+              </span>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button
+                  v-for="d in weekdays"
+                  :key="d.key"
+                  type="button"
+                  class="day-toggle-btn"
+                  :class="{
+                    'day-toggle-allowed': constraintForm.mode === 'allowed' && constraintForm.days.includes(Number(d.key)),
+                    'day-toggle-excluded': constraintForm.mode === 'excluded' && constraintForm.days.includes(Number(d.key)),
+                    'day-toggle-preferred': constraintForm.mode === 'preferred' && constraintForm.days.includes(Number(d.key))
+                  }"
+                  @click="toggleConstraintDay(Number(d.key))"
+                >
+                  {{ d.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. 遇限制時之補班方式 -->
+          <div class="p-3 border rounded-lg bg-white">
+            <label class="form-label font-bold text-xs mb-1.5 block">3. 遇不可排日之調班/補班方式：</label>
+            <div class="flex flex-col gap-1.5 text-xs">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input v-model="constraintForm.skipBehavior" type="radio" value="defer_payback" />
+                <span>
+                  <strong>🔄 順延優先補班（預設推薦）</strong>
+                  <span class="text-muted ml-1">— 當日由下一位代班，本人保留於下一個可排日優先補班，確保總班次公平</span>
+                </span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input v-model="constraintForm.skipBehavior" type="radio" value="exempt" />
+                <span>
+                  <strong>⏭️ 直接跳過免補班</strong>
+                  <span class="text-muted ml-1">— 適用長期請假或特殊減免，跳過當次輪值且不累積待補班</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 5. 特定日期區間不排班 (臨時請假/出國) -->
+          <div class="p-3 border rounded-lg bg-amber-50/30 border-amber-200">
+            <div class="flex items-center justify-between mb-2">
+              <label class="form-label font-bold text-xs text-amber-950 m-0">4. 特定日期區間不排班（選填，如臨時請假/出國）：</label>
+              <button type="button" class="btn btn-xs btn-outline" @click="addConstraintDateRange">
+                ➕ 新增請假區間
+              </button>
+            </div>
+            <div v-if="constraintForm.dateRanges.length === 0" class="text-xs text-muted">
+              無特定請假區間（僅套用上方常態星期規則）
+            </div>
+            <div v-else class="space-y-2">
+              <div
+                v-for="(rng, rIdx) in constraintForm.dateRanges"
+                :key="rIdx"
+                class="flex items-center gap-1.5 flex-wrap bg-white p-2 rounded border text-xs"
+              >
+                <input v-model="rng.startDate" type="date" class="form-input form-input-sm" style="width: 135px;" />
+                <span>至</span>
+                <input v-model="rng.endDate" type="date" class="form-input form-input-sm" style="width: 135px;" />
+                <input v-model="rng.reason" type="text" class="form-input form-input-sm flex-1 min-w-[110px]" placeholder="原因 (如: 請假)" />
+                <button type="button" class="btn btn-xs btn-outline text-danger" @click="constraintForm.dateRanges.splice(rIdx, 1)">
+                  ×
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. 備註說明 -->
+          <div class="form-group mb-0">
+            <label class="form-label font-bold text-xs">5. 規則備註說明（選填）：</label>
+            <input v-model="constraintForm.note" type="text" class="form-input form-input-sm" placeholder="例：排日為主、勿排二四六..." />
+          </div>
+        </div>
+
+        <div class="modal-footer flex items-center justify-between">
+          <button
+            v-if="constraintForm.memberName && hasExistingConstraint(constraintForm.memberName)"
+            type="button"
+            class="btn btn-outline btn-danger btn-sm"
+            @click="removeMemberConstraint(constraintForm.memberName); showConstraintModal = false"
+          >
+            🗑️ 移除此人限制
+          </button>
+          <span v-else></span>
+
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn btn-outline btn-sm" @click="showConstraintModal = false">
+              取消
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              :disabled="!constraintForm.memberName.trim()"
+              @click="handleSaveConstraintModal"
+            >
+              ✓ 套用此人彈性設定
+            </button>
           </div>
         </div>
       </div>
@@ -756,8 +1107,12 @@ import {
   useDutyRulesStore, 
   DEFAULT_HEQI2_CAMPUS_FEMALE_RULE, 
   DEFAULT_DONGGANG_MALE_RULE, 
+  DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS,
   DEFAULT_WEEK_ROTATION,
-  getRuleQuota
+  getRuleQuota,
+  normalizeMemberConstraint,
+  formatMemberConstraintBadge,
+  getMemberConstraint
 } from '@/stores/dutyRules';
 import { getStandardShiftQuota } from '@/stores/duties';
 import { useMembersStore } from '@/stores/members';
@@ -1003,6 +1358,16 @@ function removeSequentialMember(list, idx) {
   }
 }
 
+function transferSequentialMember(fromList, toList, idx, targetTrackLabel = '另一名冊') {
+  if (!fromList || !toList || idx < 0 || idx >= fromList.length) return;
+  const memberName = fromList[idx];
+  fromList.splice(idx, 1);
+  if (!toList.includes(memberName)) {
+    toList.push(memberName);
+  }
+  toast.info(`已將「${memberName}」移至${targetTrackLabel}輪值名冊（請記得點擊儲存規則）`);
+}
+
 function onSelectMemberToList(list, name, clearFn) {
   if (!name || !list) return;
   if (!list.includes(name)) {
@@ -1016,6 +1381,183 @@ function onAddMemberToList(list, name, clearFn) {
   if (!clean || !list) return;
   list.push(clean);
   if (clearFn) clearFn();
+}
+
+// ─── 個人排班彈性限制管理 ───
+const showConstraintModal = ref(false);
+const constraintForm = ref({
+  memberName: '',
+  mode: 'none', // 'none' | 'allowed' | 'excluded' | 'preferred'
+  days: [],
+  skipBehavior: 'defer_payback',
+  dateRanges: [],
+  note: ''
+});
+
+const currentRuleAllRosterNames = computed(() => {
+  if (!activeRule.value) return [];
+  const names = new Set();
+  if (Array.isArray(activeRule.value.weekdayMembers)) {
+    activeRule.value.weekdayMembers.forEach(n => { if (n) names.add(n.trim()); });
+  }
+  if (Array.isArray(activeRule.value.weekendMembers)) {
+    activeRule.value.weekendMembers.forEach(n => { if (n) names.add(n.trim()); });
+  }
+  if (activeRule.value.weekdayTeams && typeof activeRule.value.weekdayTeams === 'object') {
+    Object.values(activeRule.value.weekdayTeams).forEach(teams => {
+      if (Array.isArray(teams)) {
+        teams.forEach(t => {
+          (t.members || []).forEach(n => { if (n) names.add(n.trim()); });
+        });
+      }
+    });
+  }
+  if (activeRule.value.memberConstraints && typeof activeRule.value.memberConstraints === 'object') {
+    Object.keys(activeRule.value.memberConstraints).forEach(n => { if (n) names.add(n.trim()); });
+  }
+  return Array.from(names);
+});
+
+const activeConstraintEntries = computed(() => {
+  if (!activeRule.value?.memberConstraints || typeof activeRule.value.memberConstraints !== 'object') {
+    return [];
+  }
+  const entries = [];
+  for (const [memberName, raw] of Object.entries(activeRule.value.memberConstraints)) {
+    const normalized = normalizeMemberConstraint(raw);
+    if (normalized) {
+      entries.push({
+        memberName,
+        constraint: normalized,
+        badgeText: formatMemberConstraintBadge(normalized)
+      });
+    }
+  }
+  return entries;
+});
+
+function getMemberConstraintBadgeText(name) {
+  if (!name || !activeRule.value) return '';
+  const c = getMemberConstraint(activeRule.value, name);
+  return c ? formatMemberConstraintBadge(c) : '';
+}
+
+function getMemberConstraintBadgeClass(name) {
+  if (!name || !activeRule.value) return '';
+  const c = getMemberConstraint(activeRule.value, name);
+  if (!c) return '';
+  if (c.excludedDays.length > 0) return 'badge-constraint-excluded';
+  if (c.allowedDays.length > 0) return 'badge-constraint-allowed';
+  if (c.preferredDays.length > 0) return 'badge-constraint-preferred';
+  return 'badge-constraint-leave';
+}
+
+function hasExistingConstraint(name) {
+  if (!name || !activeRule.value?.memberConstraints) return false;
+  return !!normalizeMemberConstraint(activeRule.value.memberConstraints[name.trim()]);
+}
+
+function loadConstraintIntoForm(name) {
+  const clean = (name || '').trim();
+  const c = clean && activeRule.value ? getMemberConstraint(activeRule.value, clean) : null;
+  if (c) {
+    constraintForm.value = {
+      memberName: clean,
+      mode: c.mode || 'none',
+      days: [...(c.days || [])],
+      skipBehavior: c.skipBehavior || 'defer_payback',
+      dateRanges: JSON.parse(JSON.stringify(c.dateRanges || [])),
+      note: c.note || ''
+    };
+  } else {
+    constraintForm.value = {
+      memberName: clean,
+      mode: 'none',
+      days: [],
+      skipBehavior: 'defer_payback',
+      dateRanges: [],
+      note: ''
+    };
+  }
+}
+
+function openConstraintModal(memberName = '') {
+  loadConstraintIntoForm(memberName);
+  showConstraintModal.value = true;
+}
+
+function onConstraintMemberSelect(memberName) {
+  loadConstraintIntoForm(memberName);
+}
+
+function applyConstraintPreset(mode, days = [], note = '') {
+  constraintForm.value.mode = mode;
+  constraintForm.value.days = [...days];
+  constraintForm.value.note = note;
+}
+
+function toggleConstraintDay(dayNum) {
+  const idx = constraintForm.value.days.indexOf(dayNum);
+  if (idx >= 0) {
+    constraintForm.value.days.splice(idx, 1);
+  } else {
+    constraintForm.value.days.push(dayNum);
+  }
+}
+
+function addConstraintDateRange() {
+  const today = new Date().toISOString().substring(0, 10);
+  constraintForm.value.dateRanges.push({
+    startDate: today,
+    endDate: today,
+    reason: '請假'
+  });
+}
+
+function handleSaveConstraintModal() {
+  if (!activeRule.value) return;
+  const cleanName = (constraintForm.value.memberName || '').trim();
+  if (!cleanName) return;
+
+  if (!activeRule.value.memberConstraints) {
+    activeRule.value.memberConstraints = {};
+  }
+
+  const normalized = normalizeMemberConstraint({
+    mode: constraintForm.value.mode,
+    days: constraintForm.value.days,
+    skipBehavior: constraintForm.value.skipBehavior,
+    dateRanges: constraintForm.value.dateRanges,
+    note: constraintForm.value.note
+  });
+
+  if (normalized) {
+    activeRule.value.memberConstraints[cleanName] = normalized;
+    toast.success(`已設定「${cleanName}」的彈性規則：${formatMemberConstraintBadge(normalized)}（請記得點擊儲存此規則）`);
+  } else {
+    delete activeRule.value.memberConstraints[cleanName];
+    toast.info(`已清除「${cleanName}」的個人排班限制`);
+  }
+  showConstraintModal.value = false;
+}
+
+function removeMemberConstraint(memberName) {
+  if (!activeRule.value?.memberConstraints || !memberName) return;
+  const clean = memberName.trim();
+  delete activeRule.value.memberConstraints[clean];
+  toast.info(`已移除「${clean}」的個人排班限制（請記得點擊儲存此規則）`);
+}
+
+function handleApplyDefaultDonggangConstraints() {
+  if (!activeRule.value) return;
+  if (!activeRule.value.memberConstraints) {
+    activeRule.value.memberConstraints = {};
+  }
+  Object.assign(
+    activeRule.value.memberConstraints,
+    JSON.parse(JSON.stringify(DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS))
+  );
+  toast.success('已載入東港男眾預設彈性規則（共 7 位師兄設定），請點擊「💾 儲存此規則」保存！');
 }
 
 // ─── 星期×組別操作 ───
@@ -1385,6 +1927,84 @@ onMounted(async () => {
 }
 .chip-delete-btn:hover {
   color: var(--danger);
+}
+
+/* 個人彈性限制徽章與星期按鈕樣式 */
+.constraint-mini-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.08rem 0.42rem;
+  border-radius: 9999px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.badge-constraint-allowed {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+.badge-constraint-excluded {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+.badge-constraint-preferred {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+.badge-constraint-leave {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #d8b4fe;
+}
+
+.mode-radio-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.6rem;
+  background: #ffffff;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mode-radio-card:hover {
+  border-color: var(--primary-400);
+}
+.mode-radio-active {
+  border-color: var(--primary-600);
+  background: var(--primary-50);
+  box-shadow: 0 0 0 1px var(--primary-500);
+}
+
+.day-toggle-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-300);
+  background: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--gray-700);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.day-toggle-allowed {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #1d4ed8;
+}
+.day-toggle-excluded {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #b91c1c;
+}
+.day-toggle-preferred {
+  background: #d97706;
+  color: #ffffff;
+  border-color: #b45309;
 }
 
 .modal-backdrop {
