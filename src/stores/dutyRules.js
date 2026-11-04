@@ -1227,12 +1227,6 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           continue;
         }
 
-        if (matrixSlot) {
-          matrixSlot.memberName = chosenMember;
-          matrixSlot.memberId = memberObj ? memberObj.id : (chosenMember || '');
-          matrixSlot.status = chosenMember ? '已排班' : '未指派';
-        }
-
         const slotItem = {
           id: `${location}_${dateStr}_${rule.shiftId || 'DG_M'}_${slotNumber}`,
           location,
@@ -1250,6 +1244,27 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           memberName: chosenMember || '',
           status: chosenMember ? '已排班' : '未指派'
         };
+
+        if (matrixSlot) {
+          matrixSlot.memberName = chosenMember;
+          matrixSlot.memberId = memberObj ? memberObj.id : (chosenMember || '');
+          matrixSlot.status = chosenMember ? '已排班' : '未指派';
+        } else {
+          newMatrix.push(slotItem);
+        }
+
+        // 模式 A 覆蓋模式下若該日有大於 1 的席位，清理並標記刪除
+        if (overwriteStrategy === 'overwrite') {
+          const extraSlots = daySlotsInMatrix.filter(s => s.slotIndex > 1);
+          extraSlots.forEach(extra => {
+            const rmIdx = newMatrix.findIndex(s => s.id === extra.id);
+            if (rmIdx >= 0) {
+              newMatrix.splice(rmIdx, 1);
+            }
+            deletedSlots.push({ id: extra.id });
+          });
+        }
+
         allGeneratedSlots.push(slotItem);
 
         scheduledDetails.push({

@@ -292,11 +292,27 @@ export const useLocationsStore = defineStore('locations', () => {
           where('location', '==', oldName)
         ]);
         if (oldShifts && oldShifts.length > 0) {
-          const updateBatch = oldShifts.map(d => ({
-            ...d,
-            location: newName
-          }));
-          await batchWriteItems('dutyShifts', updateBatch, 'set');
+          const newShifts = [];
+          const toDelete = [];
+          oldShifts.forEach(d => {
+            const newId = d.id && d.id.startsWith(oldName + '_')
+              ? d.id.replace(new RegExp('^' + oldName + '_'), newName + '_')
+              : `${newName}_${d.dutyDate}_${d.shiftId}_${d.slotIndex || 1}`;
+            newShifts.push({
+              ...d,
+              id: newId,
+              location: newName
+            });
+            if (d.id !== newId) {
+              toDelete.push({ id: d.id });
+            }
+          });
+          if (newShifts.length > 0) {
+            await batchWriteItems('dutyShifts', newShifts, 'set');
+          }
+          if (toDelete.length > 0) {
+            await batchWriteItems('dutyShifts', toDelete, 'delete');
+          }
         }
       } catch (err) {
         console.warn('同步排班紀錄略過:', err);

@@ -1456,11 +1456,40 @@ async function initMatrix() {
       if (m.name) nameToMemberMap[m.name] = m;
     });
 
-    const existingShiftKeys = new Set(existing.map(item => `${item.dutyDate}_${item.shiftId}`));
+    // 業務唯一鍵去重：防止歷史資料或任何改名遺留的同日期同班次同席次重複記錄
+    const uniqueExistingMap = new Map();
+    const ghostSlotsToDelete = [];
+
+    existing.forEach(item => {
+      const bizKey = `${item.dutyDate}_${item.shiftId}_${item.slotIndex || 1}`;
+      if (!uniqueExistingMap.has(bizKey)) {
+        uniqueExistingMap.set(bizKey, item);
+      } else {
+        // 重複席位！挑選最佳的一筆，另一筆加入背景刪除
+        const current = uniqueExistingMap.get(bizKey);
+        const expectedPrefix = `${selectedLocation.value}_`;
+        const itemMatches = item.id && item.id.startsWith(expectedPrefix);
+        const currentMatches = current.id && current.id.startsWith(expectedPrefix);
+
+        if (!currentMatches && itemMatches) {
+          ghostSlotsToDelete.push({ id: current.id });
+          uniqueExistingMap.set(bizKey, item);
+        } else {
+          ghostSlotsToDelete.push({ id: item.id });
+        }
+      }
+    });
+
+    if (ghostSlotsToDelete.length > 0) {
+      batchWriteItems('dutyShifts', ghostSlotsToDelete, 'delete').catch(() => {});
+    }
+
+    const dedupedExisting = Array.from(uniqueExistingMap.values());
+    const existingShiftKeys = new Set(dedupedExisting.map(item => `${item.dutyDate}_${item.shiftId}`));
     const mergedList = [];
 
     // 1. 若該日期該班別在資料庫中已存在紀錄，完全以現有席位為準（不論手動增為 5 席或刪為 3 席）
-    existing.forEach(item => {
+    dedupedExisting.forEach(item => {
       let memberId = item.memberId || '';
       const memberName = item.memberName || '';
       if (memberName && nameToMemberMap[memberName]) {
@@ -1877,7 +1906,23 @@ async function applyAutoSchedule() {
     const slots = autoPreviewResult.value.allGeneratedSlots || [];
     const pointers = autoPreviewResult.value.updatedRotationPointers || null;
     const ruleId = autoPreviewResult.value.ruleId || null;
-    const deletedSlots = autoPreviewResult.value.deletedSlots || [];
+    let deletedSlots = [...(autoPreviewResult.value.deletedSlots || [])];
+
+    // 若為覆蓋模式：將本次排班日期區間與班別下、未包含在本次新生成 slots 中的任何現有舊席位全部標記刪除，徹底杜絕重複席位殘留
+    if (overwriteStrategy.value === 'overwrite' && autoStartDate.value && autoEndDate.value) {
+      const generatedIds = new Set(slots.map(s => s.id));
+      const targetRule = availableAutoRules.value.find(r => r.id === selectedAutoRuleId.value);
+      const targetShiftId = targetRule?.shiftId;
+
+      matrixList.value.forEach(m => {
+        if (m.id && m.dutyDate >= autoStartDate.value && m.dutyDate <= autoEndDate.value) {
+          const shiftMatches = !targetShiftId || m.shiftId === targetShiftId || (targetShiftId === 'YL_M' && (m.shiftId === 'YL_M1' || m.shiftId === 'YL_M2'));
+          if (shiftMatches && !generatedIds.has(m.id)) {
+            deletedSlots.push({ id: m.id });
+          }
+        }
+      });
+    }
 
     // 直接批次儲存至 Firestore 資料庫 (含刪除多餘席位)
     await dutyRulesStore.saveAutoScheduleToDb(slots, pointers, ruleId, deletedSlots);
