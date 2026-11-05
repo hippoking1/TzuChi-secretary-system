@@ -653,25 +653,15 @@
               </div>
             </div>
 
-            <!-- 輪值次數均衡模式設定 (東港聯絡處輪班均衡優化) -->
+            <!-- 輪值次數均衡模式設定 (全場域水位線均衡引擎) -->
             <div class="card p-3 border border-indigo-200 bg-indigo-50/30">
-              <label class="form-label font-bold text-sm mb-2 text-indigo-900 flex items-center gap-1.5">
-                <span>⚖️ 輪值均衡基準：</span>
-                <span class="badge badge-primary text-[10px] py-0.5">優化防不均</span>
+              <label class="form-label font-bold text-sm mb-2 text-indigo-900 flex items-center justify-between">
+                <span class="flex items-center gap-1.5">
+                  <span>⚖️ 輪值均衡基準：</span>
+                  <span class="badge badge-primary text-[10px] py-0.5">跨場地削峰填谷</span>
+                </span>
               </label>
               <div class="flex flex-col gap-2">
-                <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
-                  <input 
-                    v-model="autoBalanceScope" 
-                    type="radio" 
-                    value="local" 
-                    @change="runAutoPreview"
-                  />
-                  <span>
-                    <strong>各道場獨立公平 (推薦)</strong>
-                    <small class="text-muted block text-[11px]">聯絡處內部人員輪值次數平均；高優先級衝突被延後者，下個班次優先補班，且代班者後續自動抵扣</small>
-                  </span>
-                </label>
                 <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
                   <input 
                     v-model="autoBalanceScope" 
@@ -680,9 +670,55 @@
                     @change="runAutoPreview"
                   />
                   <span>
-                    <strong>跨場地總量平衡</strong>
-                    <small class="text-muted block text-[11px]">代班時併計宜蘭園區與醫院志工總出勤次數，總值班次數最少者優先接替</small>
+                    <strong>跨場地總量平衡 (推薦 ✨)</strong>
+                    <small class="text-muted block text-[11px]">併計宜蘭園區排班與歷史出勤，出勤高優先級直接折抵免補，總班數最少者優先接替</small>
                   </span>
+                </label>
+                <label class="flex items-center gap-2 text-xs cursor-pointer text-gray-800">
+                  <input 
+                    v-model="autoBalanceScope" 
+                    type="radio" 
+                    value="local" 
+                    @change="runAutoPreview"
+                  />
+                  <span>
+                    <strong>各道場獨立公平</strong>
+                    <small class="text-muted block text-[11px]">僅以道場內部出勤次數均衡，不計算其他道場已出勤之負載</small>
+                  </span>
+                </label>
+              </div>
+
+              <!-- 跨月滾動歷史平衡週期 -->
+              <div class="mt-2.5 pt-2 border-t border-indigo-100 flex items-center justify-between flex-wrap gap-1.5">
+                <span class="text-xs font-bold text-indigo-950 flex items-center gap-1">
+                  <span>📅 跨月滾動平衡週期：</span>
+                </span>
+                <select 
+                  v-model.number="autoRollingMonths" 
+                  class="form-select form-select-xs font-bold text-xs" 
+                  style="max-width: 220px;"
+                  @change="runAutoPreview"
+                >
+                  <option :value="3">過去 3 個月 (推薦：拉平長期水位)</option>
+                  <option :value="2">過去 2 個月</option>
+                  <option :value="1">過去 1 個月</option>
+                  <option :value="0">僅限當期 (不參考歷史數據)</option>
+                </select>
+              </div>
+
+              <!-- 方案 C：醫院志工折抵開關 -->
+              <div class="mt-2 pt-2 border-t border-indigo-100">
+                <label class="flex items-start gap-1.5 text-xs cursor-pointer text-teal-900 font-bold">
+                  <input 
+                    v-model="autoIncludeHospitalCredit" 
+                    type="checkbox" 
+                    class="mt-0.5"
+                    @change="runAutoPreview" 
+                  />
+                  <div>
+                    <span>納入醫院志工天數折抵總班數配額 (方案 C)</span>
+                    <small class="text-muted block font-normal text-[11px]">勾選後，醫院志工出勤將視同道場輪值，折抵聯絡處出勤，拉平全場域負載；未勾選時僅作同日撞期迴避</small>
+                  </div>
                 </label>
               </div>
             </div>
@@ -803,10 +839,18 @@
               <h4 class="font-bold text-indigo-950 text-xs flex items-center gap-1.5 m-0">
                 <span>📊 輪值次數均衡度統計：</span>
                 <span class="text-muted font-normal">
-                  (每人平均 {{ autoPreviewResult.fairnessSummary.avgLocal }} 班 ｜ 最低 {{ autoPreviewResult.fairnessSummary.minLocal }} 班 ~ 最高 {{ autoPreviewResult.fairnessSummary.maxLocal }} 班 ｜ 最大極差: {{ autoPreviewResult.fairnessSummary.spread }} 班)
+                  (當前道場平均 {{ autoPreviewResult.fairnessSummary.avgLocal }} 班 ｜ 最低 {{ autoPreviewResult.fairnessSummary.minLocal }} ~ 最高 {{ autoPreviewResult.fairnessSummary.maxLocal }} 班 ｜ 道場極差: {{ autoPreviewResult.fairnessSummary.spread }} 班)
+                  <template v-if="autoBalanceScope === 'cross_location'">
+                    <span class="text-indigo-700 font-bold ml-1">
+                      [全場域總出勤水位：平均 {{ autoPreviewResult.fairnessSummary.avgTotal }} 班 ｜ 極差: {{ autoPreviewResult.fairnessSummary.totalSpread }} 班]
+                    </span>
+                  </template>
                 </span>
               </h4>
               <div class="flex items-center gap-2">
+                <span v-if="autoPreviewResult.fairnessSummary.historicalCountTotal > 0" class="badge badge-info text-[10px]">
+                  前 {{ autoRollingMonths }} 個月歷史累積: {{ autoPreviewResult.fairnessSummary.historicalCountTotal }} 班次
+                </span>
                 <span v-if="autoPreviewResult.fairnessSummary.pendingOwedList?.length > 0" class="badge badge-warning text-[10px]" :title="'待補班志工：' + autoPreviewResult.fairnessSummary.pendingOwedList.map(x => x.memberName).join('、')">
                   待補班名冊: {{ autoPreviewResult.fairnessSummary.pendingOwedList.length }} 人
                 </span>
@@ -820,21 +864,21 @@
             </div>
 
             <!-- 人員執勤次數膠囊標籤 (緊湊橫列展示) -->
-            <div class="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto p-2 bg-white rounded border border-indigo-100 text-[11px]">
+            <div class="flex flex-wrap gap-1.5 max-h-[95px] overflow-y-auto p-2 bg-white rounded border border-indigo-100 text-[11px]">
               <span 
-                v-for="s in autoPreviewResult.fairnessSummary.memberStats.slice(0, 30)" 
+                v-for="s in autoPreviewResult.fairnessSummary.memberStats.slice(0, 35)" 
                 :key="s.name"
                 class="badge"
                 :class="s.localCount >= (autoPreviewResult.fairnessSummary.maxLocal || 1) ? 'badge-primary' : 'badge-light border'"
-                :title="`聯絡處: ${s.localCount} 班 / 跨場地(園區+醫院): ${s.crossCount} 班 / 總量: ${s.totalCount} 班`"
+                :title="`本次道場: ${s.localCount} 班 / 前期歷史: ${s.histCount || 0} 班 / 園區: ${s.campusCount || 0} 班 / 醫院: ${s.hospitalCount || 0} 班 ➔ 綜合總出勤: ${s.totalLoad} 班`"
               >
                 {{ s.name }}: <strong>{{ s.localCount }}</strong>班
-                <span v-if="autoBalanceScope === 'cross_location' && s.crossCount > 0" class="text-gray-500 font-normal ml-0.5">
-                  (+{{ s.crossCount }}外)
+                <span v-if="autoBalanceScope === 'cross_location' && (s.histCount > 0 || s.campusCount > 0 || (autoIncludeHospitalCredit && s.hospitalCount > 0))" class="text-gray-500 font-normal ml-0.5">
+                  (總:{{ s.totalLoad }})
                 </span>
               </span>
-              <span v-if="autoPreviewResult.fairnessSummary.memberStats.length > 30" class="text-xs text-muted self-center">
-                ...等共 {{ autoPreviewResult.fairnessSummary.memberStats.length }} 位
+              <span v-if="autoPreviewResult.fairnessSummary.memberStats.length > 35" class="text-xs text-muted self-center">
+                ...等共 {{ autoPreviewResult.fairnessSummary.memberStats.length }} 位志工
               </span>
             </div>
           </div>
@@ -1551,7 +1595,9 @@ async function handleSave() {
 const showAutoModal = ref(false);
 const autoScheduleMode = ref('heqi_only'); // 預設優先以和氣輪值週次為準
 const overwriteStrategy = ref('overwrite'); // 'overwrite' | 'empty_only'
-const autoBalanceScope = ref('local'); // 'local' (各道場獨立公平) | 'cross_location' (跨場地總量平衡)
+const autoBalanceScope = ref('cross_location'); // 'local' (各道場獨立公平) | 'cross_location' (跨場地總量平衡，預設推薦)
+const autoRollingMonths = ref(3); // 跨月滾動平衡週期：0 (僅當期), 1, 2, 3 (預設 3 個月)
+const autoIncludeHospitalCredit = ref(false); // 方案 C：是否將醫院志工納入個人總班數折抵計算
 const autoLimitShiftQuota = ref(false); // false: 不限定單一班別人員上限 (依組別人數全員排班，推薦) | true: 限定班別人員上限 (標準名額)
 const autoStartDate = ref('');
 const autoEndDate = ref('');
@@ -1872,6 +1918,16 @@ async function runAutoPreview() {
       }
     }
 
+    // 跨月滾動歷史累積數載入（前 1~3 個月各道場出勤帳本）
+    let historicalCounts = new Map();
+    if (autoRollingMonths.value > 0 && autoStartDate.value) {
+      historicalCounts = await dutiesStore.getHistoricalDutyCounts(
+        autoStartDate.value,
+        autoRollingMonths.value,
+        autoIncludeHospitalCredit.value
+      );
+    }
+
     autoPreviewResult.value = dutyRulesStore.generateAutoSchedule({
       location: selectedLocation.value,
       year,
@@ -1889,7 +1945,9 @@ async function runAutoPreview() {
       startWeekdayMember: customStartWeekdayMember.value || null,
       startWeekendMember: customStartWeekendMember.value || null,
       balanceScope: autoBalanceScope.value,
-      limitShiftQuota: autoLimitShiftQuota.value
+      limitShiftQuota: autoLimitShiftQuota.value,
+      includeHospitalCredit: autoIncludeHospitalCredit.value,
+      historicalDutyCounts: historicalCounts
     });
   } catch (err) {
     console.error('runAutoPreview error:', err);

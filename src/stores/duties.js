@@ -147,6 +147,43 @@ export const useDutiesStore = defineStore('duties', () => {
   }
 
   /**
+   * 取得指定日期之前（前 N 個月）的志工實際出勤次數累計（跨月滾動平衡帳本）
+   * @param {string} beforeDateStr 基準開始日 'YYYY-MM-DD'
+   * @param {number} monthsBack 往前滾動幾個月 (預設 3)
+   * @param {boolean} includeHospital 是否納入醫院志工出勤
+   * @returns {Promise<Map<string, number>>} 乾淨姓名 -> 歷史總出勤班數
+   */
+  async function getHistoricalDutyCounts(beforeDateStr, monthsBack = 3, includeHospital = false) {
+    if (!beforeDateStr || monthsBack <= 0) return new Map();
+    try {
+      const [y, m, d] = beforeDateStr.split('-').map(Number);
+      const startObj = new Date(y, m - 1 - monthsBack, 1);
+      const startYear = startObj.getFullYear();
+      const startMonth = String(startObj.getMonth() + 1).padStart(2, '0');
+      const startStr = `${startYear}-${startMonth}-01`;
+
+      const allDocs = await getCollectionDocs('dutyShifts');
+      const counts = new Map();
+
+      allDocs.forEach(d => {
+        if (!d.dutyDate || !d.memberName) return;
+        if (d.dutyDate < startStr || d.dutyDate >= beforeDateStr) return;
+        if (d.status === '未指派' || d.memberName.includes('未指派')) return;
+        if (!includeHospital && d.location === '醫院志工') return;
+
+        const cleanName = d.memberName.replace(/[★*☆\s]/g, '').trim();
+        if (!cleanName) return;
+        counts.set(cleanName, (counts.get(cleanName) || 0) + 1);
+      });
+
+      return counts;
+    } catch (err) {
+      console.error('getHistoricalDutyCounts error:', err);
+      return new Map();
+    }
+  }
+
+  /**
    * 批次新增預排醫院志工及日期
    * @param {Object} payload { dates: string[], members: Array<{id, name, gender}>, hospitalName: string, note: string }
    */
@@ -351,6 +388,7 @@ export const useDutiesStore = defineStore('duties', () => {
     fetchHospitalVolunteerSchedule,
     fetchAllHospitalVolunteerSchedules,
     getHospitalVolunteerScheduleByRange,
+    getHistoricalDutyCounts,
     addHospitalVolunteerSchedules,
     deleteHospitalVolunteerSchedules,
     fetchHospitalBatchTemplates,

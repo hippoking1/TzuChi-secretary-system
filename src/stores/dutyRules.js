@@ -668,8 +668,10 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       customStartTeamIndex = null,   // 自訂星期整組輪替起始組別 (0-indexed: 0=第一組, 1=第二組...)
       startWeekdayMember = null,     // 自訂平日輪值起始志工姓名
       startWeekendMember = null,     // 自訂假日輪值起始志工姓名
-      balanceScope = 'local',        // 輪值均衡基準：'local' (各道場獨立公平，預設) | 'cross_location' (跨場地總量平衡)
-      limitShiftQuota = false        // 是否限定單一班別人員上限 (預設 false: 不限定，依組別人數全員排班；true: 限定席次上限，多出人員備用輪替)
+      balanceScope = 'cross_location', // 輪值均衡基準：'local' (各道場獨立公平) | 'cross_location' (跨場地總量平衡，預設)
+      limitShiftQuota = false,       // 是否限定單一班別人員上限 (預設 false: 不限定，依組別人數全員排班；true: 限定席次上限)
+      includeHospitalCredit = false, // 方案 C：是否將醫院志工納入總班數折抵計算
+      historicalDutyCounts = new Map() // 跨月滾動前 1~3 個月歷史值班累積數
     } = options;
 
     // 尋找目標規則：依據傳入 targetRule、ruleId、場地自選或自動配對
@@ -845,22 +847,30 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     }
 
     // 累積值班次數動態追蹤（用於負載平衡最少班次優先）
-    const memberLocalCounts = new Map();
-    const memberCrossCounts = new Map();
-
     function cleanMemberName(name) {
       if (!name) return '';
       return name.replace(/[★*☆\s]/g, '').trim();
     }
 
-    // 初始化跨場地次數 (醫院志工 + 宜蘭園區)
+    const memberHistoricalCounts = new Map();
+    if (historicalDutyCounts instanceof Map) {
+      historicalDutyCounts.forEach((v, k) => memberHistoricalCounts.set(cleanMemberName(k), Number(v) || 0));
+    } else if (historicalDutyCounts && typeof historicalDutyCounts === 'object') {
+      Object.entries(historicalDutyCounts).forEach(([k, v]) => memberHistoricalCounts.set(cleanMemberName(k), Number(v) || 0));
+    }
+
+    const memberLocalCounts = new Map();
+    const memberCampusCounts = new Map();
+    const memberHospitalCounts = new Map();
+
+    // 初始化跨場地次數 (醫院志工 & 宜蘭園區/其他道場)
     hospitalDuties.forEach(d => {
       const c = cleanMemberName(d.memberName);
-      if (c) memberCrossCounts.set(c, (memberCrossCounts.get(c) || 0) + 1);
+      if (c) memberHospitalCounts.set(c, (memberHospitalCounts.get(c) || 0) + 1);
     });
     otherLocationDuties.forEach(d => {
       const c = cleanMemberName(d.memberName);
-      if (c) memberCrossCounts.set(c, (memberCrossCounts.get(c) || 0) + 1);
+      if (c) memberCampusCounts.set(c, (memberCampusCounts.get(c) || 0) + 1);
     });
 
     // 初始化本場地既有排班次數 (若保留現有排班)
@@ -871,14 +881,32 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       });
     }
 
+    /**
+     * 取得特定志工的即時綜合排班總負載（用於最少班次優先之削峰填谷）
+     * 依決策方案 C：可選擇是否將醫院志工納入總班數折抵計算；跨月滾動納入前 1~3 個月歷史累積
+     */
     function getMemberBalanceWeight(name) {
       const clean = cleanMemberName(name);
+      if (!clean) return 0;
+      const hist = memberHistoricalCounts.get(clean) || 0;
       const local = memberLocalCounts.get(clean) || 0;
       if (balanceScope === 'cross_location') {
-        const cross = memberCrossCounts.get(clean) || 0;
-        return local + cross;
+        const campus = memberCampusCounts.get(clean) || 0;
+        const hosp = includeHospitalCredit ? (memberHospitalCounts.get(clean) || 0) : 0;
+        return hist + local + campus + hosp;
       }
-      return local;
+      return hist + local;
+    }
+
+    /**
+     * 取得組別內所有成員的平均綜合負載（用於整組輪替模式 1：維持整組同進退）
+     */
+    function getTeamAverageLoad(team) {
+      if (!team || !Array.isArray(team.members) || team.members.length === 0) return 0;
+      const cleanMembers = team.members.map(cleanMemberName).filter(Boolean);
+      if (cleanMembers.length === 0) return 0;
+      const total = cleanMembers.reduce((sum, m) => sum + getMemberBalanceWeight(m), 0);
+      return total / cleanMembers.length;
     }
 
     // 組別在當前區間內的累積執勤次數（避免東港女眾固定與園區 4 週輪值共振撞期）
@@ -1152,8 +1180,17 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
                 // 推進主指標
                 curPointer = nextPointer;
 
-                if (!isExemptLeave) {
-                  // 1. 將原定志工記入待補班佇列 pendingSeqOwed，於下一個可排日優先補班
+                // 核心關鍵機制：跨道場高優先級「折抵免補（Cross-Location Credit Offset）」
+                // 若原定志工因參與宜蘭園區值班，或（若方案 C 勾選）參與醫院志工，
+                // 其為公出勤高優先級任務，視同已完成該輪輪值義務，直接予以折抵免補（不欠班、不入 pendingSeqOwed），
+                // 由低班數志工接替，徹底終結雙棲志工被雙重抽調之失衡問題！
+                const isHigherPriorityOffset = !!primaryConflictHit && (
+                  primaryConflictHit.conflictLocation === '宜蘭園區' ||
+                  (primaryConflictHit.conflictLocation === '醫院志工' && includeHospitalCredit)
+                );
+
+                if (!isExemptLeave && !isHigherPriorityOffset) {
+                  // 1. 僅在個人排班限制或未折抵時，將原定志工記入待補班佇列 pendingSeqOwed，於下一個可排日優先補班
                   if (!pendingSeqOwed[pointerKey]) pendingSeqOwed[pointerKey] = [];
                   pendingSeqOwed[pointerKey].push({
                     memberName: primaryCandidateName,
@@ -1177,7 +1214,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
                   conflictLocation: reasonLocation,
                   conflictShiftLabel: reasonShift,
                   isPersonalRule: !primaryConflictHit,
-                  isExemptLeave
+                  isExemptLeave,
+                  isHigherPriorityOffset
                 };
               } else {
                 // 若無任何代班人選：若原定志工僅為「軟性優先星期（如排日為主）」，則由本人兜底值班
@@ -1192,6 +1230,7 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
 
         if (conflictAdjustedInfo) {
           const isPersonal = conflictAdjustedInfo.isPersonalRule;
+          const isOffset = conflictAdjustedInfo.isHigherPriorityOffset;
           const priorityTarget = isPersonal
             ? `個人規則（${conflictAdjustedInfo.conflictShiftLabel}）`
             : (conflictAdjustedInfo.conflictLocation === '醫院志工' ? '醫院志工' : `${conflictAdjustedInfo.conflictLocation}排班`);
@@ -1204,9 +1243,12 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
             otherLocation: conflictAdjustedInfo.conflictLocation,
             otherShift: conflictAdjustedInfo.conflictShiftLabel,
             isPersonalRule: isPersonal,
-            suggestAction: conflictAdjustedInfo.isExemptLeave
-              ? `依${priorityTarget}免排並跳過當次輪值，由「${chosenMember}」接替`
-              : `已依${priorityTarget}調換，${location}排班由「${chosenMember}」先行代班（原定志工將於可排日優先補班）`
+            isHigherPriorityOffset: isOffset,
+            suggestAction: isOffset
+              ? `原定志工「${conflictAdjustedInfo.originalMember}」因出勤【${conflictAdjustedInfo.conflictLocation}】優先，依全道場均衡原則直接折抵免補（不欠班），由總值班數最少之「${chosenMember}」接替排入`
+              : (conflictAdjustedInfo.isExemptLeave
+                ? `依${priorityTarget}免排並跳過當次輪值，由「${chosenMember}」接替`
+                : `已依${priorityTarget}調換，${location}排班由「${chosenMember}」先行代班（原定志工將於可排日優先補班）`)
           });
         }
 
@@ -1280,9 +1322,11 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           adjustedNotice: isPaybackDuty
             ? `🔄 【優先補班】補回原定 ${paybackOriginInfo?.sinceDate} 因【${paybackOriginInfo?.conflictShift || paybackOriginInfo?.conflictLocation}】順延之班次`
             : (lookaheadNotice || (conflictAdjustedInfo
-              ? (conflictAdjustedInfo.isPersonalRule
-                ? `📌 原定「${conflictAdjustedInfo.originalMember}」因【${conflictAdjustedInfo.conflictShiftLabel}】，已由「${chosenMember}」調換代班（原志工於可排日優先補班）`
-                : `⚠️ 原定「${conflictAdjustedInfo.originalMember}」因參與【${conflictAdjustedInfo.conflictLocation}】優先，已由「${chosenMember}」代班（原志工保留優先補班）`)
+              ? (conflictAdjustedInfo.isHigherPriorityOffset
+                ? `🛡️ 【高優先級折抵免補】「${conflictAdjustedInfo.originalMember}」出勤【${conflictAdjustedInfo.conflictLocation}】折抵免補，由低班數志工「${chosenMember}」接替排入`
+                : (conflictAdjustedInfo.isPersonalRule
+                  ? `📌 原定「${conflictAdjustedInfo.originalMember}」因【${conflictAdjustedInfo.conflictShiftLabel}】，已由「${chosenMember}」調換代班（原志工於可排日優先補班）`
+                  : `⚠️ 原定「${conflictAdjustedInfo.originalMember}」因參與【${conflictAdjustedInfo.conflictLocation}】優先，已由「${chosenMember}」代班（原志工保留優先補班）`))
               : null))
         });
 
@@ -1421,7 +1465,8 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
           const candConflicts = checkMembersHigherPriorityConflict(candCandidates.selected, dateStr);
 
           if (candConflicts.length === 0) {
-            // 計算該組累積執勤次數（負載）
+            // 計算該組成員的平均累積綜合總負載（整組輪替模式 1：維持整組同進退）
+            const teamAvgLoad = getTeamAverageLoad(candidateTeam);
             const servedCount = (teamServeCounts[dayOfWeek] && teamServeCounts[dayOfWeek][candidateTeamIdx]) || 0;
             candidatePool.push({
               candidateTeamIdx,
@@ -1431,14 +1476,19 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
               candPointerKey,
               candStartIdx,
               servedCount,
+              teamAvgLoad,
               distance: step
             });
           }
         }
 
         if (candidatePool.length > 0) {
-          // 關鍵優化：累積值班次數最少者優先代班！平手時依順位距離最近者優先
-          candidatePool.sort((a, b) => a.servedCount - b.servedCount || a.distance - b.distance);
+          // 模式 1（整組同進退）：組員平均綜合負載最低者最優先代班！平手時依當前區間次數與順位距離排序
+          candidatePool.sort((a, b) => {
+            const loadDiff = a.teamAvgLoad - b.teamAvgLoad;
+            if (Math.abs(loadDiff) > 0.001) return loadDiff;
+            return a.servedCount - b.servedCount || a.distance - b.distance;
+          });
           const bestCand = candidatePool[0];
 
           swappedSuccess = true;
@@ -1735,28 +1785,58 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
     rotationPointers._preServedSeqCredits = preServedSeqCredits;
 
     // 計算公平性摘要統計 (Fairness Summary)
-    const memberStats = [];
-    memberLocalCounts.forEach((count, name) => {
-      const cross = memberCrossCounts.get(name) || 0;
-      memberStats.push({
-        name,
-        localCount: count,
-        crossCount: cross,
-        totalCount: count + cross
-      });
-    });
-    memberStats.sort((a, b) => b.localCount - a.localCount || b.totalCount - a.totalCount);
+    const allTrackedNames = new Set([
+      ...memberLocalCounts.keys(),
+      ...memberHistoricalCounts.keys(),
+      ...memberCampusCounts.keys(),
+      ...(includeHospitalCredit ? memberHospitalCounts.keys() : [])
+    ]);
 
-    const minLocal = memberStats.length ? Math.min(...memberStats.map(s => s.localCount)) : 0;
-    const maxLocal = memberStats.length ? Math.max(...memberStats.map(s => s.localCount)) : 0;
-    const avgLocal = memberStats.length ? (memberStats.reduce((acc, s) => acc + s.localCount, 0) / memberStats.length).toFixed(1) : 0;
+    const memberStats = [];
+    allTrackedNames.forEach(name => {
+      const local = memberLocalCounts.get(name) || 0;
+      const hist = memberHistoricalCounts.get(name) || 0;
+      const campus = memberCampusCounts.get(name) || 0;
+      const hosp = memberHospitalCounts.get(name) || 0;
+      const totalLoad = getMemberBalanceWeight(name);
+
+      // 若在本道場有排班或有歷史/跨場地資料者列入統計
+      if (local > 0 || hist > 0 || campus > 0 || hosp > 0) {
+        memberStats.push({
+          name,
+          localCount: local,
+          histCount: hist,
+          campusCount: campus,
+          hospitalCount: hosp,
+          totalLoad,
+          totalCount: local + campus + (includeHospitalCredit ? hosp : 0)
+        });
+      }
+    });
+
+    memberStats.sort((a, b) => b.totalLoad - a.totalLoad || b.localCount - a.localCount);
+
+    const activeLocalStats = memberStats.filter(s => s.localCount > 0);
+    const minLocal = activeLocalStats.length ? Math.min(...activeLocalStats.map(s => s.localCount)) : 0;
+    const maxLocal = activeLocalStats.length ? Math.max(...activeLocalStats.map(s => s.localCount)) : 0;
+    const avgLocal = activeLocalStats.length ? (activeLocalStats.reduce((acc, s) => acc + s.localCount, 0) / activeLocalStats.length).toFixed(1) : 0;
+
+    const minTotal = memberStats.length ? Math.min(...memberStats.map(s => s.totalLoad)) : 0;
+    const maxTotal = memberStats.length ? Math.max(...memberStats.map(s => s.totalLoad)) : 0;
+    const avgTotal = memberStats.length ? (memberStats.reduce((acc, s) => acc + s.totalLoad, 0) / memberStats.length).toFixed(1) : 0;
 
     const fairnessSummary = {
       balanceScope,
+      includeHospitalCredit,
+      historicalCountTotal: Array.from(memberHistoricalCounts.values()).reduce((a, b) => a + b, 0),
       minLocal,
       maxLocal,
       avgLocal,
+      minTotal,
+      maxTotal,
+      avgTotal,
       spread: maxLocal - minLocal,
+      totalSpread: maxTotal - minTotal,
       memberStats,
       pendingOwedList: [
         ...(pendingSeqOwed.weekday || []).map(x => ({ ...x, track: '平日' })),
