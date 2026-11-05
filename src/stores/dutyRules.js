@@ -88,35 +88,105 @@ export const DEFAULT_HEQI2_CAMPUS_FEMALE_RULE = {
   enabled: true
 };
 
-// 宜蘭園區和氣二男眾標準組別名單（依歷史實際值週排班精確建立）
+// 宜蘭園區和氣二男眾標準組別名單（同一組內分為獨立兩小組：男眾班一與男眾班二，防止一人缺員時第二班往前誤補）
 export const DEFAULT_HEQI2_CAMPUS_MALE_TEAMS = {
   '1': [
-    { teamName: '第一組', members: ['林東建', '李世清', '徐進財', '葉文熙'] },
-    { teamName: '第二組', members: ['陳敬福', '李建福', '楊洦育', '林富興'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['林東建', '李世清'],
+      shift2Members: ['徐進財', '葉文熙'],
+      members: ['林東建', '李世清', '徐進財', '葉文熙']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['陳敬福', '李建福'],
+      shift2Members: ['楊洦育', '林富興'],
+      members: ['陳敬福', '李建福', '楊洦育', '林富興']
+    }
   ],
   '2': [
-    { teamName: '第一組', members: ['黃木村', '吳順王', '薛登霖', '黃冠諺'] },
-    { teamName: '第二組', members: ['張錫俊', '許烜彰', '葉文熙', '黃志煌'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['黃木村', '吳順王'],
+      shift2Members: ['薛登霖', '黃冠諺'],
+      members: ['黃木村', '吳順王', '薛登霖', '黃冠諺']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['張錫俊', '許烜彰'],
+      shift2Members: ['葉文熙', '黃志煌'],
+      members: ['張錫俊', '許烜彰', '葉文熙', '黃志煌']
+    }
   ],
   '3': [
-    { teamName: '第一組', members: ['楊振風', '吳世明', '吳福源', '吳春榮'] },
-    { teamName: '第二組', members: ['黃國材', '鄭文松', '林茂祥', '黃文彥'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['楊振風', '吳世明'],
+      shift2Members: ['吳福源', '吳春榮'],
+      members: ['楊振風', '吳世明', '吳福源', '吳春榮']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['黃國材', '鄭文松'],
+      shift2Members: ['林茂祥', '黃文彥'],
+      members: ['黃國材', '鄭文松', '林茂祥', '黃文彥']
+    }
   ],
   '4': [
-    { teamName: '第一組', members: ['陳茂春', '呂連通', '許國基', '李自強'] },
-    { teamName: '第二組', members: ['游潤儔', '陳榮忠', '賴建宏', '徐家福'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['陳茂春', '呂連通'],
+      shift2Members: ['許國基', '李自強'],
+      members: ['陳茂春', '呂連通', '許國基', '李自強']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['游潤儔', '陳榮忠'],
+      shift2Members: ['賴建宏', '徐家福'],
+      members: ['游潤儔', '陳榮忠', '賴建宏', '徐家福']
+    }
   ],
   '5': [
-    { teamName: '第一組', members: ['楊志忠', '李長和', '陳振川', '林明村'] },
-    { teamName: '第二組', members: ['石有杉', '莊盧達', '林子民', '黃文彬'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['楊志忠', '李長和'],
+      shift2Members: ['陳振川', '林明村'],
+      members: ['楊志忠', '李長和', '陳振川', '林明村']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['石有杉', '莊盧達'],
+      shift2Members: ['林子民', '黃文彬'],
+      members: ['石有杉', '莊盧達', '林子民', '黃文彬']
+    }
   ],
   '6': [
-    { teamName: '第一組', members: ['游天祥', '吳金福', '莊漢僑', '莊志忠'] },
-    { teamName: '第二組', members: ['龔福鳴', '鄒肇財', '游明哲', '洪光賢'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['游天祥', '吳金福'],
+      shift2Members: ['莊漢僑', '莊志忠'],
+      members: ['游天祥', '吳金福', '莊漢僑', '莊志忠']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['龔福鳴', '鄒肇財'],
+      shift2Members: ['游明哲', '洪光賢'],
+      members: ['龔福鳴', '鄒肇財', '游明哲', '洪光賢']
+    }
   ],
   '0': [
-    { teamName: '第一組', members: ['張振益', '林俊宏', '何忠憲', '趙正文'] },
-    { teamName: '第二組', members: ['李應全', '徐棟樑', '羅文熙', '董國斌'] }
+    {
+      teamName: '第一組',
+      shift1Members: ['張振益', '林俊宏'],
+      shift2Members: ['何忠憲', '趙正文'],
+      members: ['張振益', '林俊宏', '何忠憲', '趙正文']
+    },
+    {
+      teamName: '第二組',
+      shift1Members: ['李應全', '徐棟樑'],
+      shift2Members: ['羅文熙', '董國斌'],
+      members: ['李應全', '徐棟樑', '羅文熙', '董國斌']
+    }
   ]
 };
 
@@ -552,17 +622,31 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       all = deduplicated;
 
       // 確保所有規則皆具備 memberConstraints 屬性；若東港男眾舊規則尚未初始化 memberConstraints，自動帶入預設範例設定
+      // 確保宜蘭園區男眾規則之各組別正規化具備獨立兩小組 (shift1Members, shift2Members)
       all = all.map(r => {
-        if (r.id === 'rule_donggang_male' && r.memberConstraints === undefined) {
-          return {
-            ...r,
-            memberConstraints: JSON.parse(JSON.stringify(DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS))
-          };
+        let ruleObj = { ...r };
+        if (ruleObj.id === 'rule_donggang_male' && ruleObj.memberConstraints === undefined) {
+          ruleObj.memberConstraints = JSON.parse(JSON.stringify(DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS));
+        } else {
+          ruleObj.memberConstraints = ruleObj.memberConstraints || {};
         }
-        return {
-          ...r,
-          memberConstraints: r.memberConstraints || {}
-        };
+
+        if ((ruleObj.id === 'rule_heqi2_campus_male' || (ruleObj.location === '宜蘭園區' && ruleObj.genderType === '男')) && ruleObj.weekdayTeams) {
+          Object.values(ruleObj.weekdayTeams).forEach(teams => {
+            if (Array.isArray(teams)) {
+              teams.forEach(t => {
+                if (!Array.isArray(t.shift1Members) || !Array.isArray(t.shift2Members)) {
+                  const raw = Array.isArray(t.members) ? [...t.members] : [];
+                  t.shift1Members = Array.isArray(t.shift1Members) ? t.shift1Members : raw.slice(0, 2);
+                  t.shift2Members = Array.isArray(t.shift2Members) ? t.shift2Members : raw.slice(2);
+                }
+                t.members = [...(t.shift1Members || []), ...(t.shift2Members || [])];
+              });
+            }
+          });
+        }
+
+        return ruleObj;
       });
 
       const filtered = location ? all.filter(r => r.location === location) : all;
@@ -1589,19 +1673,26 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
       const isCampusMaleDuty = isCampusDuty && rule.genderType === '男';
 
       if (isCampusMaleDuty) {
-        // 宜蘭園區男眾專用分流邏輯：組員 4 位依序填入 男眾班(一) YL_M1 (2席) 與 男眾班(二) YL_M2 (2席)
+        // 宜蘭園區男眾專用分流邏輯：組員分為獨立的兩小組（早班 YL_M1 與 晚班 YL_M2）
+        // 確保第一班缺員（如只有1人）時，第二班人員絕對不會被往前誤補至第一班
+        const shift1Members = Array.isArray(assignedTeam.shift1Members)
+          ? assignedTeam.shift1Members.map(n => (n || '').trim()).filter(Boolean)
+          : (assignedTeam.members ? assignedTeam.members.slice(0, 2) : []);
+        const shift2Members = Array.isArray(assignedTeam.shift2Members)
+          ? assignedTeam.shift2Members.map(n => (n || '').trim()).filter(Boolean)
+          : (assignedTeam.members ? assignedTeam.members.slice(2) : []);
+
         const subShifts = [
-          { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', timeRange: '16:00~18:30', quota: 2 },
-          { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', timeRange: '18:30~20:30', quota: 2 }
+          { shiftId: 'YL_M1', label: '男眾班(一)', startTime: '16:00', endTime: '18:30', timeRange: '16:00~18:30', quota: 2, members: shift1Members },
+          { shiftId: 'YL_M2', label: '男眾班(二)', startTime: '18:30', endTime: '20:30', timeRange: '18:30~20:30', quota: 2, members: shift2Members }
         ];
 
-        let memberPtr = 0;
         subShifts.forEach(sub => {
           const daySlotsInMatrix = newMatrix.filter(s => s.dutyDate === dateStr && s.shiftId === sub.shiftId);
           for (let slotIdx = 0; slotIdx < sub.quota; slotIdx++) {
             const slotNumber = slotIdx + 1;
-            const memberName = selectedMembers[memberPtr] || '';
-            memberPtr++;
+            // 獨立指派：第一班席位僅自 shift1Members 填入；第二班席位僅自 shift2Members 填入
+            const memberName = sub.members[slotIdx] || '';
             const memberObj = memberName ? findMemberObj(memberName) : null;
 
             const matrixSlot = daySlotsInMatrix.find(s => s.slotIndex === slotNumber);
@@ -1654,6 +1745,16 @@ export const useDutyRulesStore = defineStore('dutyRules', () => {
                 });
               }
             }
+          }
+
+          // 覆蓋模式下清理大於 quota 的多餘席位
+          if (overwriteStrategy === 'overwrite') {
+            const extraSlots = daySlotsInMatrix.filter(s => s.slotIndex > sub.quota);
+            extraSlots.forEach(extra => {
+              const rmIdx = newMatrix.findIndex(s => s.id === extra.id);
+              if (rmIdx >= 0) newMatrix.splice(rmIdx, 1);
+              deletedSlots.push({ id: extra.id });
+            });
           }
         });
       } else {

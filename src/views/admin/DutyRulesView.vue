@@ -620,7 +620,10 @@
                     class="form-input form-input-sm font-bold text-primary" 
                     style="max-width: 140px;"
                   />
-                  <span class="badge badge-primary">
+                  <span v-if="isCampusMaleRule" class="badge badge-primary">
+                    共 {{ ((team.shift1Members || []).length) + ((team.shift2Members || []).length) }} 人（班(一): {{ (team.shift1Members || []).length }}人 ｜ 班(二): {{ (team.shift2Members || []).length }}人）
+                  </span>
+                  <span v-else class="badge badge-primary">
                     共 {{ team.members.length }} 人（整組全員輪值）
                   </span>
                 </div>
@@ -654,78 +657,265 @@
                 </div>
               </div>
 
-              <!-- 組員膠囊列表 (整組全員值班，不限上限) -->
-              <div class="members-chip-container flex flex-wrap gap-2 mb-3">
-                <div 
-                  v-for="(member, mIdx) in team.members" 
-                  :key="mIdx"
-                  class="member-chip"
-                  :title="getMemberTooltipByName(member)"
-                >
-                  <span class="chip-index">{{ mIdx + 1 }}.</span>
-                  <span class="chip-text">{{ member }}</span>
-                  <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
-                    {{ getMemberOrgBadgeByName(member) }}
-                  </span>
-                  <span 
-                    v-if="getMemberConstraintBadgeText(member)" 
-                    class="constraint-mini-badge cursor-pointer ml-1"
-                    :class="getMemberConstraintBadgeClass(member)"
-                    title="點擊修改個人排班彈性限制"
-                    @click="openConstraintModal(member)"
-                  >
-                    {{ getMemberConstraintBadgeText(member) }}
-                  </span>
-                  <button 
-                    type="button" 
-                    class="btn-chip-arrow ml-1" 
-                    title="設定個人排班彈性限制"
-                    @click="openConstraintModal(member)"
-                  >
-                    ⚙️
-                  </button>
-                  <button 
-                    type="button" 
-                    class="chip-delete-btn" 
-                    @click="team.members.splice(mIdx, 1)"
-                  >
-                    ×
-                  </button>
+              <!-- A. 園區男眾專用：同一組分為獨立兩小組 (男眾班一 與 男眾班二) -->
+              <div v-if="isCampusMaleRule" class="space-y-3">
+                <!-- 第一小組：男眾班(一) (16:00~18:30) -->
+                <div class="p-3 bg-white rounded border border-blue-200 shadow-2xs">
+                  <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+                    <span class="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                      <span>🌅 男眾班(一) (16:00~18:30)</span>
+                      <span class="badge badge-primary text-[10px] py-0.5">
+                        {{ (team.shift1Members || []).length }} 人 (標準 2 席)
+                      </span>
+                    </span>
+                    <span v-if="(team.shift1Members || []).length === 1" class="text-[11px] text-amber-700 font-bold">
+                      ⚠️ 僅排 1 人，第二席將保持未指派（不往前遞補）
+                    </span>
+                  </div>
+
+                  <!-- 第一班組員 chips 列表 -->
+                  <div class="members-chip-container flex flex-wrap gap-2 mb-2.5 min-h-[30px] items-center">
+                    <div 
+                      v-for="(member, mIdx) in (team.shift1Members || [])" 
+                      :key="mIdx"
+                      class="member-chip border-blue-300"
+                      :title="getMemberTooltipByName(member)"
+                    >
+                      <span class="chip-index">{{ mIdx + 1 }}.</span>
+                      <span class="chip-text font-bold">{{ member }}</span>
+                      <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
+                        {{ getMemberOrgBadgeByName(member) }}
+                      </span>
+                      <span 
+                        v-if="getMemberConstraintBadgeText(member)" 
+                        class="constraint-mini-badge cursor-pointer ml-1"
+                        :class="getMemberConstraintBadgeClass(member)"
+                        title="點擊修改個人排班彈性限制"
+                        @click="openConstraintModal(member)"
+                      >
+                        {{ getMemberConstraintBadgeText(member) }}
+                      </span>
+                      <button 
+                        type="button" 
+                        class="btn-chip-arrow ml-1" 
+                        title="設定個人排班彈性限制"
+                        @click="openConstraintModal(member)"
+                      >
+                        ⚙️
+                      </button>
+                      <button 
+                        type="button" 
+                        class="chip-delete-btn" 
+                        title="自男眾班(一)移除"
+                        @click="onRemoveMemberFromShift(team, 1, mIdx)"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <span v-if="(!team.shift1Members || team.shift1Members.length === 0)" class="text-xs text-muted italic">
+                      尚未指派成員
+                    </span>
+                  </div>
+
+                  <!-- 第一班新增組員輸入列 -->
+                  <div class="add-member-row flex items-center gap-2 flex-wrap">
+                    <select 
+                      v-model="quickSelectedShift1[teamIdx]" 
+                      class="form-select form-select-xs" 
+                      style="max-width: 240px;"
+                      @change="onAddMemberToShift(team, 1, quickSelectedShift1[teamIdx], () => quickSelectedShift1[teamIdx] = '')"
+                    >
+                      <option value="">-- 加入至男眾班(一) (共 {{ filteredRuleMembers.length }} 人) --</option>
+                      <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
+                        {{ m.name }} {{ getMemberOrgPathText(m.id) }}
+                      </option>
+                    </select>
+
+                    <input 
+                      v-model="newShift1MemberName[teamIdx]" 
+                      type="text" 
+                      class="form-input form-input-xs" 
+                      placeholder="輸入姓名按 Enter..." 
+                      style="max-width: 140px;"
+                      @keyup.enter="onAddMemberToShift(team, 1, newShift1MemberName[teamIdx], () => newShift1MemberName[teamIdx] = '')"
+                    />
+
+                    <button 
+                      type="button" 
+                      class="btn btn-xs btn-outline" 
+                      :disabled="!newShift1MemberName[teamIdx]" 
+                      @click="onAddMemberToShift(team, 1, newShift1MemberName[teamIdx], () => newShift1MemberName[teamIdx] = '')"
+                    >
+                      ＋ 加入班(一)
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 第二小組：男眾班(二) (18:30~20:30) -->
+                <div class="p-3 bg-white rounded border border-indigo-200 shadow-2xs">
+                  <div class="flex items-center justify-between mb-2 flex-wrap gap-1">
+                    <span class="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      <span>🌙 男眾班(二) (18:30~20:30)</span>
+                      <span class="badge badge-info text-[10px] py-0.5">
+                        {{ (team.shift2Members || []).length }} 人 (標準 2 席)
+                      </span>
+                    </span>
+                  </div>
+
+                  <!-- 第二班組員 chips 列表 -->
+                  <div class="members-chip-container flex flex-wrap gap-2 mb-2.5 min-h-[30px] items-center">
+                    <div 
+                      v-for="(member, mIdx) in (team.shift2Members || [])" 
+                      :key="mIdx"
+                      class="member-chip border-indigo-300"
+                      :title="getMemberTooltipByName(member)"
+                    >
+                      <span class="chip-index">{{ mIdx + 1 }}.</span>
+                      <span class="chip-text font-bold">{{ member }}</span>
+                      <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
+                        {{ getMemberOrgBadgeByName(member) }}
+                      </span>
+                      <span 
+                        v-if="getMemberConstraintBadgeText(member)" 
+                        class="constraint-mini-badge cursor-pointer ml-1"
+                        :class="getMemberConstraintBadgeClass(member)"
+                        title="點擊修改個人排班彈性限制"
+                        @click="openConstraintModal(member)"
+                      >
+                        {{ getMemberConstraintBadgeText(member) }}
+                      </span>
+                      <button 
+                        type="button" 
+                        class="btn-chip-arrow ml-1" 
+                        title="設定個人排班彈性限制"
+                        @click="openConstraintModal(member)"
+                      >
+                        ⚙️
+                      </button>
+                      <button 
+                        type="button" 
+                        class="chip-delete-btn" 
+                        title="自男眾班(二)移除"
+                        @click="onRemoveMemberFromShift(team, 2, mIdx)"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <span v-if="(!team.shift2Members || team.shift2Members.length === 0)" class="text-xs text-muted italic">
+                      尚未指派成員
+                    </span>
+                  </div>
+
+                  <!-- 第二班新增組員輸入列 -->
+                  <div class="add-member-row flex items-center gap-2 flex-wrap">
+                    <select 
+                      v-model="quickSelectedShift2[teamIdx]" 
+                      class="form-select form-select-xs" 
+                      style="max-width: 240px;"
+                      @change="onAddMemberToShift(team, 2, quickSelectedShift2[teamIdx], () => quickSelectedShift2[teamIdx] = '')"
+                    >
+                      <option value="">-- 加入至男眾班(二) (共 {{ filteredRuleMembers.length }} 人) --</option>
+                      <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
+                        {{ m.name }} {{ getMemberOrgPathText(m.id) }}
+                      </option>
+                    </select>
+
+                    <input 
+                      v-model="newShift2MemberName[teamIdx]" 
+                      type="text" 
+                      class="form-input form-input-xs" 
+                      placeholder="輸入姓名按 Enter..." 
+                      style="max-width: 140px;"
+                      @keyup.enter="onAddMemberToShift(team, 2, newShift2MemberName[teamIdx], () => newShift2MemberName[teamIdx] = '')"
+                    />
+
+                    <button 
+                      type="button" 
+                      class="btn btn-xs btn-outline" 
+                      :disabled="!newShift2MemberName[teamIdx]" 
+                      @click="onAddMemberToShift(team, 2, newShift2MemberName[teamIdx], () => newShift2MemberName[teamIdx] = '')"
+                    >
+                      ＋ 加入班(二)
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <!-- 新增組員輸入列 -->
-              <div class="add-member-row flex items-center gap-2 flex-wrap">
-                <select 
-                  v-model="quickSelectedTeamMember[teamIdx]" 
-                  class="form-select form-select-sm" 
-                  style="max-width: 260px;"
-                  @change="onSelectMemberToTeam(team, quickSelectedTeamMember[teamIdx], () => quickSelectedTeamMember[teamIdx] = '')"
-                >
-                  <option value="">-- 從{{ activeRule.genderType === '男' ? '男' : '女' }}眾名冊選擇加入 (共 {{ filteredRuleMembers.length }} 人) --</option>
-                  <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
-                    {{ m.name }} {{ getMemberOrgPathText(m.id) }}
-                  </option>
-                </select>
+              <!-- B. 常規規則（如園區女眾/東港女眾）：單一組員列表 -->
+              <template v-else>
+                <!-- 組員膠囊列表 (整組全員值班，不限上限) -->
+                <div class="members-chip-container flex flex-wrap gap-2 mb-3">
+                  <div 
+                    v-for="(member, mIdx) in team.members" 
+                    :key="mIdx"
+                    class="member-chip"
+                    :title="getMemberTooltipByName(member)"
+                  >
+                    <span class="chip-index">{{ mIdx + 1 }}.</span>
+                    <span class="chip-text">{{ member }}</span>
+                    <span v-if="getMemberOrgBadgeByName(member)" class="text-[10px] text-gray-500 font-normal ml-0.5">
+                      {{ getMemberOrgBadgeByName(member) }}
+                    </span>
+                    <span 
+                      v-if="getMemberConstraintBadgeText(member)" 
+                      class="constraint-mini-badge cursor-pointer ml-1"
+                      :class="getMemberConstraintBadgeClass(member)"
+                      title="點擊修改個人排班彈性限制"
+                      @click="openConstraintModal(member)"
+                    >
+                      {{ getMemberConstraintBadgeText(member) }}
+                    </span>
+                    <button 
+                      type="button" 
+                      class="btn-chip-arrow ml-1" 
+                      title="設定個人排班彈性限制"
+                      @click="openConstraintModal(member)"
+                    >
+                      ⚙️
+                    </button>
+                    <button 
+                      type="button" 
+                      class="chip-delete-btn" 
+                      @click="team.members.splice(mIdx, 1)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
 
-                <input 
-                  v-model="newTeamMemberName[teamIdx]" 
-                  type="text" 
-                  class="form-input form-input-sm" 
-                  placeholder="輸入姓名按 Enter..." 
-                  style="max-width: 160px;"
-                  @keyup.enter="onAddMemberToTeam(team, newTeamMemberName[teamIdx], () => newTeamMemberName[teamIdx] = '')"
-                />
+                <!-- 新增組員輸入列 -->
+                <div class="add-member-row flex items-center gap-2 flex-wrap">
+                  <select 
+                    v-model="quickSelectedTeamMember[teamIdx]" 
+                    class="form-select form-select-sm" 
+                    style="max-width: 260px;"
+                    @change="onSelectMemberToTeam(team, quickSelectedTeamMember[teamIdx], () => quickSelectedTeamMember[teamIdx] = '')"
+                  >
+                    <option value="">-- 從{{ activeRule.genderType === '男' ? '男' : '女' }}眾名冊選擇加入 (共 {{ filteredRuleMembers.length }} 人) --</option>
+                    <option v-for="m in filteredRuleMembers" :key="m.id" :value="m.name">
+                      {{ m.name }} {{ getMemberOrgPathText(m.id) }}
+                    </option>
+                  </select>
 
-                <button 
-                  type="button" 
-                  class="btn btn-sm btn-outline" 
-                  :disabled="!newTeamMemberName[teamIdx]" 
-                  @click="onAddMemberToTeam(team, newTeamMemberName[teamIdx], () => newTeamMemberName[teamIdx] = '')"
-                >
-                  ＋ 加入
-                </button>
-              </div>
+                  <input 
+                    v-model="newTeamMemberName[teamIdx]" 
+                    type="text" 
+                    class="form-input form-input-sm" 
+                    placeholder="輸入姓名按 Enter..." 
+                    style="max-width: 160px;"
+                    @keyup.enter="onAddMemberToTeam(team, newTeamMemberName[teamIdx], () => newTeamMemberName[teamIdx] = '')"
+                  />
+
+                  <button 
+                    type="button" 
+                    class="btn btn-sm btn-outline" 
+                    :disabled="!newTeamMemberName[teamIdx]" 
+                    @click="onAddMemberToTeam(team, newTeamMemberName[teamIdx], () => newTeamMemberName[teamIdx] = '')"
+                  >
+                    ＋ 加入
+                  </button>
+                </div>
+              </template>
             </div>
 
             <!-- 新增組別按鈕 -->
@@ -1141,6 +1331,7 @@ import { useLocationsStore } from '@/stores/locations';
 import { 
   useDutyRulesStore, 
   DEFAULT_HEQI2_CAMPUS_FEMALE_RULE, 
+  DEFAULT_HEQI2_CAMPUS_MALE_RULE,
   DEFAULT_DONGGANG_MALE_RULE, 
   DEFAULT_DONGGANG_MALE_MEMBER_CONSTRAINTS,
   DEFAULT_WEEK_ROTATION,
@@ -1257,9 +1448,34 @@ const activeRuleQuota = computed(() => {
 });
 
 // 監聽 activeRule 切換，確保 quota 數值正確同步
+const isCampusMaleRule = computed(() => {
+  return activeRule.value && (
+    (activeRule.value.location === '宜蘭園區' && activeRule.value.genderType === '男') ||
+    activeRule.value.id === 'rule_heqi2_campus_male' ||
+    activeRule.value.shiftId === 'YL_M'
+  );
+});
+
+function ensureCampusMaleTeam(team) {
+  if (!team) return;
+  if (!Array.isArray(team.shift1Members) || !Array.isArray(team.shift2Members)) {
+    const raw = Array.isArray(team.members) ? [...team.members] : [];
+    team.shift1Members = Array.isArray(team.shift1Members) ? team.shift1Members : raw.slice(0, 2);
+    team.shift2Members = Array.isArray(team.shift2Members) ? team.shift2Members : raw.slice(2);
+  }
+  team.members = [...(team.shift1Members || []), ...(team.shift2Members || [])];
+}
+
 watch(activeRule, (newRule) => {
   if (newRule && typeof newRule.quota !== 'number') {
     newRule.quota = getRuleQuota(newRule);
+  }
+  if (isCampusMaleRule.value && newRule?.weekdayTeams) {
+    Object.values(newRule.weekdayTeams).forEach(teams => {
+      if (Array.isArray(teams)) {
+        teams.forEach(ensureCampusMaleTeam);
+      }
+    });
   }
 }, { immediate: true });
 
@@ -1637,6 +1853,36 @@ function removeTeam(teamList, idx) {
   }
 }
 
+// 園區男眾雙班次獨立小組輸入暫存
+const quickSelectedShift1 = ref({});
+const newShift1MemberName = ref({});
+const quickSelectedShift2 = ref({});
+const newShift2MemberName = ref({});
+
+function onAddMemberToShift(team, shiftNum, name, clearFn) {
+  const clean = (name || '').trim();
+  if (!clean || !team) return;
+  ensureCampusMaleTeam(team);
+  if (shiftNum === 1) {
+    if (!team.shift1Members.includes(clean)) team.shift1Members.push(clean);
+  } else {
+    if (!team.shift2Members.includes(clean)) team.shift2Members.push(clean);
+  }
+  team.members = [...team.shift1Members, ...team.shift2Members];
+  if (clearFn) clearFn();
+}
+
+function onRemoveMemberFromShift(team, shiftNum, mIdx) {
+  if (!team) return;
+  ensureCampusMaleTeam(team);
+  if (shiftNum === 1 && Array.isArray(team.shift1Members)) {
+    team.shift1Members.splice(mIdx, 1);
+  } else if (shiftNum === 2 && Array.isArray(team.shift2Members)) {
+    team.shift2Members.splice(mIdx, 1);
+  }
+  team.members = [...team.shift1Members, ...team.shift2Members];
+}
+
 function addNewTeam(weekday) {
   if (!activeRule.value) return;
   if (!activeRule.value.weekdayTeams) activeRule.value.weekdayTeams = {};
@@ -1644,10 +1890,19 @@ function addNewTeam(weekday) {
   
   const num = activeRule.value.weekdayTeams[weekday].length + 1;
   const numChinese = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][num - 1] || String(num);
-  activeRule.value.weekdayTeams[weekday].push({
-    teamName: `第${numChinese}組`,
-    members: []
-  });
+  if (isCampusMaleRule.value) {
+    activeRule.value.weekdayTeams[weekday].push({
+      teamName: `第${numChinese}組`,
+      shift1Members: [],
+      shift2Members: [],
+      members: []
+    });
+  } else {
+    activeRule.value.weekdayTeams[weekday].push({
+      teamName: `第${numChinese}組`,
+      members: []
+    });
+  }
 }
 
 function onSelectMemberToTeam(team, name, clearFn) {
@@ -1710,6 +1965,14 @@ function handleResetActiveRule() {
   } else if (activeRule.value.id === 'rule_donggang_male') {
     Object.assign(activeRule.value, JSON.parse(JSON.stringify(DEFAULT_DONGGANG_MALE_RULE)));
     toast.info('已還原為東港男眾標準名冊，請記得點擊儲存！');
+  } else if (activeRule.value.id === 'rule_heqi2_campus_male' || (activeRule.value.location === '宜蘭園區' && activeRule.value.genderType === '男')) {
+    Object.assign(activeRule.value, JSON.parse(JSON.stringify(DEFAULT_HEQI2_CAMPUS_MALE_RULE)));
+    if (activeRule.value.weekdayTeams) {
+      Object.values(activeRule.value.weekdayTeams).forEach(teams => {
+        if (Array.isArray(teams)) teams.forEach(ensureCampusMaleTeam);
+      });
+    }
+    toast.info('已還原為宜蘭園區男眾標準名冊（獨立兩小組），請記得點擊儲存！');
   } else {
     toast.info('此規則無內建標準範本');
   }
